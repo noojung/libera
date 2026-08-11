@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Folder, File, Search, Download, ArrowUpRight, CheckCircle2, ShieldAlert } from 'lucide-react'
+import { Folder, File, Search, Download, ShieldAlert } from 'lucide-react'
 
 interface ArchiveInspectorProps {
   onStartExtract: (archivePath: string, targetDir: string) => void
@@ -29,10 +29,10 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
       if (response.success) {
         setInspectData(response.result)
       } else {
-        setError(response.error || 'Failed to inspect archive')
+        setError(response.error || '압축 파일 정보를 읽는데 실패했습니다')
       }
     } catch (err: any) {
-      setError(err.message || 'Inspection error')
+      setError(err.message || '검사 오류가 발생했습니다')
     } finally {
       setLoading(false)
     }
@@ -60,35 +60,36 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
       <div className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            background: 'rgba(245, 158, 11, 0.15)',
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: '#FFF3E4',
+            border: '2px solid #4A403A',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: '1px solid rgba(245, 158, 11, 0.3)'
+            boxShadow: '2px 2px 0px #4A403A'
           }}>
-            <Search size={20} color="#F59E0B" />
+            <Search size={22} color="#FF8E72" />
           </div>
           <div>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#F8FAFC' }}>
-              Archive File Inspector
+            <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', fontWeight: 700, color: '#362D27' }}>
+              압축 파일 미리보기 🔍
             </h3>
-            <p style={{ fontSize: '12px', color: '#94A3B8' }}>
-              {archivePath ? archivePath : 'Open any .zip, .tar, or .gz file to inspect contents without extracting'}
+            <p style={{ fontSize: '13px', color: '#6E6158' }}>
+              {archivePath ? archivePath : '압축을 풀지 않고 파일 내부 구성을 안전하게 미리 점검합니다'}
             </p>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
           <button className="btn-secondary" onClick={handleOpenArchive}>
-            Open Archive...
+            파일 열기...
           </button>
           {inspectData && (
             <button className="btn-primary" onClick={handleExtractAll}>
               <Download size={16} />
-              Extract All
+              전체 해제
             </button>
           )}
         </div>
@@ -97,38 +98,40 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
       {/* Main Inspection View */}
       {loading ? (
         <div className="glass-panel" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: '14px', color: '#38BDF8' }}>Analyzing archive headers...</span>
+          <span style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#FF8E72', fontWeight: 700 }}>
+            압축 파일 헤더 분석 중... 🐶
+          </span>
         </div>
       ) : error ? (
         <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-          <ShieldAlert size={36} color="#EF4444" />
-          <span style={{ fontSize: '14px', color: '#EF4444', fontWeight: 600 }}>{error}</span>
+          <ShieldAlert size={40} color="#E76F51" />
+          <span style={{ fontSize: '15px', color: '#E76F51', fontWeight: 600 }}>{error}</span>
         </div>
       ) : inspectData ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Stats Bar */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
             <div className="glass-panel" style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600 }}>FORMAT</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#38BDF8', marginTop: '4px' }}>{inspectData.format}</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>포맷</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#FF8E72', marginTop: '2px' }}>{inspectData.format}</div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600 }}>TOTAL FILES</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#F8FAFC', marginTop: '4px' }}>{inspectData.totalFiles}</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>총 파일 수</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#362D27', marginTop: '2px' }}>{inspectData.totalFiles}개</div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600 }}>UNCOMPRESSED SIZE</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#F8FAFC', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>해제 시 용량</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: '#362D27', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
                 {formatSize(inspectData.totalUncompressedSize)}
               </div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600 }}>SPACE SAVED</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#10B981', marginTop: '4px' }}>
-                {inspectData.overallRatio}%
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>압축 효율</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#52B788', marginTop: '2px' }}>
+                {inspectData.overallRatio}% 절감
               </div>
             </div>
           </div>
@@ -139,15 +142,16 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
               display: 'grid',
               gridTemplateColumns: '2fr 1fr 1fr 1fr',
               paddingBottom: '8px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#64748B'
+              borderBottom: '2px solid #4A403A',
+              fontFamily: 'var(--font-cute)',
+              fontSize: '15px',
+              fontWeight: 700,
+              color: '#362D27'
             }}>
-              <div>FILE / PATH</div>
-              <div style={{ textAlign: 'right' }}>SIZE</div>
-              <div style={{ textAlign: 'right' }}>COMPRESSED</div>
-              <div style={{ textAlign: 'right' }}>SAVINGS</div>
+              <div>파일명 / 경로</div>
+              <div style={{ textAlign: 'right' }}>원본 용량</div>
+              <div style={{ textAlign: 'right' }}>압축 용량</div>
+              <div style={{ textAlign: 'right' }}>절감율</div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -158,27 +162,27 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
                     display: 'grid',
                     gridTemplateColumns: '2fr 1fr 1fr 1fr',
                     padding: '10px 0',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                    borderBottom: '1px dashed #E8DFD5',
                     alignItems: 'center',
                     fontSize: '13px'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                    {entry.isDirectory ? <Folder size={16} color="#818CF8" /> : <File size={16} color="#38BDF8" />}
-                    <span style={{ color: '#F8FAFC', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {entry.isDirectory ? <Folder size={16} color="#FF8E72" /> : <File size={16} color="#5A9EED" />}
+                    <span style={{ color: '#362D27', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {entry.path}
                     </span>
                   </div>
 
-                  <div style={{ textAlign: 'right', color: '#94A3B8', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ textAlign: 'right', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
                     {formatSize(entry.size)}
                   </div>
 
-                  <div style={{ textAlign: 'right', color: '#64748B', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ textAlign: 'right', color: '#A3968C', fontFamily: 'var(--font-mono)' }}>
                     {entry.compressedSize ? formatSize(entry.compressedSize) : '-'}
                   </div>
 
-                  <div style={{ textAlign: 'right', color: entry.ratio > 0 ? '#10B981' : '#64748B', fontWeight: 600 }}>
+                  <div style={{ textAlign: 'right', color: entry.ratio > 0 ? '#52B788' : '#6E6158', fontWeight: 600 }}>
                     {entry.ratio ? `${entry.ratio}%` : '-'}
                   </div>
                 </div>
@@ -188,10 +192,10 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
         </div>
       ) : (
         <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <Search size={48} color="rgba(255, 255, 255, 0.15)" />
-          <h4 style={{ fontSize: '15px', color: '#94A3B8' }}>No Archive Selected</h4>
+          <Search size={48} color="#D9CEC1" />
+          <h4 style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#6E6158' }}>선택된 압축 파일이 없습니다</h4>
           <button className="btn-primary" onClick={handleOpenArchive}>
-            Select Archive File
+            압축 파일 선택하기
           </button>
         </div>
       )}

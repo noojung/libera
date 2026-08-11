@@ -1,32 +1,37 @@
 :root {
-  --bg-dark: #F8FAFC;
+  /* Cute Cozy Palette */
+  --bg-dark: #FAF7F2;
   --bg-card: #FFFFFF;
-  --bg-card-hover: #F1F5F9;
+  --bg-card-hover: #FFF9F3;
   --bg-input: #FFFFFF;
-  --border-subtle: #E2E8F0;
-  --border-glow: rgba(2, 132, 199, 0.4);
+  --border-subtle: #E8DFD5;
+  --border-doodle: #4A403A;
 
-  --accent-cyan: #0284C7;
-  --accent-indigo: #4F46E5;
-  --accent-blue: #2563EB;
-  --accent-gradient: linear-gradient(135deg, #0284C7 0%, #2563EB 100%);
-  --accent-glow: rgba(2, 132, 199, 0.15);
+  --accent-peach: #FF8E72;
+  --accent-warm: #FF6B6B;
+  --accent-yellow: #FFD166;
+  --accent-blue: #5A9EED;
+  --accent-mint: #6BBE66;
 
-  --text-main: #0F172A;
-  --text-muted: #475569;
-  --text-dim: #94A3B8;
+  --accent-gradient: linear-gradient(135deg, #FF9E85 0%, #FF7070 100%);
+  --accent-glow: rgba(255, 142, 114, 0.25);
 
-  --status-success: #059669;
-  --status-warning: #D97706;
-  --status-danger: #DC2626;
+  --text-main: #362D27;
+  --text-muted: #6E6158;
+  --text-dim: #A3968C;
 
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --status-success: #52B788;
+  --status-warning: #F4A261;
+  --status-danger: #E76F51;
+
+  --font-sans: 'Gowun Dodum', 'Apple SD Gothic Neo', sans-serif;
+  --font-cute: 'Gaegu', 'Gowun Dodum', cursive;
   --font-mono: 'JetBrains Mono', monospace;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
 }
 
 * {
@@ -52,10 +57,10 @@ body {
   flex-direction: column;
 }
 
-/* Custom Scrollbars */
+/* Custom Cute Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -63,139 +68,152 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #D9CEC1;
   border-radius: 999px;
+  border: 2px solid var(--bg-dark);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #B8A99A;
 }
 
-/* Cards Containers */
+/* Cute Doodle Cards & Containers */
 .glass-panel {
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  border: 2px solid var(--border-doodle);
   border-radius: var(--radius-md);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  box-shadow: 3px 3px 0px var(--border-doodle);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .glass-panel-hover {
-  transition: all 0.2s ease-in-out;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .glass-panel-hover:hover {
   background: var(--bg-card-hover);
-  border-color: #CBD5E1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 4px 5px 0px var(--border-doodle);
 }
 
-/* Buttons */
+/* Cute Playful Buttons */
 .btn-primary {
   background: var(--accent-gradient);
   color: #FFFFFF;
-  border: none;
-  padding: 10px 20px;
+  border: 2px solid var(--border-doodle);
+  padding: 10px 22px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-cute);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 3px 3px 0px var(--border-doodle);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 4px 5px 0px var(--border-doodle);
+  filter: brightness(1.03);
+}
+
+.btn-primary:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 1px 1px 0px var(--border-doodle);
+}
+
+.btn-secondary {
+  background: #FFF4E8;
+  color: var(--text-main);
+  border: 2px solid var(--border-doodle);
+  padding: 8px 18px;
   border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px var(--accent-glow);
-}
-
-.btn-primary:hover {
-  opacity: 0.95;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
-}
-
-.btn-primary:active {
-  transform: translateY(0);
-}
-
-.btn-secondary {
-  background: #F1F5F9;
-  color: var(--text-main);
-  border: 1px solid var(--border-subtle);
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  font-weight: 500;
-  font-size: 13px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 2px 2px 0px var(--border-doodle);
 }
 
 .btn-secondary:hover {
-  background: #E2E8F0;
-  border-color: #CBD5E1;
+  background: #FFEBD6;
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 0px var(--border-doodle);
+}
+
+.btn-secondary:active {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0px var(--border-doodle);
 }
 
 /* Inputs & Form Controls */
 .input-text {
   background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
+  border: 2px solid var(--border-doodle);
   color: var(--text-main);
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: var(--radius-sm);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   outline: none;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
   width: 100%;
+  box-shadow: 2px 2px 0px rgba(74, 64, 58, 0.15);
 }
 
 .input-text:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  border-color: var(--accent-peach);
+  box-shadow: 3px 3px 0px var(--border-doodle);
 }
 
-/* Format Badge Pills */
+/* Cute Format Badge Pills */
 .badge-pill {
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--font-cute);
+  font-size: 14px;
+  font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  border: 1.5px solid var(--border-doodle);
+  box-shadow: 1.5px 1.5px 0px var(--border-doodle);
 }
 
 .badge-zip {
-  background: rgba(2, 132, 199, 0.1);
-  color: #0284C7;
-  border: 1px solid rgba(2, 132, 199, 0.25);
+  background: #FFE5D9;
+  color: #D00000;
 }
 
 .badge-tar {
-  background: rgba(79, 70, 229, 0.1);
-  color: #4F46E5;
-  border: 1px solid rgba(79, 70, 229, 0.25);
+  background: #E2ECE9;
+  color: #256D85;
 }
 
 .badge-gz {
-  background: rgba(217, 119, 6, 0.1);
+  background: #FFF1E6;
   color: #D97706;
-  border: 1px solid rgba(217, 119, 6, 0.25);
 }
 
-/* Pulse animation */
-@keyframes pulse-glow {
-
-  0%,
-  100% {
-    box-shadow: 0 0 15px rgba(2, 132, 199, 0.15);
+/* Pulse animation with cute bounce */
+@keyframes cute-bounce-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 3px 3px 0px var(--border-doodle);
   }
-
   50% {
-    box-shadow: 0 0 25px rgba(2, 132, 199, 0.3);
+    transform: scale(1.02);
+    box-shadow: 5px 6px 0px var(--border-doodle);
   }
 }
 
 .glow-active {
-  animation: pulse-glow 2s infinite ease-in-out;
+  animation: cute-bounce-pulse 2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }

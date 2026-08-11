@@ -60,38 +60,52 @@ export const DropZone: React.FC<DropZoneProps> = ({
         onDrop={handleDrop}
         style={{
           flex: items.length > 0 ? '0 0 160px' : 1,
-          border: isDragOver ? '2px dashed #0284C7' : '2px dashed #CBD5E1',
-          background: isDragOver ? 'rgba(2, 132, 199, 0.05)' : '#FFFFFF',
-          borderRadius: '16px',
+          border: isDragOver ? '2.5px dashed #FF8E72' : '2px dashed #4A403A',
+          background: isDragOver ? '#FFF4E8' : '#FFFFFF',
+          borderRadius: '20px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           padding: '24px',
-          transition: 'all 0.2s ease',
+          transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
           cursor: 'pointer',
-          boxShadow: isDragOver ? '0 0 20px rgba(2, 132, 199, 0.15)' : '0 1px 3px rgba(0,0,0,0.04)'
+          boxShadow: isDragOver ? '4px 6px 0px #4A403A' : '3px 3px 0px #4A403A',
+          transform: isDragOver ? 'scale(1.01)' : 'none'
         }}
         onClick={() => onSelectFilesDialog(false)}
       >
         <div style={{
-          width: '54px',
-          height: '54px',
-          borderRadius: '16px',
-          background: '#F1F5F9',
+          width: '56px',
+          height: '56px',
+          borderRadius: '50%',
+          background: '#FFF3E4',
+          border: '2px solid #4A403A',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: '12px'
+          marginBottom: '10px',
+          boxShadow: '2px 2px 0px #4A403A'
         }}>
-          <UploadCloud size={28} color={isDragOver ? '#0284C7' : '#4F46E5'} />
+          <UploadCloud size={28} color={isDragOver ? '#FF8E72' : '#362D27'} />
         </div>
 
-        <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A', marginBottom: '6px' }}>
-          Drag & Drop files or folders here
+        <h3 style={{
+          fontFamily: 'var(--font-cute)',
+          fontSize: '20px',
+          fontWeight: 700,
+          color: '#362D27',
+          marginBottom: '4px'
+        }}>
+          파일이나 폴더를 여기에 놓아주세요! 🐾
         </h3>
-        <p style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
-          Supports multiple files, directories, or existing archives
+        <p style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '13px',
+          color: '#6E6158',
+          marginBottom: '16px'
+        }}>
+          여러 파일, 폴더 또는 압축 해제할 파일 선택 가능
         </p>
 
         <div style={{ display: 'flex', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
@@ -99,15 +113,15 @@ export const DropZone: React.FC<DropZoneProps> = ({
             className="btn-secondary"
             onClick={() => onSelectFilesDialog(false)}
           >
-            <FilePlus size={15} />
-            Browse Files
+            <FilePlus size={16} />
+            파일 찾아보기
           </button>
           <button
             className="btn-secondary"
             onClick={() => onSelectFilesDialog(true)}
           >
-            <FolderPlus size={15} />
-            Browse Folders
+            <FolderPlus size={16} />
+            폴더 찾아보기
           </button>
         </div>
       </div>
@@ -116,21 +130,22 @@ export const DropZone: React.FC<DropZoneProps> = ({
       {items.length > 0 && (
         <div className="glass-panel" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>
-              SELECTED ITEMS ({items.length})
+            <span style={{ fontFamily: 'var(--font-cute)', fontSize: '16px', fontWeight: 700, color: '#362D27' }}>
+              선택한 항목 ({items.length}개)
             </span>
             <button
               onClick={onClearItems}
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#DC2626',
-                fontSize: '12px',
-                fontWeight: 600,
+                color: '#E76F51',
+                fontFamily: 'var(--font-cute)',
+                fontSize: '15px',
+                fontWeight: 700,
                 cursor: 'pointer'
               }}
             >
-              Clear All
+              전체 비우기
             </button>
           </div>
 
@@ -142,30 +157,30 @@ export const DropZone: React.FC<DropZoneProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  background: '#F8FAFC',
+                  background: '#FAF7F2',
                   padding: '10px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid #E2E8F0'
+                  borderRadius: '12px',
+                  border: '1.5px solid #4A403A'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
                   {item.isDirectory ? (
-                    <Folder size={18} color="#4F46E5" />
+                    <Folder size={18} color="#FF8E72" />
                   ) : (
-                    <File size={18} color="#0284C7" />
+                    <File size={18} color="#5A9EED" />
                   )}
                   <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#362D27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.name}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748B', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: '11px', color: '#A3968C', fontFamily: 'var(--font-mono)' }}>
                       {item.path}
                     </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '12px', color: '#475569', fontFamily: 'var(--font-mono)' }}>
+                  <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
                     {formatSize(item.size)}
                   </span>
                   <button
@@ -173,13 +188,13 @@ export const DropZone: React.FC<DropZoneProps> = ({
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: '#94A3B8',
+                      color: '#A3968C',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center'
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#DC2626')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#94A3B8')}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#E76F51')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#A3968C')}
                   >
                     <X size={16} />
                   </button>

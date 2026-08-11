@@ -21,9 +21,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
 
   return (
     <div style={{
-      height: '42px',
-      background: '#FFFFFF',
-      borderBottom: '1px solid #E2E8F0',
+      height: '46px',
+      background: '#FAF7F2',
+      borderBottom: '2px solid #4A403A',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -33,18 +33,27 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
       zIndex: 1000
     }}>
       {/* Left Branding */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <img
           src={logoImg}
           alt="Libera Logo"
           style={{
-            width: '24px',
-            height: '24px',
+            width: '28px',
+            height: '28px',
             objectFit: 'contain',
-            borderRadius: '4px'
+            borderRadius: '50%',
+            background: '#FFFFFF',
+            padding: '2px',
+            border: '1.5px solid #4A403A'
           }}
         />
-        <span style={{ fontWeight: 700, fontSize: '14px', letterSpacing: '-0.2px', color: '#0F172A' }}>
+        <span style={{
+          fontFamily: 'var(--font-cute)',
+          fontWeight: 700,
+          fontSize: '20px',
+          letterSpacing: '0.5px',
+          color: '#362D27'
+        }}>
           Libera
         </span>
       </div>
@@ -53,28 +62,30 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        background: '#F1F5F9',
-        padding: '3px',
-        borderRadius: '8px',
-        border: '1px solid #E2E8F0',
+        background: '#FFF3E4',
+        padding: '3px 4px',
+        borderRadius: '14px',
+        border: '2px solid #4A403A',
+        gap: '4px',
         ...noDragStyle
       }}>
         <button
           onClick={() => setMode('compress')}
           style={{
-            background: currentMode === 'compress' ? '#FFFFFF' : 'transparent',
-            color: currentMode === 'compress' ? '#0284C7' : '#64748B',
-            border: currentMode === 'compress' ? '1px solid #CBD5E1' : '1px solid transparent',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
+            background: currentMode === 'compress' ? '#FF8E72' : 'transparent',
+            color: currentMode === 'compress' ? '#FFFFFF' : '#6E6158',
+            border: currentMode === 'compress' ? '1.5px solid #4A403A' : '1.5px solid transparent',
+            padding: '4px 14px',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontFamily: 'var(--font-cute)',
+            fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: currentMode === 'compress' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
-            transition: 'all 0.15s ease'
+            boxShadow: currentMode === 'compress' ? '1.5px 1.5px 0px #4A403A' : 'none',
+            transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
         >
           <Archive size={14} />
@@ -84,19 +95,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           onClick={() => setMode('extract')}
           style={{
-            background: currentMode === 'extract' ? '#FFFFFF' : 'transparent',
-            color: currentMode === 'extract' ? '#4F46E5' : '#64748B',
-            border: currentMode === 'extract' ? '1px solid #CBD5E1' : '1px solid transparent',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
+            background: currentMode === 'extract' ? '#FF8E72' : 'transparent',
+            color: currentMode === 'extract' ? '#FFFFFF' : '#6E6158',
+            border: currentMode === 'extract' ? '1.5px solid #4A403A' : '1.5px solid transparent',
+            padding: '4px 14px',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontFamily: 'var(--font-cute)',
+            fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: currentMode === 'extract' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
-            transition: 'all 0.15s ease'
+            boxShadow: currentMode === 'extract' ? '1.5px 1.5px 0px #4A403A' : 'none',
+            transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
         >
           <Layers size={14} />
@@ -106,19 +118,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           onClick={() => setMode('inspect')}
           style={{
-            background: currentMode === 'inspect' ? '#FFFFFF' : 'transparent',
-            color: currentMode === 'inspect' ? '#D97706' : '#64748B',
-            border: currentMode === 'inspect' ? '1px solid #CBD5E1' : '1px solid transparent',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
+            background: currentMode === 'inspect' ? '#FFD166' : 'transparent',
+            color: currentMode === 'inspect' ? '#362D27' : '#6E6158',
+            border: currentMode === 'inspect' ? '1.5px solid #4A403A' : '1.5px solid transparent',
+            padding: '4px 14px',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontFamily: 'var(--font-cute)',
+            fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: currentMode === 'inspect' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
-            transition: 'all 0.15s ease'
+            boxShadow: currentMode === 'inspect' ? '1.5px 1.5px 0px #4A403A' : 'none',
+            transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
         >
           <Search size={14} />
@@ -128,36 +141,39 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           onClick={() => setMode('queue')}
           style={{
-            background: currentMode === 'queue' ? '#FFFFFF' : 'transparent',
-            color: currentMode === 'queue' ? '#059669' : '#64748B',
-            border: currentMode === 'queue' ? '1px solid #CBD5E1' : '1px solid transparent',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 600,
+            background: currentMode === 'queue' ? '#6BBE66' : 'transparent',
+            color: currentMode === 'queue' ? '#FFFFFF' : '#6E6158',
+            border: currentMode === 'queue' ? '1.5px solid #4A403A' : '1.5px solid transparent',
+            padding: '4px 14px',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontFamily: 'var(--font-cute)',
+            fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
             position: 'relative',
-            boxShadow: currentMode === 'queue' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
-            transition: 'all 0.15s ease'
+            boxShadow: currentMode === 'queue' ? '1.5px 1.5px 0px #4A403A' : 'none',
+            transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
         >
           <ListTodo size={14} />
           Queue
           {activeQueueCount > 0 && (
             <span style={{
-              background: '#059669',
+              background: '#E76F51',
               color: '#FFFFFF',
               borderRadius: '999px',
-              width: '16px',
-              height: '16px',
+              width: '18px',
+              height: '18px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '10px',
-              fontWeight: 800
+              fontSize: '11px',
+              fontFamily: 'var(--font-cute)',
+              fontWeight: 800,
+              border: '1px solid #4A403A'
             }}>
               {activeQueueCount}
             </span>
@@ -173,7 +189,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#64748B',
+              color: '#6E6158',
               width: '42px',
               height: '42px',
               display: 'flex',
@@ -189,7 +205,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#64748B',
+              color: '#6E6158',
               width: '42px',
               height: '42px',
               display: 'flex',
@@ -205,7 +221,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#64748B',
+              color: '#6E6158',
               width: '42px',
               height: '42px',
               display: 'flex',
@@ -214,12 +230,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
               cursor: 'pointer'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#DC2626'
+              e.currentTarget.style.backgroundColor = '#E76F51'
               e.currentTarget.style.color = '#FFFFFF'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent'
-              e.currentTarget.style.color = '#64748B'
+              e.currentTarget.style.color = '#6E6158'
             }}
           >
             <X size={14} />
