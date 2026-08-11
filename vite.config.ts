@@ -15,7 +15,7 @@ export default defineConfig({
           build: {
             outDir: path.resolve(__dirname, 'dist/main'),
             rollupOptions: {
-              external: ['electron', 'archiver', 'adm-zip', 'tar', 'fflate']
+              external: ['electron']
             }
           }
         }
