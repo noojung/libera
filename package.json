@@ -1,0 +1,34 @@
+{
+  "name": "libera",
+  "version": "1.0.0",
+  "description": "Libera - Cross-platform compression utility desktop app built with Electron, TypeScript, and React",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "archiver": "^7.0.1",
+    "fflate": "^0.8.2",
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tar": "^7.4.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^22.13.4",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/tar": "^6.1.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^34.2.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  }
+}
