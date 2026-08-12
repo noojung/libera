@@ -15,6 +15,7 @@ export const App: React.FC = () => {
   const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
   const [jobs, setJobs] = useState<ActiveJob[]>([])
   const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
+  const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null)
   const passwordPromptResolver = useRef<((password: string | null) => void) | null>(null)
 
   const isZipPasswordProtected = async (archivePath: string) => {
@@ -23,15 +24,37 @@ export const App: React.FC = () => {
     return response.success && response.result?.passwordProtected === true
   }
 
-  const requestZipPassword = (archiveName: string) => new Promise<string | null>((resolve) => {
+  const requestZipPassword = (archiveName: string, errorMessage?: string) => new Promise<string | null>((resolve) => {
     passwordPromptResolver.current = resolve
+    setPasswordPromptError(errorMessage || null)
     setPasswordPromptArchive(archiveName)
   })
 
   const resolvePasswordPrompt = (password: string | null) => {
     passwordPromptResolver.current?.(password)
     passwordPromptResolver.current = null
+    setPasswordPromptError(null)
     setPasswordPromptArchive(null)
+  }
+
+  const extractWithPasswordRetry = async (
+    archiveName: string,
+    passwordProtected: boolean,
+    extract: (password?: string) => Promise<any>,
+    initialPassword?: string
+  ) => {
+    let password = passwordProtected ? initialPassword || await requestZipPassword(archiveName) : undefined
+
+    while (password || !passwordProtected) {
+      const result = await extract(password || undefined)
+      if (!passwordProtected || result.success || result.code !== 'WRONG_ZIP_PASSWORD') {
+        return result
+      }
+
+      password = await requestZipPassword(archiveName, '비밀번호가 올바르지 않습니다. 다시 입력해 주세요.')
+    }
+
+    return null
   }
 
   useEffect(() => {
@@ -250,18 +273,18 @@ export const App: React.FC = () => {
         const item = extractItems[i]
         const job = newJobs[i]
         const passwordProtected = await isZipPasswordProtected(item.path)
-        const password = passwordProtected ? await requestZipPassword(item.name) : undefined
+        const res = await extractWithPasswordRetry(item.name, passwordProtected, (password) =>
+          (window as any).electronAPI.extractArchive({
+            archivePath: item.path,
+            targetDir: job.outputPath,
+            password
+          }, job.id)
+        )
 
-        if (passwordProtected && !password) {
+        if (!res) {
           setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', error: 'Password entry cancelled' } : j))
           continue
         }
-
-        const res = await (window as any).electronAPI.extractArchive({
-          archivePath: item.path,
-          targetDir: job.outputPath,
-          password
-        }, job.id)
 
         setJobs(prev =>
           prev.map(j => {
@@ -292,11 +315,11 @@ export const App: React.FC = () => {
 
   const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[]) => {
     const passwordProtected = await isZipPasswordProtected(archivePath)
-    const password = passwordProtected ? await requestZipPassword(archivePath.split(/[/\\]/).pop() || 'ZIP archive') : undefined
-    if (passwordProtected && !password) return
+    const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
+    const initialPassword = passwordProtected ? await requestZipPassword(archiveName) : undefined
+    if (passwordProtected && !initialPassword) return
 
     const jobId = `job-${Date.now()}`
-    const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
 
     const newJob: ActiveJob = {
       id: jobId,
@@ -316,12 +339,22 @@ export const App: React.FC = () => {
     setMode('queue')
 
     if ((window as any).electronAPI) {
-      const res = await (window as any).electronAPI.extractArchive({
-        archivePath,
-        targetDir,
-        selectedEntries,
-        password
-      }, jobId)
+      const res = await extractWithPasswordRetry(
+        archiveName,
+        passwordProtected,
+        (password) => (window as any).electronAPI.extractArchive({
+          archivePath,
+          targetDir,
+          selectedEntries,
+          password
+        }, jobId),
+        initialPassword || undefined
+      )
+
+      if (!res) {
+        setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: 'Password entry cancelled' } : j))
+        return
+      }
 
       setJobs(prev =>
         prev.map(j => {
@@ -411,6 +444,7 @@ export const App: React.FC = () => {
       {passwordPromptArchive && (
         <PasswordPromptModal
           archiveName={passwordPromptArchive}
+          errorMessage={passwordPromptError}
           onConfirm={(password) => resolvePasswordPrompt(password)}
           onCancel={() => resolvePasswordPrompt(null)}
         />

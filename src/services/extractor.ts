@@ -12,6 +12,18 @@ export interface ExtractionOptions {
   password?: string
 }
 
+export const WRONG_ZIP_PASSWORD_ERROR_CODE = 'WRONG_ZIP_PASSWORD'
+
+export function isWrongZipPasswordError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Wrong Password')
+}
+
+function createWrongZipPasswordError(): Error & { code: string } {
+  const error = new Error('Wrong ZIP password') as Error & { code: string }
+  error.code = WRONG_ZIP_PASSWORD_ERROR_CODE
+  return error
+}
+
 export async function extractArchive(
   options: ExtractionOptions,
   onProgress?: ProgressCallback
@@ -61,7 +73,9 @@ export async function extractArchive(
           durationMs: Date.now() - startTime
         })
       } catch (err) {
-        reject(err)
+        // adm-zip reports an incorrect ZipCrypto password as "Wrong Password".
+        // Expose a stable error code so the renderer can ask for the password again.
+        reject(isWrongZipPasswordError(err) ? createWrongZipPasswordError() : err)
       }
     })
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { compressArchive, CompressionOptions, calculateTotalSize } from '../services/compressor'
-import { extractArchive, ExtractionOptions } from '../services/extractor'
+import { extractArchive, ExtractionOptions, isWrongZipPasswordError, WRONG_ZIP_PASSWORD_ERROR_CODE } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
 
 let mainWindow: BrowserWindow | null = null
@@ -130,7 +130,13 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
     })
     return { success: true, result }
   } catch (err: any) {
-    return { success: false, error: err.message || 'Extraction failed' }
+    return {
+      success: false,
+      error: err.message || 'Extraction failed',
+      code: err.code === WRONG_ZIP_PASSWORD_ERROR_CODE || isWrongZipPasswordError(err)
+        ? WRONG_ZIP_PASSWORD_ERROR_CODE
+        : undefined
+    }
   }
 })
 
@@ -185,4 +191,3 @@ ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
     }
   })
 })
-

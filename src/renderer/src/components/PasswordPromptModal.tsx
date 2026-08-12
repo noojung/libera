@@ -3,11 +3,12 @@ import { LockKeyhole } from 'lucide-react'
 
 interface PasswordPromptModalProps {
   archiveName: string
+  errorMessage?: string | null
   onConfirm: (password: string) => void
   onCancel: () => void
 }
 
-export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, onConfirm, onCancel }) => {
+export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, errorMessage, onConfirm, onCancel }) => {
   const [password, setPassword] = useState('')
 
   useEffect(() => {
@@ -36,6 +37,9 @@ export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiv
           </div>
         </div>
         <p style={{ color: '#6E6158', fontSize: '14px', lineHeight: 1.5 }}>이 ZIP 파일은 암호화되어 있습니다. 압축을 해제하려면 비밀번호를 입력해 주세요.</p>
+        {errorMessage && (
+          <p role="alert" style={{ marginTop: '-8px', color: '#E76F51', fontSize: '13px' }}>{errorMessage}</p>
+        )}
         <input
           autoFocus
           type="password"

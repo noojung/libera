@@ -8,7 +8,7 @@ export interface ElectronAPI {
   selectSaveLocation: (defaultName: string, format: string) => Promise<string | null>
   selectExtractFolder: () => Promise<string | null>
   compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string }>
-  extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string }>
+  extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; code?: string }>
   inspectArchive: (archivePath: string) => Promise<{ success: boolean; result?: any; error?: string }>
   openFolder: (targetPath: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
