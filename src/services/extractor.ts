@@ -30,6 +30,16 @@ function createWrongZipPasswordError(): Error & { code: string } {
   return error
 }
 
+function matchesSelectedEntry(entryPath: string, selectedEntries: Set<string> | null): boolean {
+  if (!selectedEntries) return true
+
+  const normalizedEntryPath = entryPath.replace(/\\/g, '/').replace(/^\.\//, '')
+  return Array.from(selectedEntries).some(selectedPath => {
+    const normalizedSelectedPath = selectedPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+    return normalizedEntryPath === normalizedSelectedPath || normalizedEntryPath.startsWith(`${normalizedSelectedPath}/`)
+  })
+}
+
 export async function extractArchive(
   options: ExtractionOptions,
   onProgress?: ProgressCallback
@@ -68,7 +78,7 @@ export async function extractArchive(
 
         for (let i = 0; i < entries.length; i++) {
           const entry = entries[i]
-          if (entry.isDirectory || (filterMap && !filterMap.has(entry.entryName))) {
+          if (entry.isDirectory || !matchesSelectedEntry(entry.entryName, filterMap)) {
             continue
           }
 
@@ -104,8 +114,7 @@ export async function extractArchive(
         file: archivePath,
         cwd: targetDir,
         filter: (entryPath: string) => {
-          if (!filterMap) return true
-          return filterMap.has(entryPath)
+          return matchesSelectedEntry(entryPath, filterMap)
         },
         onentry: (entry: any) => {
           count++
