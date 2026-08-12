@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
-import fs from 'fs'
+import { promises as fsPromises } from 'fs'
 import { compressArchive, CompressionOptions, calculateTotalSize } from '../services/compressor'
 import { extractArchive, ExtractionOptions, isWrongZipPasswordError, WRONG_ZIP_PASSWORD_ERROR_CODE } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
@@ -170,13 +170,13 @@ ipcMain.handle('system:getDefaultOutputDir', async () => {
 })
 
 ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
-  return itemPaths.map(p => {
+  return Promise.all(itemPaths.map(async p => {
     try {
-      const stat = fs.statSync(p)
+      const stat = await fsPromises.lstat(p)
       const isDirectory = stat.isDirectory()
       let size = stat.size
       if (isDirectory) {
-        size = calculateTotalSize([p])
+        size = await calculateTotalSize([p])
       }
       return {
         path: p,
@@ -192,5 +192,5 @@ ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
         size: 0
       }
     }
-  })
+  }))
 })

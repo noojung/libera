@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import archiver from 'archiver'
 import * as tar from 'tar'
@@ -28,22 +28,39 @@ export interface ProgressData {
 export type ProgressCallback = (data: ProgressData) => void
 
 /**
- * Calculates total size of files/directories recursively.
+ * Calculates total size of files/directories recursively without following
+ * symbolic links. This keeps directory scans non-blocking and prevents
+ * symlink cycles from being traversed.
  */
-export function calculateTotalSize(paths: string[]): number {
-  let total = 0
-  for (const p of paths) {
+export async function calculateTotalSize(paths: string[]): Promise<number> {
+  const visitedDirectories = new Set<string>()
+
+  const calculatePathSize = async (itemPath: string): Promise<number> => {
     try {
-      const stat = fs.statSync(p)
-      if (stat.isDirectory()) {
-        const files = fs.readdirSync(p)
-        total += calculateTotalSize(files.map(f => path.join(p, f)))
-      } else {
-        total += stat.size
+      const stat = await fsPromises.lstat(itemPath)
+      if (stat.isSymbolicLink()) return 0
+
+      if (!stat.isDirectory()) return stat.size
+
+      const resolvedPath = await fsPromises.realpath(itemPath)
+      if (visitedDirectories.has(resolvedPath)) return 0
+      visitedDirectories.add(resolvedPath)
+
+      const entries = await fsPromises.readdir(itemPath, { withFileTypes: true })
+      let total = 0
+      for (const entry of entries) {
+        total += await calculatePathSize(path.join(itemPath, entry.name))
       }
+      return total
     } catch {
-      // Ignore unreadable files
+      // Ignore unreadable files and directories.
+      return 0
     }
+  }
+
+  let total = 0
+  for (const itemPath of paths) {
+    total += await calculatePathSize(itemPath)
   }
   return total
 }
@@ -61,13 +78,21 @@ export async function compressArchive(
 
   // Ensure output directory exists
   const outputDir = path.dirname(outputPath)
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true })
-  }
+  await fsPromises.mkdir(outputDir, { recursive: true })
 
-  const totalBytes = calculateTotalSize(inputPaths)
+  const totalBytes = await calculateTotalSize(inputPaths)
 
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
+    const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
+    for (const itemPath of inputPaths) {
+      try {
+        const stat = await fsPromises.lstat(itemPath)
+        archiveInputs.push({ itemPath, isDirectory: stat.isDirectory() })
+      } catch (err) {
+        console.error(`Error reading ${itemPath}:`, err)
+      }
+    }
+
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath)
       
@@ -127,53 +152,53 @@ export async function compressArchive(
       archive.pipe(output)
 
       // Add files and directories to archive
-      for (const itemPath of inputPaths) {
-        try {
-          const stat = fs.statSync(itemPath)
-          const baseName = path.basename(itemPath)
-          if (stat.isDirectory()) {
-            archive.directory(itemPath, baseName)
-          } else {
-            archive.file(itemPath, { name: baseName })
-          }
-        } catch (err) {
-          console.error(`Error reading ${itemPath}:`, err)
+      for (const { itemPath, isDirectory } of archiveInputs) {
+        const baseName = path.basename(itemPath)
+        if (isDirectory) {
+          archive.directory(itemPath, baseName)
+        } else {
+          archive.file(itemPath, { name: baseName })
         }
       }
 
-      output.on('close', () => {
-        const compressedSize = fs.statSync(outputPath).size
-        const durationMs = Date.now() - startTime
-        if (onProgress) {
-          onProgress({
-            processedBytes: totalBytes,
-            totalBytes,
-            percent: 100,
-            currentFile: 'Complete'
+      output.on('close', async () => {
+        try {
+          const compressedSize = (await fsPromises.stat(outputPath)).size
+          const durationMs = Date.now() - startTime
+          if (onProgress) {
+            onProgress({
+              processedBytes: totalBytes,
+              totalBytes,
+              percent: 100,
+              currentFile: 'Complete'
+            })
+          }
+          resolve({
+            outputPath,
+            originalSize: totalBytes,
+            compressedSize,
+            durationMs
           })
+        } catch (err) {
+          reject(err)
         }
-        resolve({
-          outputPath,
-          originalSize: totalBytes,
-          compressedSize,
-          durationMs
-        })
       })
 
       archive.finalize()
     })
   } else if (format === 'gz') {
     // Single file GZIP
+    if (inputPaths.length === 0) {
+      throw new Error('No input files specified for GZ compression.')
+    }
+
+    const sourceFile = inputPaths[0]
+    const inputStat = await fsPromises.lstat(sourceFile)
+    if (inputStat.isDirectory()) {
+      throw new Error('GZ format supports single files only. Please use .tgz or .zip for folder compression.')
+    }
+
     return new Promise((resolve, reject) => {
-      if (inputPaths.length === 0) {
-        return reject(new Error('No input files specified for GZ compression.'))
-      }
-      const sourceFile = inputPaths[0]
-      const inputStat = fs.statSync(sourceFile)
-      if (inputStat.isDirectory()) {
-        return reject(new Error('GZ format supports single files only. Please use .tgz or .zip for folder compression.'))
-      }
-      
       const gzip = zlib.createGzip({ level })
       const readStream = fs.createReadStream(sourceFile)
       const writeStream = fs.createWriteStream(outputPath)
@@ -193,15 +218,19 @@ export async function compressArchive(
 
       readStream.pipe(gzip).pipe(writeStream)
 
-      writeStream.on('finish', () => {
-        const compressedSize = fs.statSync(outputPath).size
-        const durationMs = Date.now() - startTime
-        resolve({
-          outputPath,
-          originalSize: inputStat.size,
-          compressedSize,
-          durationMs
-        })
+      writeStream.on('finish', async () => {
+        try {
+          const compressedSize = (await fsPromises.stat(outputPath)).size
+          const durationMs = Date.now() - startTime
+          resolve({
+            outputPath,
+            originalSize: inputStat.size,
+            compressedSize,
+            durationMs
+          })
+        } catch (err) {
+          reject(err)
+        }
       })
 
       writeStream.on('error', reject)
