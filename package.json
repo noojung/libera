@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
     "dist": "npm run build && electron-builder"
   },
   "build": {
@@ -72,6 +73,7 @@
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
     "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "vitest": "^3.2.7"
   }
 }
