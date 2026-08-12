@@ -45,7 +45,16 @@ Use `npm version minor` or `npm version major` instead when appropriate. After v
 - `Libera-<version>-mac-arm64.dmg`
 - `Libera-<version>-windows-x64-setup.exe`
 
-These installers are currently unsigned and the macOS build is not notarized. macOS Gatekeeper and Windows SmartScreen may therefore display a warning. Code-signing credentials should be added as GitHub Actions secrets before distributing the application to a broad audience.
+The macOS app bundle is ad-hoc signed to keep Electron and its nested helpers
+internally consistent, but it is not signed with a paid Apple Developer ID or
+notarized. Gatekeeper therefore displays a warning after download. After the
+first launch attempt, trusted users can allow the app from **System Settings →
+Privacy & Security → Open Anyway**. Intel iMacs should use the `x64` installer;
+Apple Silicon iMacs should use the `arm64` installer.
+
+The Windows installer is also unsigned, so Windows SmartScreen may display a
+warning. Developer code-signing credentials should be added before distributing
+the application to a broad audience.
 
 ## Supported Formats
 
