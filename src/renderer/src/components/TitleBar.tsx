@@ -95,7 +95,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           onClick={() => setMode('extract')}
           style={{
-            background: currentMode === 'extract' ? '#FF8E72' : 'transparent',
+            background: currentMode === 'extract' ? '#5A9EED' : 'transparent',
             color: currentMode === 'extract' ? '#FFFFFF' : '#6E6158',
             border: currentMode === 'extract' ? '1.5px solid #4A403A' : '1.5px solid transparent',
             padding: '4px 14px',
@@ -118,8 +118,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           onClick={() => setMode('inspect')}
           style={{
-            background: currentMode === 'inspect' ? '#FFD166' : 'transparent',
-            color: currentMode === 'inspect' ? '#362D27' : '#6E6158',
+            background: currentMode === 'inspect' ? '#F4A261' : 'transparent',
+            color: currentMode === 'inspect' ? '#FFFFFF' : '#6E6158',
             border: currentMode === 'inspect' ? '1.5px solid #4A403A' : '1.5px solid transparent',
             padding: '4px 14px',
             borderRadius: '10px',
