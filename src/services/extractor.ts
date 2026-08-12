@@ -13,6 +13,12 @@ export interface ExtractionOptions {
 }
 
 export const WRONG_ZIP_PASSWORD_ERROR_CODE = 'WRONG_ZIP_PASSWORD'
+export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz'] as const
+
+export function isSupportedArchivePath(archivePath: string): boolean {
+  const normalizedPath = archivePath.toLowerCase()
+  return SUPPORTED_ARCHIVE_EXTENSIONS.some(extension => normalizedPath.endsWith(extension))
+}
 
 export function isWrongZipPasswordError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('Wrong Password')
@@ -30,6 +36,18 @@ export async function extractArchive(
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
   const startTime = Date.now()
   const { archivePath, targetDir, selectedEntries, password } = options
+
+  if (!fs.existsSync(archivePath)) {
+    throw new Error(`Archive file does not exist: ${archivePath}`)
+  }
+
+  if (!fs.statSync(archivePath).isFile()) {
+    throw new Error('Extraction requires an archive file, not a folder')
+  }
+
+  if (!isSupportedArchivePath(archivePath)) {
+    throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
+  }
 
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true })

@@ -4,7 +4,7 @@ export interface ElectronAPI {
   minimizeWindow: () => Promise<void>
   maximizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
-  selectFiles: (options?: { allowDirectories?: boolean }) => Promise<string[]>
+  selectFiles: (options?: { allowDirectories?: boolean; extensions?: string[]; title?: string }) => Promise<string[]>
   selectSaveLocation: (defaultName: string, format: string) => Promise<string | null>
   selectExtractFolder: () => Promise<string | null>
   compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string }>

@@ -13,6 +13,7 @@ export const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>('compress')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
+  const [extractInputError, setExtractInputError] = useState<string | null>(null)
   const [jobs, setJobs] = useState<ActiveJob[]>([])
   const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
   const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null)
@@ -131,6 +132,8 @@ export const App: React.FC = () => {
 
   // Extract Tab Handlers
   const handleAddExtractFiles = async (paths: string[]) => {
+    const supportedExtensions = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz']
+    const isSupportedArchive = (filePath: string) => supportedExtensions.some(extension => filePath.toLowerCase().endsWith(extension))
     let newItems: SelectedItem[] = []
     if ((window as any).electronAPI?.getItemStat) {
       const stats = await (window as any).electronAPI.getItemStat(paths)
@@ -152,9 +155,13 @@ export const App: React.FC = () => {
       })
     }
 
+    const invalidItems = newItems.filter(item => item.isDirectory || !isSupportedArchive(item.path))
+    const validItems = newItems.filter(item => !item.isDirectory && isSupportedArchive(item.path))
+    setExtractInputError(invalidItems.length > 0 ? '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, TAR, TAR.GZ, TGZ, GZ 파일을 선택해 주세요.' : null)
+
     setExtractItems(prev => {
       const existingPaths = new Set(prev.map(i => i.path))
-      const filtered = newItems.filter(i => !existingPaths.has(i.path))
+      const filtered = validItems.filter(i => !existingPaths.has(i.path))
       return [...prev, ...filtered]
     })
   }
@@ -165,11 +172,16 @@ export const App: React.FC = () => {
 
   const handleClearExtractItems = () => {
     setExtractItems([])
+    setExtractInputError(null)
   }
 
   const handleSelectExtractFilesDialog = async () => {
     if ((window as any).electronAPI) {
-      const paths = await (window as any).electronAPI.selectFiles({ allowDirectories: false })
+      const paths = await (window as any).electronAPI.selectFiles({
+        allowDirectories: false,
+        extensions: ['zip', 'tar', 'tgz', 'gz'],
+        title: 'Select Archive Files to Extract'
+      })
       if (paths.length > 0) {
         handleAddExtractFiles(paths)
       }
@@ -421,6 +433,9 @@ export const App: React.FC = () => {
               onRemoveItem={handleRemoveExtractItem}
               onClearItems={handleClearExtractItems}
               onSelectFilesDialog={handleSelectExtractFilesDialog}
+              allowFolders={false}
+              acceptedFileExtensions={['.zip', '.tar', '.tgz', '.tar.gz', '.gz']}
+              validationError={extractInputError}
             />
             <ExtractionPanel
               items={extractItems}

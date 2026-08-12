@@ -69,7 +69,7 @@ ipcMain.handle('window:close', () => {
   mainWindow?.close()
 })
 
-ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: boolean }) => {
+ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: boolean; extensions?: string[]; title?: string }) => {
   if (!mainWindow) return []
   const properties: ('openFile' | 'openDirectory' | 'multiSelections')[] = ['openFile', 'multiSelections']
   if (options?.allowDirectories) {
@@ -78,7 +78,10 @@ ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: bo
 
   const result = await dialog.showOpenDialog(mainWindow, {
     properties,
-    title: 'Select Files or Folders to Compress'
+    title: options?.title || 'Select Files or Folders to Compress',
+    filters: options?.extensions
+      ? [{ name: 'Supported Archive Files', extensions: options.extensions }]
+      : undefined
   })
 
   if (result.canceled) return []

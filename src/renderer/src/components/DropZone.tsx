@@ -8,6 +8,9 @@ interface DropZoneProps {
   onRemoveItem: (index: number) => void
   onClearItems: () => void
   onSelectFilesDialog: (allowFolder?: boolean) => void
+  allowFolders?: boolean
+  acceptedFileExtensions?: string[]
+  validationError?: string | null
 }
 
 export const DropZone: React.FC<DropZoneProps> = ({
@@ -15,9 +18,19 @@ export const DropZone: React.FC<DropZoneProps> = ({
   onAddFiles,
   onRemoveItem,
   onClearItems,
-  onSelectFilesDialog
+  onSelectFilesDialog,
+  allowFolders = true,
+  acceptedFileExtensions,
+  validationError
 }) => {
   const [isDragOver, setIsDragOver] = useState(false)
+  const [dropError, setDropError] = useState<string | null>(null)
+
+  const acceptsPath = (filePath: string) => {
+    if (!acceptedFileExtensions) return true
+    const normalizedPath = filePath.toLowerCase()
+    return acceptedFileExtensions.some(extension => normalizedPath.endsWith(extension))
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -49,7 +62,15 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }
         return (f as any).path || f.name
       }).filter(Boolean)
-      onAddFiles(paths)
+      const acceptedPaths = paths.filter(acceptsPath)
+
+      if (acceptedPaths.length !== paths.length) {
+        setDropError('ZIP, TAR, TAR.GZ, TGZ, GZ 압축 파일만 추가할 수 있습니다.')
+      } else {
+        setDropError(null)
+      }
+
+      if (acceptedPaths.length > 0) onAddFiles(acceptedPaths)
     }
   }
 
@@ -107,7 +128,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           color: '#362D27',
           marginBottom: '4px'
         }}>
-          파일이나 폴더를 여기에 놓아주세요! 🐾
+          {allowFolders ? '파일이나 폴더를 여기에 놓아주세요! 🐾' : '압축 파일을 여기에 놓아주세요! 🐾'}
         </h3>
         <p style={{
           fontFamily: 'var(--font-sans)',
@@ -115,8 +136,14 @@ export const DropZone: React.FC<DropZoneProps> = ({
           color: '#6E6158',
           marginBottom: '16px'
         }}>
-          여러 파일, 폴더 또는 압축 해제할 파일 선택 가능
+          {allowFolders ? '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능' : 'ZIP, TAR, TAR.GZ, TGZ, GZ 파일만 선택 가능'}
         </p>
+
+        {(dropError || validationError) && (
+          <p role="alert" style={{ marginTop: '-8px', marginBottom: '12px', color: '#E76F51', fontSize: '13px' }}>
+            {dropError || validationError}
+          </p>
+        )}
 
         <div style={{ display: 'flex', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
           <button
@@ -126,13 +153,15 @@ export const DropZone: React.FC<DropZoneProps> = ({
             <FilePlus size={16} />
             파일 찾아보기
           </button>
-          <button
-            className="btn-secondary"
-            onClick={() => onSelectFilesDialog(true)}
-          >
-            <FolderPlus size={16} />
-            폴더 찾아보기
-          </button>
+          {allowFolders && (
+            <button
+              className="btn-secondary"
+              onClick={() => onSelectFilesDialog(true)}
+            >
+              <FolderPlus size={16} />
+              폴더 찾아보기
+            </button>
+          )}
         </div>
       </div>
 
