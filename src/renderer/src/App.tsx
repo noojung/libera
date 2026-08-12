@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { DropZone } from './components/DropZone'
 import { CompressionPanel } from './components/CompressionPanel'
 import { ExtractionPanel } from './components/ExtractionPanel'
 import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
+import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import './styles/theme.css'
 
@@ -13,6 +14,25 @@ export const App: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
   const [jobs, setJobs] = useState<ActiveJob[]>([])
+  const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
+  const passwordPromptResolver = useRef<((password: string | null) => void) | null>(null)
+
+  const isZipPasswordProtected = async (archivePath: string) => {
+    if (!archivePath.toLowerCase().endsWith('.zip') || !(window as any).electronAPI) return false
+    const response = await (window as any).electronAPI.inspectArchive(archivePath)
+    return response.success && response.result?.passwordProtected === true
+  }
+
+  const requestZipPassword = (archiveName: string) => new Promise<string | null>((resolve) => {
+    passwordPromptResolver.current = resolve
+    setPasswordPromptArchive(archiveName)
+  })
+
+  const resolvePasswordPrompt = (password: string | null) => {
+    passwordPromptResolver.current?.(password)
+    passwordPromptResolver.current = null
+    setPasswordPromptArchive(null)
+  }
 
   useEffect(() => {
     if ((window as any).electronAPI) {
@@ -196,7 +216,7 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean; password?: string }) => {
+  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean }) => {
     if (extractItems.length === 0) return
 
     const newJobs: ActiveJob[] = extractItems.map((item, idx) => {
@@ -229,10 +249,18 @@ export const App: React.FC = () => {
       for (let i = 0; i < extractItems.length; i++) {
         const item = extractItems[i]
         const job = newJobs[i]
+        const passwordProtected = await isZipPasswordProtected(item.path)
+        const password = passwordProtected ? await requestZipPassword(item.name) : undefined
+
+        if (passwordProtected && !password) {
+          setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', error: 'Password entry cancelled' } : j))
+          continue
+        }
+
         const res = await (window as any).electronAPI.extractArchive({
           archivePath: item.path,
           targetDir: job.outputPath,
-          password: options.password
+          password
         }, job.id)
 
         setJobs(prev =>
@@ -262,7 +290,11 @@ export const App: React.FC = () => {
     setExtractItems([])
   }
 
-  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[], password?: string) => {
+  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[]) => {
+    const passwordProtected = await isZipPasswordProtected(archivePath)
+    const password = passwordProtected ? await requestZipPassword(archivePath.split(/[/\\]/).pop() || 'ZIP archive') : undefined
+    if (passwordProtected && !password) return
+
     const jobId = `job-${Date.now()}`
     const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
 
@@ -376,6 +408,13 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+      {passwordPromptArchive && (
+        <PasswordPromptModal
+          archiveName={passwordPromptArchive}
+          onConfirm={(password) => resolvePasswordPrompt(password)}
+          onCancel={() => resolvePasswordPrompt(null)}
+        />
+      )}
     </div>
   )
 }

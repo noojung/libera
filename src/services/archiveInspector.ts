@@ -17,6 +17,7 @@ export interface ArchiveEntry {
 export interface ArchiveInspectionResult {
   archivePath: string
   format: string
+  passwordProtected: boolean
   totalFiles: number
   totalUncompressedSize: number
   totalCompressedSize: number
@@ -38,6 +39,7 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
   if (ext === '.zip') {
     const zip = new AdmZip(archivePath)
     const zipEntries = zip.getEntries()
+    const passwordProtected = zipEntries.some(entry => (entry.header as any).encrypted)
     let totalUncompressedSize = 0
     let entriesCompressedSizeSum = 0
 
@@ -68,6 +70,7 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
     return {
       archivePath,
       format: 'ZIP',
+      passwordProtected,
       totalFiles: entries.filter(e => !e.isDirectory).length,
       totalUncompressedSize,
       totalCompressedSize,
@@ -102,6 +105,7 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
     return {
       archivePath,
       format: fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz') ? 'TAR.GZ' : 'TAR',
+      passwordProtected: false,
       totalFiles: entries.filter(e => !e.isDirectory).length,
       totalUncompressedSize,
       totalCompressedSize,
@@ -130,6 +134,7 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
     return {
       archivePath,
       format: 'GZ',
+      passwordProtected: false,
       totalFiles: 1,
       totalUncompressedSize: uncompressedSize,
       totalCompressedSize,

@@ -4,13 +4,12 @@ import { SelectedItem } from '../types'
 
 interface ExtractionPanelProps {
   items: SelectedItem[]
-  onStartBatchExtract: (options: { targetDir: string; createSubfolder: boolean; password?: string }) => void
+  onStartBatchExtract: (options: { targetDir: string; createSubfolder: boolean }) => void
 }
 
 export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStartBatchExtract }) => {
   const [targetDir, setTargetDir] = useState<string>('')
   const [createSubfolder, setCreateSubfolder] = useState<boolean>(true)
-  const [password, setPassword] = useState<string>('')
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -32,8 +31,7 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
     if (!targetDir || items.length === 0) return
     onStartBatchExtract({
       targetDir,
-      createSubfolder,
-      password: password || undefined
+      createSubfolder
     })
   }
 
@@ -77,19 +75,6 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
         </div>
       </div>
 
-      <div>
-        <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
-          ZIP 비밀번호 <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#6E6158', fontWeight: 400 }}>(암호화된 ZIP만)</span>
-        </label>
-        <input
-          type="password"
-          className="input-text"
-          placeholder="암호화된 ZIP 해제 시 입력"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-        />
-      </div>
 
       {/* Extraction Subfolder Option */}
       <div style={{
