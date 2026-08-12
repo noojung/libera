@@ -57,6 +57,192 @@ body {
   flex-direction: column;
 }
 
+/* Platform-aware application title bar */
+.titlebar {
+  position: relative;
+  z-index: 1000;
+  flex: 0 0 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  background: #FAF7F2;
+  border-bottom: 2px solid var(--border-doodle);
+  -webkit-app-region: drag;
+}
+
+.titlebar--macos {
+  flex-basis: 52px;
+  height: 52px;
+  padding: 0 16px 0 84px;
+}
+
+.titlebar--windows {
+  padding-left: 16px;
+}
+
+.titlebar--browser {
+  padding: 0 16px;
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.titlebar__logo {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 50%;
+  background: #FFFFFF;
+  padding: 2px;
+  pointer-events: none;
+}
+
+.titlebar__brand-name {
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.titlebar__tabs {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border: 2px solid var(--border-doodle);
+  border-radius: 14px;
+  background: #FFF3E4;
+  transform: translate(-50%, -50%);
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__tab {
+  --titlebar-tab-accent: transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 14px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-cute);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.titlebar__tab--compress {
+  --titlebar-tab-accent: var(--accent-peach);
+}
+
+.titlebar__tab--extract {
+  --titlebar-tab-accent: var(--accent-blue);
+}
+
+.titlebar__tab--inspect {
+  --titlebar-tab-accent: var(--status-warning);
+}
+
+.titlebar__tab--queue {
+  --titlebar-tab-accent: var(--accent-mint);
+}
+
+.titlebar__tab:not(.is-active):hover {
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+
+.titlebar__tab.is-active {
+  border-color: var(--border-doodle);
+  background: var(--titlebar-tab-accent);
+  color: #FFFFFF;
+  box-shadow: 1.5px 1.5px 0 var(--border-doodle);
+}
+
+.titlebar__tab:focus-visible,
+.titlebar__window-button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -3px;
+}
+
+.titlebar__queue-count {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-doodle);
+  border-radius: 999px;
+  background: var(--status-danger);
+  color: #FFFFFF;
+  font-family: var(--font-cute);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.titlebar__window-controls {
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__window-button {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.titlebar__window-button:hover {
+  background: #EDE5DC;
+  color: var(--text-main);
+}
+
+.titlebar__window-button:active {
+  background: #E1D7CC;
+}
+
+.titlebar__window-button--close:hover,
+.titlebar__window-button--close:active {
+  background: var(--status-danger);
+  color: #FFFFFF;
+}
+
+@media (max-width: 860px) {
+  .titlebar__brand-name {
+    display: none;
+  }
+
+  .titlebar__tab {
+    gap: 4px;
+    padding-inline: 9px;
+  }
+}
+
 /* Custom Cute Scrollbars */
 ::-webkit-scrollbar {
   width: 8px;

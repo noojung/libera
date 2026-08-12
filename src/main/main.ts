@@ -8,13 +8,21 @@ import { inspectArchive } from '../services/archiveInspector'
 let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
+  const isMacOS = process.platform === 'darwin'
+
   mainWindow = new BrowserWindow({
     width: 1050,
     height: 720,
     minWidth: 800,
     minHeight: 600,
-    frame: false, // Custom frameless titlebar for sleek modern UI
-    titleBarStyle: 'hidden',
+    ...(isMacOS
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 16, y: 19 }
+        }
+      : {
+          frame: false
+        }),
     backgroundColor: '#FFFFFF',
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),

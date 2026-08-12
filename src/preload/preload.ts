@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
+export type DesktopPlatform = 'macos' | 'windows'
+
 export interface ElectronAPI {
+  platform: DesktopPlatform
   minimizeWindow: () => Promise<void>
   maximizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
@@ -18,6 +21,7 @@ export interface ElectronAPI {
 }
 
 const api: ElectronAPI = {
+  platform: process.platform === 'darwin' ? 'macos' : 'windows',
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
