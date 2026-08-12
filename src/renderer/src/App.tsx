@@ -325,73 +325,6 @@ export const App: React.FC = () => {
     setExtractItems([])
   }
 
-  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[]) => {
-    const passwordProtected = await isZipPasswordProtected(archivePath)
-    const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
-    const initialPassword = passwordProtected ? await requestZipPassword(archiveName) : undefined
-    if (passwordProtected && !initialPassword) return
-
-    const jobId = `job-${Date.now()}`
-
-    const newJob: ActiveJob = {
-      id: jobId,
-      type: 'extract',
-      name: selectedEntries ? `Extract ${selectedEntries.length} items from ${archiveName}` : `Extract ${archiveName}`,
-      format: archivePath.split('.').pop() || 'zip',
-      outputPath: targetDir,
-      status: 'running',
-      processedBytes: 0,
-      totalBytes: 100,
-      percent: 0,
-      currentFile: 'Extracting...',
-      startTime: Date.now()
-    }
-
-    setJobs(prev => [newJob, ...prev])
-    setMode('queue')
-
-    if ((window as any).electronAPI) {
-      const res = await extractWithPasswordRetry(
-        archiveName,
-        passwordProtected,
-        (password) => (window as any).electronAPI.extractArchive({
-          archivePath,
-          targetDir,
-          selectedEntries,
-          password
-        }, jobId),
-        initialPassword || undefined
-      )
-
-      if (!res) {
-        setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: 'Password entry cancelled' } : j))
-        return
-      }
-
-      setJobs(prev =>
-        prev.map(j => {
-          if (j.id === jobId) {
-            if (res.success) {
-              return {
-                ...j,
-                status: 'completed',
-                percent: 100,
-                durationMs: res.result.durationMs
-              }
-            } else {
-              return {
-                ...j,
-                status: 'error',
-                error: res.error
-              }
-            }
-          }
-          return j
-        })
-      )
-    }
-  }
-
   const handleOpenFolder = (targetPath: string) => {
     if ((window as any).electronAPI) {
       (window as any).electronAPI.openFolder(targetPath)
@@ -445,7 +378,7 @@ export const App: React.FC = () => {
         )}
 
         {mode === 'inspect' && (
-          <ArchiveInspector onStartExtract={handleStartExtract} />
+          <ArchiveInspector />
         )}
 
         {mode === 'queue' && (
