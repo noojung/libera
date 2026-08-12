@@ -52,6 +52,7 @@
   "dependencies": {
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
+    "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",

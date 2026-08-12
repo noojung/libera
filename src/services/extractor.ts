@@ -9,6 +9,7 @@ export interface ExtractionOptions {
   archivePath: string
   targetDir: string
   selectedEntries?: string[] // Optional filter for selective extraction
+  password?: string
 }
 
 export async function extractArchive(
@@ -16,7 +17,7 @@ export async function extractArchive(
   onProgress?: ProgressCallback
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
   const startTime = Date.now()
-  const { archivePath, targetDir, selectedEntries } = options
+  const { archivePath, targetDir, selectedEntries, password } = options
 
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true })
@@ -29,7 +30,7 @@ export async function extractArchive(
     return new Promise((resolve, reject) => {
       try {
         const zip = new AdmZip(archivePath)
-        const entries = zip.getEntries()
+        const entries = (zip as any).getEntries(password)
         const totalEntries = entries.length
         let extractedCount = 0
 
@@ -37,7 +38,7 @@ export async function extractArchive(
 
         for (let i = 0; i < entries.length; i++) {
           const entry = entries[i]
-          if (filterMap && !filterMap.has(entry.entryName)) {
+          if (entry.isDirectory || (filterMap && !filterMap.has(entry.entryName))) {
             continue
           }
 

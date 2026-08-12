@@ -18,7 +18,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [customName] = useState<string>('archive')
   const [outputPath, setOutputPath] = useState<string>('')
   const [defaultDir, setDefaultDir] = useState<string>('')
-  const [password] = useState<string>('')
+  const [password, setPassword] = useState<string>('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState<string>('')
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -46,6 +47,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   }
 
   const handleCompress = () => {
+    if (format === 'zip' && password !== passwordConfirmation) {
+      return
+    }
     const sep = defaultDir.includes('\\') ? '\\' : '/'
     const fallbackPath = defaultDir ? `${defaultDir}${sep}${customName}.${format}` : `${customName}.${format}`
     const finalOutput = outputPath || fallbackPath
@@ -53,7 +57,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       format,
       level,
       outputPath: finalOutput,
-      password: password || undefined
+      password: format === 'zip' ? password || undefined : undefined
     })
   }
 
@@ -133,6 +137,24 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         />
       </div>
 
+      {format === 'zip' && (
+        <div>
+          <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
+            ZIP 비밀번호 <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#6E6158', fontWeight: 400 }}>(선택)</span>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <input type="password" className="input-text" placeholder="비밀번호 입력" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <input type="password" className="input-text" placeholder="비밀번호 확인" value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
+          </div>
+          {password && password !== passwordConfirmation && (
+            <p style={{ fontSize: '12px', color: '#E76F51', marginTop: '6px' }}>비밀번호가 일치하지 않습니다.</p>
+          )}
+          {password && password === passwordConfirmation && (
+            <p style={{ fontSize: '12px', color: '#6E6158', marginTop: '6px' }}>ZIP 호환용 암호화가 적용됩니다. 강한 기밀 보호 용도로는 권장하지 않습니다.</p>
+          )}
+        </div>
+      )}
+
       {/* Save Destination */}
       <div>
         <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
@@ -156,13 +178,13 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       <button
         className="btn-primary"
         onClick={handleCompress}
-        disabled={items.length === 0}
+        disabled={items.length === 0 || (format === 'zip' && password !== passwordConfirmation)}
         style={{
           width: '100%',
           justifyContent: 'center',
           padding: '12px',
-          opacity: items.length === 0 ? 0.5 : 1,
-          cursor: items.length === 0 ? 'not-allowed' : 'pointer'
+          opacity: (items.length === 0 || (format === 'zip' && password !== passwordConfirmation)) ? 0.5 : 1,
+          cursor: (items.length === 0 || (format === 'zip' && password !== passwordConfirmation)) ? 'not-allowed' : 'pointer'
         }}
       >
         <Archive size={20} />

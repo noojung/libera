@@ -4,6 +4,12 @@ import archiver from 'archiver'
 import * as tar from 'tar'
 import zlib from 'zlib'
 
+// Archiver does not provide password protection for ZIP archives itself.
+// This plugin adds the ZipCrypto format used below. It is registered once when
+// this module is loaded; registering it per job would throw in later jobs.
+const zipEncrypted = require('archiver-zip-encrypted')
+archiver.registerFormat('zip-encrypted', zipEncrypted)
+
 export interface CompressionOptions {
   inputPaths: string[]
   outputPath: string
@@ -49,6 +55,10 @@ export async function compressArchive(
   const startTime = Date.now()
   const { inputPaths, outputPath, format, level = 6 } = options
 
+  if (options.password && format !== 'zip') {
+    throw new Error('Password protection is currently available for ZIP archives only.')
+  }
+
   // Ensure output directory exists
   const outputDir = path.dirname(outputPath)
   if (!fs.existsSync(outputDir)) {
@@ -61,9 +71,23 @@ export async function compressArchive(
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath)
       
-      const archiverFormat = format === 'tgz' ? 'tar' : format
+      const archiverFormat = format === 'tgz'
+        ? 'tar'
+        : format === 'zip' && options.password
+          ? 'zip-encrypted'
+          : format
       const archiveOptions: archiver.ArchiverOptions = {
         zlib: { level }
+      }
+
+      if (options.password) {
+        // ZipCrypto is intentionally used instead of AES so the archive can
+        // also be extracted by the app's current ZIP reader (adm-zip).
+        // The UI explains that this is for compatibility, not strong secrecy.
+        Object.assign(archiveOptions, {
+          password: options.password,
+          encryptionMethod: 'zip20'
+        })
       }
 
       if (format === 'tgz') {

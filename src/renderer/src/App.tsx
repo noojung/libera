@@ -196,7 +196,7 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean }) => {
+  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean; password?: string }) => {
     if (extractItems.length === 0) return
 
     const newJobs: ActiveJob[] = extractItems.map((item, idx) => {
@@ -231,7 +231,8 @@ export const App: React.FC = () => {
         const job = newJobs[i]
         const res = await (window as any).electronAPI.extractArchive({
           archivePath: item.path,
-          targetDir: job.outputPath
+          targetDir: job.outputPath,
+          password: options.password
         }, job.id)
 
         setJobs(prev =>
@@ -261,7 +262,7 @@ export const App: React.FC = () => {
     setExtractItems([])
   }
 
-  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[]) => {
+  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[], password?: string) => {
     const jobId = `job-${Date.now()}`
     const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
 
@@ -286,7 +287,8 @@ export const App: React.FC = () => {
       const res = await (window as any).electronAPI.extractArchive({
         archivePath,
         targetDir,
-        selectedEntries
+        selectedEntries,
+        password
       }, jobId)
 
       setJobs(prev =>

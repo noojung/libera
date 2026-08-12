@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Folder, File, Search, Download, ShieldAlert, CheckSquare, Square, Filter } from 'lucide-react'
 
 interface ArchiveInspectorProps {
-  onStartExtract: (archivePath: string, targetDir: string, selectedEntries?: string[]) => void
+  onStartExtract: (archivePath: string, targetDir: string, selectedEntries?: string[], password?: string) => void
 }
 
 export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtract }) => {
@@ -12,6 +12,7 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [password, setPassword] = useState<string>('')
 
   const handleOpenArchive = async () => {
     if (!(window as any).electronAPI) return
@@ -71,7 +72,7 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
     if (!archivePath) return
     const targetDir = await (window as any).electronAPI.selectExtractFolder()
     if (targetDir) {
-      onStartExtract(archivePath, targetDir)
+      onStartExtract(archivePath, targetDir, undefined, password || undefined)
     }
   }
 
@@ -79,7 +80,7 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
     if (!archivePath || selectedPaths.size === 0) return
     const targetDir = await (window as any).electronAPI.selectExtractFolder()
     if (targetDir) {
-      onStartExtract(archivePath, targetDir, Array.from(selectedPaths))
+      onStartExtract(archivePath, targetDir, Array.from(selectedPaths), password || undefined)
     }
   }
 
@@ -153,6 +154,17 @@ export const ArchiveInspector: React.FC<ArchiveInspectorProps> = ({ onStartExtra
           <button className="btn-secondary" onClick={handleOpenArchive}>
             파일 열기...
           </button>
+          {inspectData && (
+            <input
+              type="password"
+              className="input-text"
+              placeholder="암호화된 ZIP 비밀번호"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              style={{ width: '180px', padding: '8px 10px' }}
+            />
+          )}
           {inspectData && selectedPaths.size > 0 && (
             <button className="btn-secondary" onClick={handleExtractSelected} style={{ background: '#FFF3E4', borderColor: '#FF8E72', color: '#FF8E72' }}>
               <Download size={16} />
