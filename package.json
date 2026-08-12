@@ -26,6 +26,9 @@
     ],
     "mac": {
       "icon": "logo.png",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
       "target": [
         {
           "target": "dmg",
@@ -45,6 +48,7 @@
     },
     "win": {
       "icon": "logo.png",
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
       "target": [
         {
           "target": "nsis",

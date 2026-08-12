@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and package versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tags must use the vMAJOR.MINOR.PATCH format." >&2
+            exit 1
+          fi
+
+          version="${GITHUB_REF_NAME#v}"
+          node - "$version" <<'NODE'
+          const fs = require('node:fs')
+
+          const version = process.argv[2]
+          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const versions = {
+            tag: version,
+            'package.json': packageJson.version,
+            'package-lock.json': packageLock.version,
+            'package-lock.json root package': packageLock.packages?.['']?.version
+          }
+
+          const mismatches = Object.entries(versions).filter(([, value]) => value !== version)
+          if (mismatches.length > 0) {
+            console.error(`Release version mismatch: ${JSON.stringify(versions)}`)
+            process.exit(1)
+          }
+          NODE
+
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "The release tag must point to a commit contained in main." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - name: macOS Intel
+            runner: macos-15-intel
+            command: npx electron-builder --mac dmg --x64 --publish never
+            artifact: installer-mac-x64
+            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-mac-x64.dmg
+          - name: macOS Apple Silicon
+            runner: macos-15
+            command: npx electron-builder --mac dmg --arm64 --publish never
+            artifact: installer-mac-arm64
+            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-mac-arm64.dmg
+          - name: Windows x64
+            runner: windows-latest
+            command: npx electron-builder --win nsis --x64 --publish never
+            artifact: installer-windows-x64
+            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-windows-x64-setup.exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Build installer
+        run: ${{ matrix.command }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          expected=(
+            "Libera-${VERSION}-mac-x64.dmg"
+            "Libera-${VERSION}-mac-arm64.dmg"
+            "Libera-${VERSION}-windows-x64-setup.exe"
+          )
+
+          mapfile -t actual < <(find release-assets -maxdepth 1 -type f -print)
+          if [[ "${#actual[@]}" -ne "${#expected[@]}" ]]; then
+            echo "Expected ${#expected[@]} release assets, found ${#actual[@]}." >&2
+            printf '%s\n' "${actual[@]}" >&2
+            exit 1
+          fi
+
+          for filename in "${expected[@]}"; do
+            if [[ ! -f "release-assets/$filename" ]]; then
+              echo "Missing release asset: $filename" >&2
+              exit 1
+            fi
+          done
+
+      - name: Create and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          repository="$GITHUB_REPOSITORY"
+
+          if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$tag" --repo "$repository" --json isDraft --jq '.isDraft')"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $tag is already published; refusing to overwrite it." >&2
+              exit 1
+            fi
+          else
+            gh release create "$tag" \
+              --repo "$repository" \
+              --verify-tag \
+              --draft \
+              --title "$tag" \
+              --generate-notes
+          fi
+
+          gh release upload "$tag" release-assets/* \
+            --repo "$repository" \
+            --clobber
+          gh release edit "$tag" \
+            --repo "$repository" \
+            --draft=false

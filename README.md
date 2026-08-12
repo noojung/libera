@@ -26,7 +26,26 @@ npm run dev
 | `npm run build` | Type-check and create a production bundle |
 | `npm run dist` | Create distributable files with electron-builder |
 
-`npm run dist` writes artifacts to `release/<version>`. The project is configured to build DMG/ZIP files for macOS (x64 and arm64) and an NSIS installer for Windows (x64). Code signing, macOS notarization, and automated release publishing are not configured yet.
+`npm run dist` writes artifacts to `release/<version>`. The project is configured to build DMG/ZIP files for macOS (x64 and arm64) and an NSIS installer for Windows (x64).
+
+## Releases
+
+GitHub Actions publishes a release when a stable semantic version tag such as `v1.2.3` is pushed. The tag must point to a commit contained in `main`, and its version must match both `package.json` and `package-lock.json`.
+
+To publish the next version from a clean `main` branch:
+
+```bash
+npm version patch
+git push origin main --follow-tags
+```
+
+Use `npm version minor` or `npm version major` instead when appropriate. After validation and all platform builds succeed, the workflow publishes these installers:
+
+- `Libera-<version>-mac-x64.dmg`
+- `Libera-<version>-mac-arm64.dmg`
+- `Libera-<version>-windows-x64-setup.exe`
+
+These installers are currently unsigned and the macOS build is not notarized. macOS Gatekeeper and Windows SmartScreen may therefore display a warning. Code-signing credentials should be added as GitHub Actions secrets before distributing the application to a broad audience.
 
 ## Supported Formats
 
