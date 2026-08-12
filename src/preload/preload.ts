@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 export interface ElectronAPI {
   minimizeWindow: () => Promise<void>
@@ -13,6 +13,7 @@ export interface ElectronAPI {
   openFolder: (targetPath: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
+  getPathForFile: (file: File) => string
   onProgress: (callback: (data: any) => void) => () => void
 }
 
@@ -29,6 +30,7 @@ const api: ElectronAPI = {
   openFolder: (targetPath) => ipcRenderer.invoke('shell:openFolder', targetPath),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   onProgress: (callback) => {
     const handler = (_: any, data: any) => callback(data)
     ipcRenderer.on('archive:progress', handler)

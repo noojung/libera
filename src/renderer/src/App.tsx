@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { DropZone } from './components/DropZone'
 import { CompressionPanel } from './components/CompressionPanel'
+import { ExtractionPanel } from './components/ExtractionPanel'
 import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
 import { AppMode, SelectedItem, ActiveJob } from './types'
@@ -10,6 +11,7 @@ import './styles/theme.css'
 export const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>('compress')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
+  const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
   const [jobs, setJobs] = useState<ActiveJob[]>([])
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export const App: React.FC = () => {
     return undefined
   }, [])
 
+  // Compress Tab Handlers
   const handleAddFiles = async (paths: string[]) => {
     let newItems: SelectedItem[] = []
     if ((window as any).electronAPI?.getItemStat) {
@@ -83,6 +86,54 @@ export const App: React.FC = () => {
     }
   }
 
+  // Extract Tab Handlers
+  const handleAddExtractFiles = async (paths: string[]) => {
+    let newItems: SelectedItem[] = []
+    if ((window as any).electronAPI?.getItemStat) {
+      const stats = await (window as any).electronAPI.getItemStat(paths)
+      newItems = stats.map((s: { path: string; name: string; isDirectory: boolean; size: number }) => ({
+        path: s.path,
+        name: s.name,
+        isDirectory: s.isDirectory,
+        size: s.size
+      }))
+    } else {
+      newItems = paths.map(p => {
+        const name = p.split(/[/\\]/).pop() || p
+        return {
+          path: p,
+          name,
+          isDirectory: false,
+          size: 1024 * 10
+        }
+      })
+    }
+
+    setExtractItems(prev => {
+      const existingPaths = new Set(prev.map(i => i.path))
+      const filtered = newItems.filter(i => !existingPaths.has(i.path))
+      return [...prev, ...filtered]
+    })
+  }
+
+  const handleRemoveExtractItem = (index: number) => {
+    setExtractItems(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleClearExtractItems = () => {
+    setExtractItems([])
+  }
+
+  const handleSelectExtractFilesDialog = async () => {
+    if ((window as any).electronAPI) {
+      const paths = await (window as any).electronAPI.selectFiles({ allowDirectories: false })
+      if (paths.length > 0) {
+        handleAddExtractFiles(paths)
+      }
+    }
+  }
+
+  // Job Triggers
   const handleStartCompress = async (options: {
     format: 'zip' | 'tar' | 'gz' | 'tgz'
     level: number
@@ -145,14 +196,79 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleStartExtract = async (archivePath: string, targetDir: string) => {
+  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean }) => {
+    if (extractItems.length === 0) return
+
+    const newJobs: ActiveJob[] = extractItems.map((item, idx) => {
+      const jobId = `job-${Date.now()}-${idx}`
+      const archiveName = item.name.replace(/\.[^/.]+$/, '')
+      const sep = options.targetDir.includes('\\') ? '\\' : '/'
+      const outputPath = options.createSubfolder
+        ? `${options.targetDir}${sep}${archiveName}`
+        : options.targetDir
+
+      return {
+        id: jobId,
+        type: 'extract',
+        name: `Extract ${item.name}`,
+        format: item.name.split('.').pop() || 'zip',
+        outputPath,
+        status: 'running',
+        processedBytes: 0,
+        totalBytes: 100,
+        percent: 0,
+        currentFile: 'Extracting...',
+        startTime: Date.now()
+      }
+    })
+
+    setJobs(prev => [...newJobs, ...prev])
+    setMode('queue')
+
+    if ((window as any).electronAPI) {
+      for (let i = 0; i < extractItems.length; i++) {
+        const item = extractItems[i]
+        const job = newJobs[i]
+        const res = await (window as any).electronAPI.extractArchive({
+          archivePath: item.path,
+          targetDir: job.outputPath
+        }, job.id)
+
+        setJobs(prev =>
+          prev.map(j => {
+            if (j.id === job.id) {
+              if (res.success) {
+                return {
+                  ...j,
+                  status: 'completed',
+                  percent: 100,
+                  durationMs: res.result.durationMs
+                }
+              } else {
+                return {
+                  ...j,
+                  status: 'error',
+                  error: res.error
+                }
+              }
+            }
+            return j
+          })
+        )
+      }
+    }
+
+    setExtractItems([])
+  }
+
+  const handleStartExtract = async (archivePath: string, targetDir: string, selectedEntries?: string[]) => {
     const jobId = `job-${Date.now()}`
     const archiveName = archivePath.split(/[/\\]/).pop() || 'Archive'
 
     const newJob: ActiveJob = {
       id: jobId,
       type: 'extract',
-      name: `Extract ${archiveName}`,
+      name: selectedEntries ? `Extract ${selectedEntries.length} items from ${archiveName}` : `Extract ${archiveName}`,
       format: archivePath.split('.').pop() || 'zip',
       outputPath: targetDir,
       status: 'running',
@@ -169,7 +285,8 @@ export const App: React.FC = () => {
     if ((window as any).electronAPI) {
       const res = await (window as any).electronAPI.extractArchive({
         archivePath,
-        targetDir
+        targetDir,
+        selectedEntries
       }, jobId)
 
       setJobs(prev =>
@@ -230,7 +347,19 @@ export const App: React.FC = () => {
         )}
 
         {mode === 'extract' && (
-          <ArchiveInspector onStartExtract={handleStartExtract} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', height: '100%' }}>
+            <DropZone
+              items={extractItems}
+              onAddFiles={handleAddExtractFiles}
+              onRemoveItem={handleRemoveExtractItem}
+              onClearItems={handleClearExtractItems}
+              onSelectFilesDialog={handleSelectExtractFilesDialog}
+            />
+            <ExtractionPanel
+              items={extractItems}
+              onStartBatchExtract={handleStartBatchExtract}
+            />
+          </div>
         )}
 
         {mode === 'inspect' && (

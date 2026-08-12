@@ -66,9 +66,14 @@ export async function extractArchive(
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
     return new Promise((resolve, reject) => {
       let count = 0
+      const filterMap = selectedEntries ? new Set(selectedEntries) : null
       tar.x({
         file: archivePath,
         cwd: targetDir,
+        filter: (entryPath: string) => {
+          if (!filterMap) return true
+          return filterMap.has(entryPath)
+        },
         onentry: (entry: any) => {
           count++
           if (onProgress) {

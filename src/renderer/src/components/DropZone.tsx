@@ -38,7 +38,17 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
     const droppedFiles = Array.from(e.dataTransfer.files)
     if (droppedFiles.length > 0) {
-      const paths = droppedFiles.map((f: any) => f.path || f.name)
+      const paths = droppedFiles.map((f: File) => {
+        if ((window as any).electronAPI?.getPathForFile) {
+          try {
+            const p = (window as any).electronAPI.getPathForFile(f)
+            if (p) return p
+          } catch {
+            // fallback
+          }
+        }
+        return (f as any).path || f.name
+      }).filter(Boolean)
       onAddFiles(paths)
     }
   }
