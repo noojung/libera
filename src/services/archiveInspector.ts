@@ -41,11 +41,9 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
     const zipEntries = zip.getEntries()
     const passwordProtected = zipEntries.some(entry => (entry.header as any).encrypted)
     let totalUncompressedSize = 0
-    let entriesCompressedSizeSum = 0
 
     const entries: ArchiveEntry[] = zipEntries.map((entry, idx) => {
       totalUncompressedSize += entry.header.size
-      entriesCompressedSizeSum += entry.header.compressedSize
 
       const ratio = entry.header.size > 0 
         ? Math.round((1 - (entry.header.compressedSize / entry.header.size)) * 100) 

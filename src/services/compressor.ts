@@ -1,7 +1,6 @@
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import archiver from 'archiver'
-import * as tar from 'tar'
 import zlib from 'zlib'
 
 // Archiver does not provide password protection for ZIP archives itself.

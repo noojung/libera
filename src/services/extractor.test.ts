@@ -6,7 +6,7 @@ import zlib from 'zlib'
 import AdmZip from 'adm-zip'
 import * as tar from 'tar'
 import { strToU8, zipSync } from 'fflate'
-import { extractArchive } from './extractor'
+import { extractArchive, isSupportedArchivePath } from './extractor'
 
 const temporaryDirectories: string[] = []
 
@@ -29,6 +29,12 @@ afterEach(async () => {
 })
 
 describe('extractArchive security checks', () => {
+  it('recognizes supported archive extensions case-insensitively', () => {
+    expect(isSupportedArchivePath('/tmp/archive.ZIP')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/archive.TAR.GZ')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/archive.7z')).toBe(false)
+  })
+
   it('extracts a normal ZIP entry inside the target directory', async () => {
     const directory = await createTemporaryDirectory()
     const archivePath = path.join(directory, 'archive.zip')

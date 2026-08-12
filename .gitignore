@@ -18,6 +18,7 @@ dist/
 out/
 build/
 release/
+coverage/
 
 # Environment variables
 .env
