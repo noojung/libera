@@ -30,20 +30,15 @@ npm run dev
 
 ## Releases
 
-GitHub Actions publishes a release when a stable semantic version tag such as `v1.2.3` is pushed. The tag must point to a commit contained in `main`, and its version must match both `package.json` and `package-lock.json`.
+Releases are started manually from **GitHub → Actions → Release → Run workflow**. Select the `main` branch and enter the exact stable semantic version without a `v` prefix, such as `1.2.3`.
 
-To publish the next version from a clean `main` branch:
-
-```bash
-npm version patch
-git push origin main --follow-tags
-```
-
-Use `npm version minor` or `npm version major` instead when appropriate. After validation and all platform builds succeed, the workflow publishes these installers:
+The workflow validates the requested version, updates `package.json` and `package-lock.json`, and pushes the version commit to `main` as `github-actions[bot]`. After validation and all platform builds succeed, it creates the corresponding `v<version>` tag and publishes these installers:
 
 - `Libera-<version>-mac-x64.dmg`
 - `Libera-<version>-mac-arm64.dmg`
 - `Libera-<version>-windows-x64-setup.exe`
+
+The workflow uses the repository's built-in `GITHUB_TOKEN`; no personal access token is required. Repository rules for `main` must allow GitHub Actions to push the version commit directly.
 
 The macOS app bundle is ad-hoc signed to keep Electron and its nested helpers
 internally consistent, but it is not signed with a paid Apple Developer ID or

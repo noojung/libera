@@ -1,75 +1,160 @@
 name: Release
 
+run-name: Release v${{ inputs.version }}
+
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version to release without the v prefix (for example, 1.0.2)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  validate:
-    name: Validate release
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
     steps:
-      - name: Check out source
+      - name: Check out main
         uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
-
-      - name: Validate tag and package versions
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release tags must use the vMAJOR.MINOR.PATCH format." >&2
-            exit 1
-          fi
-
-          version="${GITHUB_REF_NAME#v}"
-          node - "$version" <<'NODE'
-          const fs = require('node:fs')
-
-          const version = process.argv[2]
-          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
-          const versions = {
-            tag: version,
-            'package.json': packageJson.version,
-            'package-lock.json': packageLock.version,
-            'package-lock.json root package': packageLock.packages?.['']?.version
-          }
-
-          const mismatches = Object.entries(versions).filter(([, value]) => value !== version)
-          if (mismatches.length > 0) {
-            console.error(`Release version mismatch: ${JSON.stringify(versions)}`)
-            process.exit(1)
-          }
-          NODE
-
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
-          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
-            echo "The release tag must point to a commit contained in main." >&2
-            exit 1
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+
+      - name: Validate and update version
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release workflows must be run from the main branch." >&2
+            exit 1
+          fi
+
+          if [[ ! "$TARGET_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The version must use the MAJOR.MINOR.PATCH format without a v prefix." >&2
+            exit 1
+          fi
+
+          git fetch --force origin main:refs/remotes/origin/main
+          git fetch --force --tags origin
+
+          local_commit="$(git rev-parse HEAD)"
+          main_commit="$(git rev-parse origin/main)"
+          if [[ "$local_commit" != "$main_commit" ]]; then
+            echo "The workflow must start from the latest commit on main." >&2
+            exit 1
+          fi
+
+          current_version="$(node <<'NODE'
+          const fs = require('node:fs')
+
+          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const versions = {
+            'package.json': packageJson.version,
+            'package-lock.json': packageLock.version,
+            'package-lock.json root package': packageLock.packages?.['']?.version
+          }
+          const uniqueVersions = new Set(Object.values(versions))
+
+          if (uniqueVersions.size !== 1 || [...uniqueVersions].some(value => typeof value !== 'string')) {
+            console.error(`Package versions are not synchronized: ${JSON.stringify(versions)}`)
+            process.exit(1)
+          }
+
+          process.stdout.write(packageJson.version)
+          NODE
+          )"
+
+          if [[ ! "$current_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Current package version $current_version is not a stable semantic version." >&2
+            exit 1
+          fi
+
+          version_order="$(node - "$current_version" "$TARGET_VERSION" <<'NODE'
+          const current = process.argv[2].split('.').map(Number)
+          const target = process.argv[3].split('.').map(Number)
+
+          for (let index = 0; index < 3; index += 1) {
+            if (target[index] > current[index]) {
+              process.stdout.write('greater')
+              process.exit(0)
+            }
+            if (target[index] < current[index]) {
+              process.stdout.write('lower')
+              process.exit(0)
+            }
+          }
+
+          process.stdout.write('equal')
+          NODE
+          )"
+
+          tag="v${TARGET_VERSION}"
+          tag_exists=false
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            tag_exists=true
+            tag_commit="$(git rev-list -n 1 "$tag")"
+            if [[ "$tag_commit" != "$local_commit" ]]; then
+              echo "Tag $tag already points to a different commit." >&2
+              exit 1
+            fi
+
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+              if [[ "$is_draft" != "true" ]]; then
+                echo "Release $tag is already published." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          case "$version_order" in
+            lower)
+              echo "Target version $TARGET_VERSION must not be lower than current version $current_version." >&2
+              exit 1
+              ;;
+            equal)
+              echo "Version files already contain $TARGET_VERSION; continuing a previous release attempt."
+              version_changed=false
+              ;;
+            greater)
+              if [[ "$tag_exists" == "true" ]]; then
+                echo "Tag $tag already exists before its version commit was created." >&2
+                exit 1
+              fi
+              npm version "$TARGET_VERSION" --no-git-tag-version
+              version_changed=true
+              ;;
+          esac
+
+          echo "version=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version_changed=$version_changed" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm ci
@@ -83,9 +168,47 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Commit and push version
+        if: steps.version.outputs.version_changed == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+
+          if git diff --cached --quiet; then
+            echo "The version command did not update package.json or package-lock.json." >&2
+            exit 1
+          fi
+
+          unexpected_files="$(git diff --cached --name-only | grep -Ev '^(package.json|package-lock.json)$' || true)"
+          if [[ -n "$unexpected_files" ]]; then
+            echo "Unexpected files were staged for the version commit:" >&2
+            printf '%s\n' "$unexpected_files" >&2
+            exit 1
+          fi
+
+          commit_body="$(printf '%s\n' \
+            "- Update the Libera package version to $VERSION." \
+            "- Keep package.json and package-lock.json root metadata synchronized." \
+            "- Prepare version metadata for the v$VERSION release workflow.")"
+          git commit \
+            -m "Bump application version to $VERSION" \
+            -m "$commit_body"
+          git push origin HEAD:main
+
+      - name: Resolve release commit
+        id: commit
+        shell: bash
+        run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.name }}
-    needs: validate
+    needs: prepare
     strategy:
       matrix:
         include:
@@ -93,23 +216,25 @@ jobs:
             runner: macos-15-intel
             command: npx electron-builder --mac dmg --x64 --publish never
             artifact: installer-mac-x64
-            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-mac-x64.dmg
+            path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-x64.dmg
           - name: macOS Apple Silicon
             runner: macos-15
             command: npx electron-builder --mac dmg --arm64 --publish never
             artifact: installer-mac-arm64
-            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-mac-arm64.dmg
+            path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-arm64.dmg
           - name: Windows x64
             runner: windows-latest
             command: npx electron-builder --win nsis --x64 --publish never
             artifact: installer-windows-x64
-            path: release/${{ needs.validate.outputs.version }}/Libera-${{ needs.validate.outputs.version }}-windows-x64-setup.exe
+            path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe
     runs-on: ${{ matrix.runner }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - name: Check out source
+      - name: Check out release commit
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -137,12 +262,18 @@ jobs:
   release:
     name: Publish GitHub Release
     needs:
-      - validate
+      - prepare
       - build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Check out release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download installers
         uses: actions/download-artifact@v8
         with:
@@ -152,7 +283,7 @@ jobs:
       - name: Verify release assets
         shell: bash
         env:
-          VERSION: ${{ needs.validate.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -176,34 +307,57 @@ jobs:
             fi
           done
 
+      - name: Create release tag
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.commit_sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            tag_commit="$(git rev-list -n 1 "$TAG")"
+            if [[ "$tag_commit" != "$RELEASE_SHA" ]]; then
+              echo "Tag $TAG points to $tag_commit instead of $RELEASE_SHA." >&2
+              exit 1
+            fi
+            echo "Tag $TAG already points to the release commit; continuing."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag --annotate "$TAG" "$RELEASE_SHA" --message "Release $TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+
       - name: Create and publish release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
 
-          tag="$GITHUB_REF_NAME"
           repository="$GITHUB_REPOSITORY"
 
-          if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
-            is_draft="$(gh release view "$tag" --repo "$repository" --json isDraft --jq '.isDraft')"
+          if gh release view "$TAG" --repo "$repository" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$TAG" --repo "$repository" --json isDraft --jq '.isDraft')"
             if [[ "$is_draft" != "true" ]]; then
-              echo "Release $tag is already published; refusing to overwrite it." >&2
+              echo "Release $TAG is already published; refusing to overwrite it." >&2
               exit 1
             fi
           else
-            gh release create "$tag" \
+            gh release create "$TAG" \
               --repo "$repository" \
               --verify-tag \
               --draft \
-              --title "$tag" \
+              --title "$TAG" \
               --generate-notes
           fi
 
-          gh release upload "$tag" release-assets/* \
+          gh release upload "$TAG" release-assets/* \
             --repo "$repository" \
             --clobber
-          gh release edit "$tag" \
+          gh release edit "$TAG" \
             --repo "$repository" \
             --draft=false
