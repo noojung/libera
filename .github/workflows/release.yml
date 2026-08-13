@@ -330,10 +330,87 @@ jobs:
             git push origin "refs/tags/$TAG"
           fi
 
+      - name: Generate release notes
+        id: release_notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.commit_sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          repository="$GITHUB_REPOSITORY"
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          generated_file="$RUNNER_TEMP/generated-release-notes.md"
+          commit_file="$RUNNER_TEMP/release-commits.md"
+          previous_tag="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+
+          api_args=(
+            --method POST
+            "repos/${repository}/releases/generate-notes"
+            --field "tag_name=${TAG}"
+            --field "target_commitish=${RELEASE_SHA}"
+          )
+          if [[ -n "$previous_tag" ]]; then
+            api_args+=(--field "previous_tag_name=${previous_tag}")
+          fi
+
+          gh api "${api_args[@]}" --jq '.body' > "$generated_file"
+
+          if grep -q "^## What's Changed$" "$generated_file"; then
+            cp "$generated_file" "$notes_file"
+          else
+            if [[ -n "$previous_tag" ]]; then
+              revision_range="${previous_tag}..${RELEASE_SHA}"
+            else
+              revision_range="$RELEASE_SHA"
+            fi
+
+            while IFS=$'\t' read -r sha subject author_name; do
+              if [[ "$subject" == "Bump application version to "* ]]; then
+                continue
+              fi
+
+              short_sha="${sha:0:7}"
+              author_login="$(
+                gh api "repos/${repository}/commits/${sha}" \
+                  --jq '.author.login // empty' 2>/dev/null || true
+              )"
+              if [[ -n "$author_login" ]]; then
+                author="@${author_login}"
+              else
+                author="$author_name"
+              fi
+
+              printf -- '* %s by %s in [`%s`](https://github.com/%s/commit/%s)\n' \
+                "$subject" "$author" "$short_sha" "$repository" "$sha" >> "$commit_file"
+            done < <(
+              git log --reverse --no-merges \
+                --format='%H%x09%s%x09%an' \
+                "$revision_range"
+            )
+
+            {
+              echo "## What's Changed"
+              echo
+              if [[ -s "$commit_file" ]]; then
+                cat "$commit_file"
+              else
+                echo "No user-facing changes were recorded for this release."
+              fi
+              echo
+              cat "$generated_file"
+            } > "$notes_file"
+          fi
+
+          echo "path=$notes_file" >> "$GITHUB_OUTPUT"
+
       - name: Create and publish release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.release_notes.outputs.path }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
@@ -352,7 +429,7 @@ jobs:
               --verify-tag \
               --draft \
               --title "$TAG" \
-              --generate-notes
+              --notes-file "$NOTES_FILE"
           fi
 
           gh release upload "$TAG" release-assets/* \
@@ -360,4 +437,5 @@ jobs:
             --clobber
           gh release edit "$TAG" \
             --repo "$repository" \
+            --notes-file "$NOTES_FILE" \
             --draft=false
