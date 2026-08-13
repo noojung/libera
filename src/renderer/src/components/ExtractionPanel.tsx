@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { FolderOutput, Download, Folder } from 'lucide-react'
+import { FolderOutput, Download } from 'lucide-react'
 import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
@@ -99,25 +99,6 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
             {t('extraction.example', { directory: targetDir || t('extraction.defaultDirectory') })}
           </div>
         </div>
-      </div>
-
-      {/* Batch Overview Box */}
-      <div style={{
-        background: '#FFF3E4',
-        padding: '14px',
-        borderRadius: '12px',
-        border: '1.5px solid #4A403A',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-cute)', fontSize: '14px', fontWeight: 700, color: '#362D27' }}>
-          <Folder size={16} color="#FF8E72" />
-          {t('extraction.summaryTitle')}
-        </div>
-        <p style={{ fontSize: '12px', color: '#6E6158', margin: 0, lineHeight: '1.4' }}>
-          {t('extraction.summary')}
-        </p>
       </div>
 
       {/* Action Button */}

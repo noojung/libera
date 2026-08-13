@@ -53,7 +53,7 @@ export const resources = {
         start: 'Start compression 🚀'
       },
       extraction: {
-        title: 'Batch extraction options ⚙️',
+        title: 'Extraction options ⚙️',
         selected_one: '{{count}} archive selected ({{size}})',
         selected_other: '{{count}} archives selected ({{size}})',
         destination: 'Extraction destination',
@@ -62,9 +62,7 @@ export const resources = {
         createSubfolder: 'Create a subfolder for each archive',
         example: 'Example: archive.zip ➡️ {{directory}}/archive/',
         defaultDirectory: 'destination',
-        summaryTitle: 'Batch extraction summary',
-        summary: 'Sends multiple archives to the extraction queue at once. To preview file contents, use the Inspector tab above.',
-        start: 'Start batch extraction 🚀'
+        start: 'Start extraction 🚀'
       },
       inspector: {
         title: 'Archive preview & inspection 🔍',
@@ -216,7 +214,7 @@ export const resources = {
         start: '압축 시작하기 🚀'
       },
       extraction: {
-        title: '배치 해제 옵션 ⚙️',
+        title: '압축 해제 옵션 ⚙️',
         selected: '선택된 압축 파일: {{count}}개 ({{size}})',
         destination: '해제 저장 위치',
         destinationPlaceholder: '압축 해제 경로 지정',
@@ -224,9 +222,7 @@ export const resources = {
         createSubfolder: '압축 파일명으로 각각 하위 폴더 생성',
         example: '예: archive.zip ➡️ {{directory}}/archive/',
         defaultDirectory: '저장폴더',
-        summaryTitle: '배치 해제 방식 요약',
-        summary: '여러 압축 파일을 한 번에 빠르게 압축 해제 큐로 전송합니다. 파일 내용 미리보기가 필요한 경우 상단의 미리보기 탭을 이용해 주세요.',
-        start: '일괄 해제 시작 🚀'
+        start: '압축 해제 시작 🚀'
       },
       inspector: {
         title: '압축 파일 미리보기 & 검사 🔍',
