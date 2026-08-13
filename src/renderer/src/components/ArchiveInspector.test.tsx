@@ -105,4 +105,81 @@ describe('ArchiveInspector', () => {
     })
     await waitFor(() => expect(api.inspectArchive).toHaveBeenCalledWith('C:\\drop\\dropped.zip'))
   })
+
+  it('loads and displays a truncated text preview when a file is clicked', async () => {
+    let resolvePreview!: (value: any) => void
+    const pendingPreview = new Promise(resolve => { resolvePreview = resolve })
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['preview.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'notes.txt', name: 'notes.txt', isDirectory: false, size: 2 * 1024 * 1024 }
+      ])),
+      previewArchiveEntry: vi.fn().mockReturnValue(pendingPreview)
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
+
+    expect(screen.getByRole('dialog', { name: 'Text preview' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading file contents...')
+    expect(api.previewArchiveEntry).toHaveBeenCalledWith(
+      'preview.zip',
+      'entry-0',
+      expect.stringMatching(/^archive-preview-/)
+    )
+
+    resolvePreview({
+      success: true,
+      result: {
+        text: 'preview contents',
+        encoding: 'utf-8',
+        truncated: true,
+        previewedBytes: 1024 * 1024,
+        totalBytes: 2 * 1024 * 1024
+      }
+    })
+    expect(await screen.findByText('preview contents')).toBeInTheDocument()
+    expect(screen.getByText('Showing the first 1 MiB of 2 MiB.')).toBeInTheDocument()
+  })
+
+  it('shows translated preview errors for non-text files', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['binary.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'binary.bin', name: 'binary.bin', isDirectory: false, size: 4 }
+      ])),
+      previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'notText' })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /binary\.bin/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This file does not appear to contain supported text.')
+  })
+
+  it('cancels an in-flight preview when the modal closes and ignores its late response', async () => {
+    let resolvePreview!: (value: any) => void
+    const pendingPreview = new Promise(resolve => { resolvePreview = resolve })
+    const previewArchiveEntry = vi.fn().mockReturnValue(pendingPreview)
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['preview.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'notes.txt', name: 'notes.txt', isDirectory: false, size: 5 }
+      ])),
+      previewArchiveEntry
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
+    const requestId = previewArchiveEntry.mock.calls[0][2]
+    await user.click(screen.getByRole('button', { name: 'Close text preview' }))
+
+    expect(api.cancelArchivePreview).toHaveBeenCalledWith(requestId)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    resolvePreview({
+      success: true,
+      result: { text: 'late contents', encoding: 'utf-8', truncated: false, previewedBytes: 5, totalBytes: 5 }
+    })
+    await waitFor(() => expect(screen.queryByText('late contents')).not.toBeInTheDocument())
+  })
 })

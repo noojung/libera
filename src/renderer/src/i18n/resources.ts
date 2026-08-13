@@ -94,7 +94,24 @@ export const resources = {
         noArchive: 'No archive selected',
         selectArchive: 'Select an archive',
         readFailed: 'Could not read the archive information.',
-        inspectFailed: 'An inspection error occurred.'
+        inspectFailed: 'An inspection error occurred.',
+        preview: {
+          title: 'Text preview',
+          close: 'Close text preview',
+          loading: 'Loading file contents...',
+          empty: 'This file is empty.',
+          encoding: 'Encoding: {{encoding}}',
+          truncated: 'Showing the first {{shown}} of {{total}}.',
+          truncatedUnknown: 'Showing the first {{shown}}. The remaining content was omitted.',
+          errors: {
+            entryNotFound: 'This file could not be found in the archive.',
+            entryNotPreviewable: 'This archive entry cannot be previewed as text.',
+            encryptedPreviewUnsupported: 'Encrypted ZIP files cannot be previewed yet.',
+            notText: 'This file does not appear to contain supported text.',
+            previewCancelled: 'The text preview was cancelled.',
+            genericPreview: 'The file contents could not be previewed.'
+          }
+        }
       },
       passwordPrompt: {
         title: 'Password-protected ZIP file',
@@ -251,7 +268,24 @@ export const resources = {
         noArchive: '선택된 압축 파일이 없습니다',
         selectArchive: '압축 파일 선택하기',
         readFailed: '압축 파일 정보를 읽는데 실패했습니다.',
-        inspectFailed: '검사 오류가 발생했습니다.'
+        inspectFailed: '검사 오류가 발생했습니다.',
+        preview: {
+          title: '텍스트 미리보기',
+          close: '텍스트 미리보기 닫기',
+          loading: '파일 내용을 불러오는 중...',
+          empty: '빈 파일입니다.',
+          encoding: '인코딩: {{encoding}}',
+          truncated: '전체 {{total}} 중 처음 {{shown}}만 표시합니다.',
+          truncatedUnknown: '처음 {{shown}}만 표시하며 나머지 내용은 생략했습니다.',
+          errors: {
+            entryNotFound: '압축 파일에서 이 파일을 찾을 수 없습니다.',
+            entryNotPreviewable: '이 항목은 텍스트로 미리 볼 수 없습니다.',
+            encryptedPreviewUnsupported: '암호화된 ZIP 파일은 아직 미리볼 수 없습니다.',
+            notText: '지원하는 텍스트 파일로 보이지 않습니다.',
+            previewCancelled: '텍스트 미리보기를 취소했습니다.',
+            genericPreview: '파일 내용을 미리보는 데 실패했습니다.'
+          }
+        }
       },
       passwordPrompt: {
         title: '비밀번호가 필요한 ZIP 파일',

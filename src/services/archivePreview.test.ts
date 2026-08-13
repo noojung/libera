@@ -1,0 +1,217 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { promises as fs } from 'fs'
+import os from 'os'
+import path from 'path'
+import zlib from 'zlib'
+import * as tar from 'tar'
+import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
+import { compressArchive } from './compressor'
+import {
+  ArchivePreviewError,
+  MAX_ARCHIVE_PREVIEW_BYTES,
+  previewArchiveEntry
+} from './archivePreview'
+
+const temporaryDirectories: string[] = []
+
+async function createTemporaryDirectory(): Promise<string> {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-preview-'))
+  temporaryDirectories.push(directory)
+  return directory
+}
+
+async function writeZip(
+  archivePath: string,
+  entries: Array<{ name: string; contents: string | Uint8Array }>
+): Promise<void> {
+  const output = new Uint8ArrayWriter()
+  const writer = new ZipWriter(output, { useWebWorkers: false })
+  for (const entry of entries) {
+    const reader = typeof entry.contents === 'string'
+      ? new TextReader(entry.contents)
+      : new Uint8ArrayReader(entry.contents)
+    await writer.add(entry.name, reader)
+  }
+  await fs.writeFile(archivePath, await writer.close())
+}
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map(directory => fs.rm(directory, { recursive: true, force: true })))
+})
+
+describe('previewArchiveEntry', () => {
+  it.each([
+    ['ZIP', 'sample.zip', false],
+    ['TAR', 'sample.tar', false],
+    ['TGZ', 'sample.tgz', true],
+    ['TAR.GZ', 'sample.tar.gz', true],
+    ['GZ', 'sample.txt.gz', true]
+  ] as const)('previews UTF-8 text from %s archives', async (format, archiveName, gzip) => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, archiveName)
+    const contents = `hello from ${format}`
+
+    if (format === 'ZIP') {
+      await writeZip(archivePath, [{ name: 'sample.txt', contents }])
+    } else if (format === 'GZ') {
+      await fs.writeFile(archivePath, zlib.gzipSync(contents))
+    } else {
+      const sourcePath = path.join(directory, 'sample.txt')
+      await fs.writeFile(sourcePath, contents)
+      await tar.c({ cwd: directory, file: archivePath, gzip }, ['sample.txt'])
+    }
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({
+      text: contents,
+      encoding: 'utf-8',
+      truncated: false,
+      previewedBytes: Buffer.byteLength(contents)
+    })
+  })
+
+  it('keeps exactly 1 MiB and truncates larger expanded content', async () => {
+    const directory = await createTemporaryDirectory()
+    const exactPath = path.join(directory, 'exact.txt.gz')
+    const oversizedPath = path.join(directory, 'oversized.txt.gz')
+    await fs.writeFile(exactPath, zlib.gzipSync('a'.repeat(MAX_ARCHIVE_PREVIEW_BYTES)))
+    await fs.writeFile(oversizedPath, zlib.gzipSync('b'.repeat(MAX_ARCHIVE_PREVIEW_BYTES + 1)))
+
+    const exact = await previewArchiveEntry(exactPath, 'entry-0')
+    const oversized = await previewArchiveEntry(oversizedPath, 'entry-0')
+
+    expect(exact).toMatchObject({ truncated: false, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
+    expect(oversized).toMatchObject({ truncated: true, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
+    expect(oversized.text).toHaveLength(MAX_ARCHIVE_PREVIEW_BYTES)
+  })
+
+  it.each([
+    ['ZIP', 'oversized.zip'],
+    ['TAR', 'oversized.tar']
+  ] as const)('enforces the expanded-byte limit for %s entries', async (format, archiveName) => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, archiveName)
+    const contents = 'x'.repeat(MAX_ARCHIVE_PREVIEW_BYTES + 1)
+    if (format === 'ZIP') {
+      await writeZip(archivePath, [{ name: 'oversized.txt', contents }])
+    } else {
+      await fs.writeFile(path.join(directory, 'oversized.txt'), contents)
+      await tar.c({ cwd: directory, file: archivePath }, ['oversized.txt'])
+    }
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({
+      truncated: true,
+      previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES
+    })
+  })
+
+  it('drops an incomplete trailing UTF-8 character at the preview boundary', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'unicode.txt.gz')
+    const contents = `${'a'.repeat(MAX_ARCHIVE_PREVIEW_BYTES - 1)}🙂`
+    await fs.writeFile(archivePath, zlib.gzipSync(contents))
+
+    const result = await previewArchiveEntry(archivePath, 'entry-0')
+
+    expect(result.truncated).toBe(true)
+    expect(result.text).toBe('a'.repeat(MAX_ARCHIVE_PREVIEW_BYTES - 1))
+  })
+
+  it('decodes UTF-8, UTF-16 LE, and UTF-16 BE byte-order marks', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'encodings.zip')
+    const text = '안녕하세요'
+    const utf16Le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')])
+    const utf16BeBody = Buffer.from(text, 'utf16le')
+    for (let index = 0; index < utf16BeBody.length; index += 2) {
+      ;[utf16BeBody[index], utf16BeBody[index + 1]] = [utf16BeBody[index + 1], utf16BeBody[index]]
+    }
+    const utf16Be = Buffer.concat([Buffer.from([0xfe, 0xff]), utf16BeBody])
+    await writeZip(archivePath, [
+      { name: 'utf8.txt', contents: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text)]) },
+      { name: 'utf16le.txt', contents: utf16Le },
+      { name: 'utf16be.txt', contents: utf16Be }
+    ])
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ text, encoding: 'utf-8' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ text, encoding: 'utf-16le' })
+    await expect(previewArchiveEntry(archivePath, 'entry-2')).resolves.toMatchObject({ text, encoding: 'utf-16be' })
+  })
+
+  it('uses the entry id to distinguish duplicate archive paths', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'duplicate.tar')
+    const sourcePath = path.join(directory, 'duplicate.txt')
+    await fs.writeFile(sourcePath, 'first')
+    await tar.c({ cwd: directory, file: archivePath }, ['duplicate.txt'])
+    await fs.writeFile(sourcePath, 'second')
+    await tar.r({ cwd: directory, file: archivePath }, ['duplicate.txt'])
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ text: 'first' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ text: 'second' })
+  })
+
+  it('rejects binary data and non-file entries', async () => {
+    const directory = await createTemporaryDirectory()
+    const zipPath = path.join(directory, 'binary.zip')
+    const tarPath = path.join(directory, 'folder.tar')
+    await writeZip(zipPath, [{ name: 'binary.bin', contents: Uint8Array.from([0, 1, 2, 3]) }])
+    await fs.mkdir(path.join(directory, 'folder'))
+    await tar.c({ cwd: directory, file: tarPath }, ['folder'])
+
+    await expect(previewArchiveEntry(zipPath, 'entry-0')).rejects.toMatchObject({ code: 'NOT_TEXT' })
+    await expect(previewArchiveEntry(tarPath, 'entry-0')).rejects.toMatchObject({ code: 'ENTRY_NOT_PREVIEWABLE' })
+  })
+
+  it('rejects encrypted ZIP entries without requesting a password', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'secret.txt')
+    const archivePath = path.join(directory, 'secret.zip')
+    await fs.writeFile(sourcePath, 'secret contents')
+    await compressArchive({
+      inputPaths: [sourcePath],
+      outputPath: archivePath,
+      format: 'zip',
+      password: 'password'
+    })
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toMatchObject({
+      code: 'ENCRYPTED_PREVIEW_UNSUPPORTED'
+    })
+  })
+
+  it('rejects missing entries and cancelled requests with stable error codes', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'sample.zip')
+    await writeZip(archivePath, [{ name: 'sample.txt', contents: 'sample' }])
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(previewArchiveEntry(archivePath, 'entry-9')).rejects.toMatchObject({ code: 'ENTRY_NOT_FOUND' })
+    await expect(previewArchiveEntry(archivePath, 'entry-0', { signal: controller.signal })).rejects.toEqual(
+      expect.any(ArchivePreviewError)
+    )
+    await expect(previewArchiveEntry(archivePath, 'entry-0', { signal: controller.signal })).rejects.toMatchObject({
+      code: 'PREVIEW_CANCELLED'
+    })
+  })
+
+  it('rejects damaged archive streams', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'damaged.gz')
+    await fs.writeFile(archivePath, Buffer.from('not gzip data'))
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toThrow()
+  })
+
+  it('cancels an in-flight expanded stream', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'cancel.txt.gz')
+    await fs.writeFile(archivePath, zlib.gzipSync('cancel me'.repeat(200_000)))
+    const controller = new AbortController()
+
+    const preview = previewArchiveEntry(archivePath, 'entry-0', { signal: controller.signal })
+    controller.abort()
+
+    await expect(preview).rejects.toMatchObject({ code: 'PREVIEW_CANCELLED' })
+  })
+})

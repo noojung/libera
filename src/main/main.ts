@@ -10,13 +10,26 @@ import {
   WRONG_ZIP_PASSWORD_ERROR_CODE
 } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
+import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
 
 let mainWindow: BrowserWindow | null = null
 const activeExtractionControllers = new Map<string, AbortController>()
+const activePreviewControllers = new Map<string, AbortController>()
 
-type Operation = 'compression' | 'extraction' | 'inspection'
+type Operation = 'compression' | 'extraction' | 'inspection' | 'preview'
 
 function classifyError(error: unknown, operation: Operation): string {
+  if (error instanceof ArchivePreviewError) {
+    const previewErrorCodes: Record<string, string> = {
+      ENTRY_NOT_FOUND: 'entryNotFound',
+      ENTRY_NOT_PREVIEWABLE: 'entryNotPreviewable',
+      ENCRYPTED_PREVIEW_UNSUPPORTED: 'encryptedPreviewUnsupported',
+      NOT_TEXT: 'notText',
+      PREVIEW_CANCELLED: 'previewCancelled'
+    }
+    return previewErrorCodes[error.code] || 'genericPreview'
+  }
+  if (operation === 'preview') return 'genericPreview'
   if (error instanceof ExtractionError) {
     const extractionErrorCodes: Record<string, string> = {
       EXTRACTION_CANCELLED: 'extractionCancelled',
@@ -77,6 +90,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     for (const controller of activeExtractionControllers.values()) controller.abort()
     activeExtractionControllers.clear()
+    for (const controller of activePreviewControllers.values()) controller.abort()
+    activePreviewControllers.clear()
     mainWindow = null
   })
 }
@@ -207,6 +222,31 @@ ipcMain.handle('archive:inspect', async (_, archivePath: string) => {
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to inspect archive', errorCode: classifyError(err, 'inspection') }
   }
+})
+
+ipcMain.handle('archive:preview', async (_, archivePath: string, entryId: string, requestId: string) => {
+  activePreviewControllers.get(requestId)?.abort()
+  const controller = new AbortController()
+  activePreviewControllers.set(requestId, controller)
+  try {
+    const result = await previewArchiveEntry(archivePath, entryId, { signal: controller.signal })
+    return { success: true, result }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to preview archive entry',
+      errorCode: classifyError(err, 'preview')
+    }
+  } finally {
+    if (activePreviewControllers.get(requestId) === controller) activePreviewControllers.delete(requestId)
+  }
+})
+
+ipcMain.handle('archive:cancelPreview', (_, requestId: string) => {
+  const controller = activePreviewControllers.get(requestId)
+  if (!controller) return false
+  controller.abort()
+  return true
 })
 
 ipcMain.handle('shell:openFolder', async (_, targetPath: string) => {

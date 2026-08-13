@@ -234,8 +234,14 @@
   cursor: default;
 }
 
-.archive-inspector__entry.is-navigable {
+.archive-inspector__entry.is-navigable,
+.archive-inspector__entry.is-previewable {
   cursor: pointer;
+}
+
+.archive-inspector__entry.is-navigable:hover,
+.archive-inspector__entry.is-previewable:hover {
+  background: #FFF9F3;
 }
 
 .archive-inspector__entry-main {

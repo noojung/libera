@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, File, Filter, Folder, Home, Search, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { ArchivePreviewResult } from '../../../services/archivePreview'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import { ArchiveTextPreviewModal } from './ArchiveTextPreviewModal'
 import './ArchiveInspector.css'
 
 interface ArchiveEntry {
@@ -94,8 +96,31 @@ export const ArchiveInspector: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [currentPath, setCurrentPath] = useState<string>('')
   const [visibleEntryCount, setVisibleEntryCount] = useState(ENTRY_PAGE_SIZE)
+  const [previewEntry, setPreviewEntry] = useState<ArchiveEntry | null>(null)
+  const [previewResult, setPreviewResult] = useState<ArchivePreviewResult | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewErrorKey, setPreviewErrorKey] = useState<string | null>(null)
+  const previewRequestSequence = useRef(0)
+  const activePreviewRequest = useRef<string | null>(null)
+
+  const closePreview = () => {
+    const requestId = activePreviewRequest.current
+    activePreviewRequest.current = null
+    if (requestId) void (window as any).electronAPI?.cancelArchivePreview(requestId)
+    setPreviewEntry(null)
+    setPreviewResult(null)
+    setPreviewLoading(false)
+    setPreviewErrorKey(null)
+  }
+
+  useEffect(() => () => {
+    const requestId = activePreviewRequest.current
+    activePreviewRequest.current = null
+    if (requestId) void (window as any).electronAPI?.cancelArchivePreview(requestId)
+  }, [])
 
   const runInspection = async (filePath: string) => {
+    closePreview()
     setLoading(true)
     setErrorKey(null)
     setSearchQuery('')
@@ -155,6 +180,39 @@ export const ArchiveInspector: React.FC = () => {
   const handleDragOver = (event: React.DragEvent) => {
     event.preventDefault()
     event.stopPropagation()
+  }
+
+  const handlePreviewEntry = async (entry: ArchiveEntry) => {
+    const api = (window as any).electronAPI
+    if (!api?.previewArchiveEntry) return
+
+    const previousRequestId = activePreviewRequest.current
+    if (previousRequestId) void api.cancelArchivePreview(previousRequestId)
+    const requestId = `archive-preview-${++previewRequestSequence.current}`
+    activePreviewRequest.current = requestId
+    setPreviewEntry(entry)
+    setPreviewResult(null)
+    setPreviewErrorKey(null)
+    setPreviewLoading(true)
+
+    try {
+      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId)
+      if (activePreviewRequest.current !== requestId) return
+      if (response.success) {
+        setPreviewResult(response.result)
+      } else {
+        setPreviewErrorKey(`inspector.preview.errors.${response.errorCode || 'genericPreview'}`)
+      }
+    } catch {
+      if (activePreviewRequest.current === requestId) {
+        setPreviewErrorKey('inspector.preview.errors.genericPreview')
+      }
+    } finally {
+      if (activePreviewRequest.current === requestId) {
+        activePreviewRequest.current = null
+        setPreviewLoading(false)
+      }
+    }
   }
 
   const currentEntries = useMemo(
@@ -249,7 +307,14 @@ export const ArchiveInspector: React.FC = () => {
               {displayedEntries.map(entry => {
                 const isNavigableDirectory = entry.isDirectory
                 return (
-                <button key={entry.path} type="button" onClick={() => isNavigableDirectory && moveToPath(normalizeArchivePath(entry.path))} disabled={!isNavigableDirectory} className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ''}`}>
+                <button
+                  key={entry.id || entry.path}
+                  type="button"
+                  onClick={() => isNavigableDirectory
+                    ? moveToPath(normalizeArchivePath(entry.path))
+                    : handlePreviewEntry(entry)}
+                  className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ' is-previewable'}`}
+                >
                   <div className="archive-inspector__entry-main">
                     {entry.isDirectory ? <Folder className="archive-inspector__entry-icon archive-inspector__entry-icon--folder" size={16} /> : <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={16} />}
                     <span className="archive-inspector__entry-name">{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
@@ -276,6 +341,15 @@ export const ArchiveInspector: React.FC = () => {
           <h4 className="archive-inspector__empty-title">{t('inspector.noArchive')}</h4>
           <button className="btn-primary" onClick={handleOpenArchive}>{t('inspector.selectArchive')}</button>
         </div>
+      )}
+      {previewEntry && (
+        <ArchiveTextPreviewModal
+          entryPath={previewEntry.path}
+          loading={previewLoading}
+          result={previewResult}
+          errorKey={previewErrorKey}
+          onClose={closePreview}
+        />
       )}
     </div>
   )

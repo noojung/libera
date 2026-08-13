@@ -1,0 +1,139 @@
+.archive-text-preview {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: flex;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(54, 45, 39, 0.42);
+}
+
+.archive-text-preview__dialog {
+  display: flex;
+  width: min(820px, 100%);
+  height: min(620px, 100%);
+  min-height: 320px;
+  padding: 20px;
+  overflow: hidden;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.archive-text-preview__header,
+.archive-text-preview__heading {
+  display: flex;
+  align-items: center;
+}
+
+.archive-text-preview__header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.archive-text-preview__heading {
+  min-width: 0;
+  gap: 12px;
+}
+
+.archive-text-preview__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid #4A403A;
+  border-radius: 50%;
+  background: #EEF6FF;
+  color: #5A9EED;
+}
+
+.archive-text-preview__heading-text {
+  min-width: 0;
+}
+
+.archive-text-preview__title {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 20px;
+}
+
+.archive-text-preview__path {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #6E6158;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-text-preview__close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid #4A403A;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #362D27;
+  cursor: pointer;
+}
+
+.archive-text-preview__close:hover {
+  background: #FFF3E4;
+}
+
+.archive-text-preview__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #E8DFD5;
+  border-radius: 12px;
+  background: #FCFAF7;
+}
+
+.archive-text-preview__state {
+  display: flex;
+  flex: 1;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  color: #6E6158;
+  text-align: center;
+}
+
+.archive-text-preview__state--error {
+  color: #E76F51;
+  font-weight: 600;
+}
+
+.archive-text-preview__content {
+  width: 100%;
+  padding: 18px;
+  overflow: auto;
+  color: #362D27;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  user-select: text;
+  white-space: pre;
+}
+
+.archive-text-preview__footer {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6E6158;
+  font-size: 12px;
+}
+
+.archive-text-preview__truncated {
+  color: #B36B24;
+  font-weight: 600;
+  text-align: right;
+}

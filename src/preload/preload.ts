@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { ArchivePreviewResult } from '../services/archivePreview'
 
 export type DesktopPlatform = 'macos' | 'windows'
 
@@ -26,6 +27,8 @@ export interface ElectronAPI {
   extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string; code?: string }>
   cancelExtraction: (jobId: string) => Promise<boolean>
   inspectArchive: (archivePath: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
+  previewArchiveEntry: (archivePath: string, entryId: string, requestId: string) => Promise<{ success: boolean; result?: ArchivePreviewResult; error?: string; errorCode?: string }>
+  cancelArchivePreview: (requestId: string) => Promise<boolean>
   openFolder: (targetPath: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
@@ -45,6 +48,8 @@ const api: ElectronAPI = {
   extractArchive: (options, jobId) => ipcRenderer.invoke('archive:extract', options, jobId),
   cancelExtraction: (jobId) => ipcRenderer.invoke('archive:cancel', jobId),
   inspectArchive: (archivePath) => ipcRenderer.invoke('archive:inspect', archivePath),
+  previewArchiveEntry: (archivePath, entryId, requestId) => ipcRenderer.invoke('archive:preview', archivePath, entryId, requestId),
+  cancelArchivePreview: (requestId) => ipcRenderer.invoke('archive:cancelPreview', requestId),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:openFolder', targetPath),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),

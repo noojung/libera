@@ -90,7 +90,7 @@ system.
 | --- | --- | --- |
 | Compression | ZIP, TAR, TGZ, GZ | GZ supports a single file only |
 | Extraction | ZIP, TAR, TGZ, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, TAR, TGZ, TAR.GZ, GZ | Supports browsing internal folders and searching descendants of the current location |
+| Inspection | ZIP, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, and on-demand text previews up to 1 MiB per file |
 | Passwords | ZIP | Uses ZipCrypto for compatibility and does not provide strong confidentiality |
 
 ## Safe Extraction Policy
@@ -106,6 +106,11 @@ The following checks are applied before and during extraction:
 
 GZ stores its uncompressed size modulo 4 GiB, so the inspector reports the
 expanded size and compression ratio as unknown until extraction completes.
+
+Text previews are decoded as UTF-8 or BOM-marked UTF-16 and are read directly
+from the archive without creating temporary files. Libera stops after the first
+1 MiB of expanded content, rejects binary data, and does not preview encrypted
+ZIP entries.
 
 Treat untrusted archives with care even when they pass these checks. See [SECURITY.md](SECURITY.md) for the complete security policy and vulnerability reporting instructions.
 
