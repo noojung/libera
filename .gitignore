@@ -30,7 +30,8 @@ coverage/
 
 # IDE / Editors
 .vscode/
-.idea/
+.idea/*
+!.idea/icon.svg
 *.swp
 *.swo
 
