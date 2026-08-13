@@ -1,6 +1,5 @@
 const fs = require('fs/promises')
 const path = require('path')
-const { signAsync } = require('@electron/osx-sign')
 
 const KEPT_MAC_ELECTRON_LOCALES = new Set(['en.lproj', 'ko.lproj'])
 
@@ -40,19 +39,7 @@ module.exports = async function afterPack(context) {
     `${context.packager.appInfo.productFilename}.app`
   )
 
-  // electron-builder 25 only removes the top-level locale links on macOS.
-  // Remove the backing Electron Framework resources before signing the app.
+  // Remove the backing Electron Framework resources before electron-builder
+  // applies the configured ad-hoc signature to the complete app bundle.
   await removeUnusedMacElectronLocales(appPath)
-
-  // electron-builder 25 does not support mac.identity="-". Sign the complete
-  // Electron bundle ad-hoc after packaging so its nested helpers and
-  // frameworks have consistent signatures. Gatekeeper still warns because
-  // this is not a paid Developer ID signature, but the approved app can run.
-  await signAsync({
-    app: appPath,
-    identity: '-',
-    identityValidation: false,
-    gatekeeperAssess: false,
-    optionsForFile: () => ({ hardenedRuntime: false })
-  })
 }

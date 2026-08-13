@@ -5,8 +5,8 @@ Libera is a desktop compression utility built with Electron, TypeScript, and Rea
 ## Development Requirements
 
 - Git
-- Node.js 22 or later (LTS recommended)
-- npm, which is included with Node.js
+- Node.js 24.19.0 (LTS)
+- npm 11.17.0, which is included with Node.js 24.19.0
 - macOS or Windows for local development
 
 These requirements apply only when running Libera from source. Installing a
@@ -34,6 +34,11 @@ Install the locked dependencies and start the Electron development app:
 npm ci
 npm run dev
 ```
+
+Use `npm ci` for routine setup on every platform. Run `npm install` only when
+intentionally adding or updating a dependency, and commit the resulting
+`package.json` and `package-lock.json` changes together. The project rejects
+other Node.js and npm versions so macOS, Windows, and CI produce the same lockfile.
 
 The Electron window opens after Vite finishes its initial build. Press
 <kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal to stop the development process.
