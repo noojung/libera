@@ -4,6 +4,7 @@ import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import './CompressionPanel.css'
 
 interface CompressionPanelProps {
   items: SelectedItem[]
@@ -71,41 +72,28 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
   const totalBytes = items.reduce((sum, item) => sum + item.size, 0)
   return (
-    <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', fontWeight: 700, color: '#362D27', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sliders size={18} color="#FF8E72" />
+    <div className="glass-panel compression-panel">
+      <div className="compression-panel__header">
+        <h3 className="compression-panel__title">
+          <Sliders className="compression-panel__title-icon" size={18} />
           {t('compression.title')}
         </h3>
-        <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
+        <span className="compression-panel__summary">
           {t('compression.totalSize', { size: formatBytes(totalBytes, language) })}
         </span>
       </div>
 
       {/* Target Format Selector */}
-      <div>
-        <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '8px', display: 'block' }}>
+      <div className="compression-panel__field">
+        <label className="compression-panel__label compression-panel__label--format">
           {t('compression.format')}
         </label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+        <div className="compression-panel__format-grid">
           {(['zip', 'tar', 'gz', 'tgz'] as const).map((fmt) => (
             <button
               key={fmt}
               onClick={() => setFormat(fmt)}
-              style={{
-                background: format === fmt ? '#FFF3E4' : '#FFFFFF',
-                border: format === fmt ? '2px solid #FF8E72' : '1.5px solid #4A403A',
-                color: format === fmt ? '#FF8E72' : '#362D27',
-                padding: '10px',
-                borderRadius: '12px',
-                fontFamily: 'var(--font-cute)',
-                fontSize: '16px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                textAlign: 'center',
-                boxShadow: format === fmt ? '2px 2px 0px #4A403A' : 'none',
-                transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)'
-              }}
+              className={`compression-panel__format-button${format === fmt ? ' is-active' : ''}`}
             >
               .{fmt.toUpperCase()}
             </button>
@@ -114,12 +102,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       </div>
 
       {/* Compression Level Slider */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-          <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27' }}>
+      <div className="compression-panel__field">
+        <div className="compression-panel__level-header">
+          <label className="compression-panel__label">
             {t('compression.level')}
           </label>
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, color: '#FF8E72' }}>
+          <span className="compression-panel__level-value">
             {getLevelLabel(level)}
           </span>
         </div>
@@ -129,38 +117,34 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           max="9"
           value={level}
           onChange={(e) => setLevel(parseInt(e.target.value))}
-          style={{
-            width: '100%',
-            accentColor: '#FF8E72',
-            cursor: 'pointer'
-          }}
+          className="compression-panel__range"
         />
       </div>
 
       {format === 'zip' && (
-        <div>
-          <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
-            {t('compression.zipPassword')} <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#6E6158', fontWeight: 400 }}>{t('compression.optional')}</span>
+        <div className="compression-panel__field">
+          <label className="compression-panel__label compression-panel__label--stacked">
+            {t('compression.zipPassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div className="compression-panel__password-grid">
             <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
             <input type="password" className="input-text" placeholder={t('compression.confirmPasswordPlaceholder')} value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
           </div>
           {password && password !== passwordConfirmation && (
-            <p style={{ fontSize: '12px', color: '#E76F51', marginTop: '6px' }}>{t('compression.passwordMismatch')}</p>
+            <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
           )}
           {password && password === passwordConfirmation && (
-            <p style={{ fontSize: '12px', color: '#6E6158', marginTop: '6px' }}>{t('compression.passwordNotice')}</p>
+            <p className="compression-panel__message">{t('compression.passwordNotice')}</p>
           )}
         </div>
       )}
 
       {/* Save Destination */}
-      <div>
-        <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
+      <div className="compression-panel__field">
+        <label className="compression-panel__label compression-panel__label--stacked">
           {t('compression.destination')}
         </label>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="compression-panel__destination-row">
           <input
             type="text"
             className="input-text"
@@ -168,7 +152,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             value={outputPath}
             onChange={(e) => setOutputPath(e.target.value)}
           />
-          <button className="btn-secondary" onClick={handleSelectSavePath} style={{ whiteSpace: 'nowrap' }}>
+          <button className="btn-secondary compression-panel__browse-button" onClick={handleSelectSavePath}>
             {t('compression.browse')}
           </button>
         </div>
@@ -176,16 +160,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
       {/* Start Button */}
       <button
-        className="btn-primary"
+        className="btn-primary compression-panel__start-button"
         onClick={handleCompress}
         disabled={items.length === 0 || (format === 'zip' && password !== passwordConfirmation)}
-        style={{
-          width: '100%',
-          justifyContent: 'center',
-          padding: '12px',
-          opacity: (items.length === 0 || (format === 'zip' && password !== passwordConfirmation)) ? 0.5 : 1,
-          cursor: (items.length === 0 || (format === 'zip' && password !== passwordConfirmation)) ? 'not-allowed' : 'pointer'
-        }}
       >
         <Archive size={20} />
         {t('compression.start')}

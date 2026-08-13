@@ -4,6 +4,7 @@ import { ActiveJob } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes, formatDuration } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import './QueueManager.css'
 
 interface QueueManagerProps {
   jobs: ActiveJob[]
@@ -28,14 +29,14 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="queue-manager">
       {/* Header */}
-      <div className="glass-panel" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="glass-panel queue-manager__header">
         <div>
-          <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', fontWeight: 700, color: '#362D27' }}>
+          <h3 className="queue-manager__title">
             {t('queue.title', { count: jobs.length })}
           </h3>
-          <p style={{ fontSize: '13px', color: '#6E6158' }}>
+          <p className="queue-manager__subtitle">
             {t('queue.subtitle')}
           </p>
         </div>
@@ -48,10 +49,10 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
       </div>
 
       {/* Jobs List */}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div className="queue-manager__jobs">
         {jobs.length === 0 ? (
-          <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-            <span style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#A3968C' }}>
+          <div className="glass-panel queue-manager__empty">
+            <span>
               {t('queue.empty')}
             </span>
           </div>
@@ -59,72 +60,57 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
           jobs.map((job) => (
             <div
               key={job.id}
-              className="glass-panel"
-              style={{
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                borderLeft: job.status === 'completed'
-                  ? '6px solid #52B788'
-                  : job.status === 'error'
-                    ? '6px solid #E76F51'
-                    : job.status === 'cancelled'
-                      ? '6px solid #A3968C'
-                      : job.status === 'pending'
-                        ? '6px solid #5A9EED'
-                        : '6px solid #FF8E72'
-              }}
+              className={`glass-panel queue-manager__job queue-manager__job--${job.status}`}
             >
               {/* Job Row Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="queue-manager__job-header">
+                <div className="queue-manager__job-main">
                   {job.type === 'compress' ? (
-                    <Archive size={20} color="#FF8E72" />
+                    <Archive className="queue-manager__job-icon queue-manager__job-icon--compress" size={20} />
                   ) : (
-                    <Download size={20} color="#5A9EED" />
+                    <Download className="queue-manager__job-icon queue-manager__job-icon--extract" size={20} />
                   )}
                   <div>
-                    <h4 style={{ fontFamily: 'var(--font-cute)', fontSize: '17px', fontWeight: 700, color: '#362D27' }}>
+                    <h4 className="queue-manager__job-name">
                       {getJobName(job)}
                     </h4>
-                    <span style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158' }}>
+                    <span className="queue-manager__job-type">
                       {t(job.type === 'compress' ? 'queue.typeCompress' : 'queue.typeExtract')} • {job.format.toUpperCase()}
                     </span>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="queue-manager__job-actions">
                   {job.status === 'running' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#FF8E72', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
-                      <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                    <div className="queue-manager__status queue-manager__status--running">
+                      <Loader2 className="queue-manager__spinner" size={18} />
                       {job.percent === null ? t('queue.processing') : `${job.percent}%`}
                     </div>
                   )}
 
                   {job.status === 'pending' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#5A9EED', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                    <div className="queue-manager__status queue-manager__status--pending">
                       <Clock3 size={18} />
                       {t('queue.pending')}
                     </div>
                   )}
 
                   {job.status === 'completed' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#52B788', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                    <div className="queue-manager__status queue-manager__status--completed">
                       <CheckCircle size={18} />
                       {t('queue.completed', { duration: formatDuration(job.durationMs, language) })}
                     </div>
                   )}
 
                   {job.status === 'error' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#E76F51', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                    <div className="queue-manager__status queue-manager__status--error">
                       <AlertCircle size={18} />
                       {t('queue.failed')}
                     </div>
                   )}
 
                   {job.status === 'cancelled' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#A3968C', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                    <div className="queue-manager__status queue-manager__status--cancelled">
                       <XCircle size={18} />
                       {t('queue.cancelled')}
                     </div>
@@ -156,23 +142,15 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
 
               {/* Progress Bar */}
               {job.status === 'running' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{
-                    height: '10px',
-                    width: '100%',
-                    background: '#FFF3E4',
-                    border: '1.5px solid #4A403A',
-                    borderRadius: '999px',
-                    overflow: 'hidden'
-                  }}>
-                    <div className={job.percent === null ? 'queue-progress__bar queue-progress__bar--indeterminate' : 'queue-progress__bar'} style={{
-                      height: '100%',
-                      width: job.percent === null ? '35%' : `${job.percent}%`,
-                      background: 'var(--accent-gradient)',
-                      transition: 'width 0.2s ease'
-                    }} />
+                <div className="queue-manager__progress">
+                  <div className="queue-manager__progress-track">
+                    {job.percent === null ? (
+                      <div className="queue-progress__bar queue-progress__bar--indeterminate" />
+                    ) : (
+                      <progress className="queue-manager__progress-value" max={100} value={job.percent} aria-label={`${job.percent}%`} />
+                    )}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
+                  <div className="queue-manager__progress-details">
                     <span>{job.currentFile || t(`queue.phase.${job.phase}`)}</span>
                     <span>{job.totalBytes === null
                       ? t('queue.processed', { size: formatBytes(job.processedBytes, language) })
@@ -182,17 +160,17 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
               )}
 
               {job.status === 'error' && (
-                <div role="alert" style={{ fontSize: '12px', color: '#E76F51' }}>
+                <div role="alert" className="queue-manager__error">
                   {getJobError(job)}
                 </div>
               )}
 
               {/* Completed details */}
               {job.status === 'completed' && job.originalSize && job.compressedSize && (
-                <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
+                <div className="queue-manager__completed-details">
                   <span>{t('queue.original', { size: formatBytes(job.originalSize, language) })}</span>
                   <span>{t('queue.compressed', { size: formatBytes(job.compressedSize, language) })}</span>
-                  <span style={{ color: '#52B788', fontWeight: 700, fontFamily: 'var(--font-cute)', fontSize: '14px' }}>
+                  <span className="queue-manager__saved">
                     {t('queue.saved', { ratio: Math.round((1 - (job.compressedSize / job.originalSize)) * 100) })}
                   </span>
                 </div>

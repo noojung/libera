@@ -3,6 +3,7 @@ import { ChevronRight, File, Filter, Folder, Home, Search, ShieldAlert } from 'l
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import './ArchiveInspector.css'
 
 interface ArchiveEntry {
   id: string
@@ -187,17 +188,17 @@ export const ArchiveInspector: React.FC = () => {
   }
 
   return (
-    <div onDrop={handleDrop} onDragOver={handleDragOver} style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#FFF3E4', border: '2px solid #4A403A', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #4A403A' }}>
-            <Search size={22} color="#FF8E72" />
+    <div onDrop={handleDrop} onDragOver={handleDragOver} className="archive-inspector">
+      <div className="glass-panel archive-inspector__header">
+        <div className="archive-inspector__header-main">
+          <div className="archive-inspector__header-icon">
+            <Search size={22} />
           </div>
           <div>
-            <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', fontWeight: 700, color: '#362D27' }}>
+            <h3 className="archive-inspector__title">
               {t('inspector.title')}
             </h3>
-            <p style={{ fontSize: '13px', color: '#6E6158' }}>
+            <p className="archive-inspector__subtitle">
               {archivePath || t('inspector.subtitle')}
             </p>
           </div>
@@ -206,73 +207,73 @@ export const ArchiveInspector: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="glass-panel" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#FF8E72', fontWeight: 700 }}>{t('inspector.loading')}</span>
+        <div className="glass-panel archive-inspector__state archive-inspector__state--loading">
+          <span>{t('inspector.loading')}</span>
         </div>
       ) : errorKey ? (
-        <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-          <ShieldAlert size={40} color="#E76F51" />
-          <span style={{ fontSize: '15px', color: '#E76F51', fontWeight: 600 }}>{t(errorKey)}</span>
+        <div className="glass-panel archive-inspector__state archive-inspector__state--error">
+          <ShieldAlert size={40} />
+          <span>{t(errorKey)}</span>
         </div>
       ) : inspectData ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.format')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#FF8E72', marginTop: '2px' }}>{inspectData.format}</div></div>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.totalFiles')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#362D27', marginTop: '2px' }}>{t('inspector.fileCount', { count: inspectData.totalFiles })}</div></div>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.extractedSize')}</div><div style={{ fontSize: '16px', fontWeight: 700, color: '#362D27', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>{inspectData.totalUncompressedSize === null ? t('inspector.unknown') : formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.efficiency')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#52B788', marginTop: '2px' }}>{inspectData.overallRatio === null ? t('inspector.unknown') : t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
+        <div className="archive-inspector__content">
+          <div className="archive-inspector__stats">
+            <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.format')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--accent">{inspectData.format}</div></div>
+            <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.totalFiles')}</div><div className="archive-inspector__stat-value">{t('inspector.fileCount', { count: inspectData.totalFiles })}</div></div>
+            <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.extractedSize')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--size">{inspectData.totalUncompressedSize === null ? t('inspector.unknown') : formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
+            <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.efficiency')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--success">{inspectData.overallRatio === null ? t('inspector.unknown') : t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
           </div>
 
-          <div className="glass-panel" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '32px', marginBottom: '12px', color: '#6E6158', fontSize: '13px' }}>
-              <button type="button" aria-label={t('inspector.home')} title={t('inspector.home')} onClick={() => moveToPath('')} style={{ background: 'transparent', border: 'none', color: '#362D27', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}><Home size={15} /></button>
+          <div className="glass-panel archive-inspector__browser">
+            <div className="archive-inspector__breadcrumbs">
+              <button type="button" aria-label={t('inspector.home')} title={t('inspector.home')} onClick={() => moveToPath('')} className="archive-inspector__home-button"><Home size={15} /></button>
               {breadcrumbs.map((segment, index) => {
                 const breadcrumbPath = breadcrumbs.slice(0, index + 1).join('/')
-                return <React.Fragment key={breadcrumbPath}><ChevronRight size={15} color="#A3968C" /><button type="button" onClick={() => moveToPath(breadcrumbPath)} style={{ background: 'transparent', border: 'none', color: index === breadcrumbs.length - 1 ? '#FF8E72' : '#362D27', cursor: 'pointer', fontWeight: index === breadcrumbs.length - 1 ? 700 : 500 }}>{segment}</button></React.Fragment>
+                return <React.Fragment key={breadcrumbPath}><ChevronRight className="archive-inspector__breadcrumb-separator" size={15} /><button type="button" onClick={() => moveToPath(breadcrumbPath)} className={`archive-inspector__breadcrumb${index === breadcrumbs.length - 1 ? ' is-active' : ''}`}>{segment}</button></React.Fragment>
               })}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Filter size={16} color="#FF8E72" />
-                <input type="text" className="input-text" placeholder={t('inspector.searchPlaceholder')} value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setVisibleEntryCount(ENTRY_PAGE_SIZE) }} style={{ width: '260px', padding: '6px 12px', fontSize: '13px' }} />
+            <div className="archive-inspector__toolbar">
+              <div className="archive-inspector__search">
+                <Filter className="archive-inspector__search-icon" size={16} />
+                <input type="text" className="input-text archive-inspector__search-input" placeholder={t('inspector.searchPlaceholder')} value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setVisibleEntryCount(ENTRY_PAGE_SIZE) }} />
               </div>
-              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t(isSearching ? 'inspector.searchResults' : 'inspector.currentFolder', { count: allDisplayedEntries.length })}</div>
+              <div className="archive-inspector__entry-count">{t(isSearching ? 'inspector.searchResults' : 'inspector.currentFolder', { count: allDisplayedEntries.length })}</div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', paddingBottom: '8px', borderBottom: '2px solid #4A403A', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27' }}>
-              <div>{t(isSearching ? 'inspector.path' : 'inspector.fileName')}</div><div style={{ textAlign: 'right' }}>{t('inspector.originalSize')}</div><div style={{ textAlign: 'right' }}>{t('inspector.compressedSize')}</div><div style={{ textAlign: 'right' }}>{t('inspector.ratio')}</div>
+            <div className="archive-inspector__table-header">
+              <div>{t(isSearching ? 'inspector.path' : 'inspector.fileName')}</div><div className="archive-inspector__align-right">{t('inspector.originalSize')}</div><div className="archive-inspector__align-right">{t('inspector.compressedSize')}</div><div className="archive-inspector__align-right">{t('inspector.ratio')}</div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <div className="archive-inspector__entries">
               {displayedEntries.map(entry => {
                 const isNavigableDirectory = entry.isDirectory
                 return (
-                <button key={entry.path} type="button" onClick={() => isNavigableDirectory && moveToPath(normalizeArchivePath(entry.path))} disabled={!isNavigableDirectory} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '10px 0', border: 'none', borderBottom: '1px dashed #E8DFD5', alignItems: 'center', fontSize: '13px', background: 'transparent', cursor: isNavigableDirectory ? 'pointer' : 'default', textAlign: 'left', color: '#362D27' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                    {entry.isDirectory ? <Folder size={16} color="#FF8E72" /> : <File size={16} color="#5A9EED" />}
-                    <span style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
-                    {isNavigableDirectory && <ChevronRight size={15} color="#A3968C" />}
+                <button key={entry.path} type="button" onClick={() => isNavigableDirectory && moveToPath(normalizeArchivePath(entry.path))} disabled={!isNavigableDirectory} className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ''}`}>
+                  <div className="archive-inspector__entry-main">
+                    {entry.isDirectory ? <Folder className="archive-inspector__entry-icon archive-inspector__entry-icon--folder" size={16} /> : <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={16} />}
+                    <span className="archive-inspector__entry-name">{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
+                    {isNavigableDirectory && <ChevronRight className="archive-inspector__entry-chevron" size={15} />}
                   </div>
-                  <div style={{ textAlign: 'right', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
-                  <div style={{ textAlign: 'right', color: '#A3968C', fontFamily: 'var(--font-mono)' }}>{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
-                  <div style={{ textAlign: 'right', color: entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? '#52B788' : '#6E6158', fontWeight: 600 }}>{entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}</div>
+                  <div className="archive-inspector__entry-size">{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
+                  <div className="archive-inspector__entry-compressed-size">{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
+                  <div className={`archive-inspector__entry-ratio${entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>{entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}</div>
                 </button>
                 )
               })}
               {displayedEntries.length < allDisplayedEntries.length && (
-                <button type="button" className="btn-secondary" onClick={() => setVisibleEntryCount(count => count + ENTRY_PAGE_SIZE)} style={{ alignSelf: 'center', margin: '12px' }}>
+                <button type="button" className="btn-secondary archive-inspector__load-more" onClick={() => setVisibleEntryCount(count => count + ENTRY_PAGE_SIZE)}>
                   {t('inspector.loadMore', { count: Math.min(ENTRY_PAGE_SIZE, allDisplayedEntries.length - displayedEntries.length) })}
                 </button>
               )}
-              {displayedEntries.length === 0 && <div style={{ padding: '28px', textAlign: 'center', color: '#6E6158', fontSize: '13px' }}>{t(isSearching ? 'inspector.noSearchResults' : 'inspector.emptyFolder')}</div>}
+              {displayedEntries.length === 0 && <div className="archive-inspector__empty">{t(isSearching ? 'inspector.noSearchResults' : 'inspector.emptyFolder')}</div>}
             </div>
           </div>
         </div>
       ) : (
-        <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <Search size={48} color="#D9CEC1" />
-          <h4 style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#6E6158' }}>{t('inspector.noArchive')}</h4>
+        <div className="glass-panel archive-inspector__state archive-inspector__state--empty">
+          <Search className="archive-inspector__empty-icon" size={48} />
+          <h4 className="archive-inspector__empty-title">{t('inspector.noArchive')}</h4>
           <button className="btn-primary" onClick={handleOpenArchive}>{t('inspector.selectArchive')}</button>
         </div>
       )}

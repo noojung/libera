@@ -1,0 +1,221 @@
+.queue-manager {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.queue-manager__header {
+  display: flex;
+  padding: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.queue-manager__title {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.queue-manager__subtitle {
+  color: #6E6158;
+  font-size: 13px;
+}
+
+.queue-manager__jobs {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.queue-manager__empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  color: #A3968C;
+  font-family: var(--font-cute);
+  font-size: 18px;
+}
+
+.queue-manager__job {
+  display: flex;
+  padding: 16px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.glass-panel.queue-manager__job--completed {
+  border-left: 6px solid #52B788;
+}
+
+.glass-panel.queue-manager__job--error {
+  border-left: 6px solid #E76F51;
+}
+
+.glass-panel.queue-manager__job--cancelled {
+  border-left: 6px solid #A3968C;
+}
+
+.glass-panel.queue-manager__job--pending {
+  border-left: 6px solid #5A9EED;
+}
+
+.glass-panel.queue-manager__job--running {
+  border-left: 6px solid #FF8E72;
+}
+
+.queue-manager__job-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.queue-manager__job-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.queue-manager__job-icon--compress {
+  color: #FF8E72;
+}
+
+.queue-manager__job-icon--extract {
+  color: #5A9EED;
+}
+
+.queue-manager__job-name {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.queue-manager__job-type {
+  color: #6E6158;
+  font-family: var(--font-cute);
+  font-size: 14px;
+}
+
+.queue-manager__job-actions,
+.queue-manager__status {
+  display: flex;
+  align-items: center;
+}
+
+.queue-manager__job-actions {
+  gap: 12px;
+}
+
+.queue-manager__status {
+  gap: 6px;
+  font-family: var(--font-cute);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.queue-manager__status--running {
+  color: #FF8E72;
+}
+
+.queue-manager__status--pending {
+  color: #5A9EED;
+}
+
+.queue-manager__status--completed {
+  color: #52B788;
+}
+
+.queue-manager__status--error {
+  color: #E76F51;
+}
+
+.queue-manager__status--cancelled {
+  color: #A3968C;
+}
+
+.queue-manager__spinner {
+  animation: spin 1s linear infinite;
+}
+
+.queue-manager__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.queue-manager__progress-track {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 1.5px solid #4A403A;
+  border-radius: 999px;
+  background: #FFF3E4;
+}
+
+.queue-progress__bar {
+  height: 100%;
+  background: var(--accent-gradient);
+  transition: width 0.2s ease;
+}
+
+.queue-progress__bar--indeterminate {
+  width: 35%;
+}
+
+.queue-manager__progress-value {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  appearance: none;
+  background: transparent;
+}
+
+.queue-manager__progress-value::-webkit-progress-bar {
+  background: transparent;
+}
+
+.queue-manager__progress-value::-webkit-progress-value {
+  background: var(--accent-gradient);
+  transition: width 0.2s ease;
+}
+
+.queue-manager__progress-value::-moz-progress-bar {
+  background: var(--accent-gradient);
+}
+
+.queue-manager__progress-details {
+  display: flex;
+  justify-content: space-between;
+  color: #6E6158;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.queue-manager__error {
+  color: #E76F51;
+  font-size: 12px;
+}
+
+.queue-manager__completed-details {
+  display: flex;
+  gap: 16px;
+  color: #6E6158;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.queue-manager__saved {
+  color: #52B788;
+  font-family: var(--font-cute);
+  font-size: 14px;
+  font-weight: 700;
+}

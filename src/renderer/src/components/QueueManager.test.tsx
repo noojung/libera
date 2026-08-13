@@ -36,6 +36,15 @@ describe('QueueManager', () => {
     expect(screen.queryByRole('button', { name: 'Open folder' })).not.toBeInTheDocument()
   })
 
+  it('renders determinate progress without an inline style', () => {
+    renderWithI18n(
+      <QueueManager jobs={[job({ percent: 50 })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelExtraction={vi.fn()} />
+    )
+    const progress = screen.getByRole('progressbar', { name: '50%' })
+    expect(progress).toHaveValue(50)
+    expect(progress).not.toHaveAttribute('style')
+  })
+
   it('opens completed output and clears finished jobs', async () => {
     const onOpen = vi.fn()
     const onClear = vi.fn()

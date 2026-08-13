@@ -4,6 +4,7 @@ import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import './DropZone.css'
 
 interface DropZoneProps {
   items: SelectedItem[]
@@ -80,69 +81,33 @@ export const DropZone: React.FC<DropZoneProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
+    <div className="drop-zone">
       {/* Drop Target Box */}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        style={{
-          flex: items.length > 0 ? '0 0 160px' : 1,
-          border: isDragOver ? '2.5px dashed #FF8E72' : '2px dashed #4A403A',
-          background: isDragOver ? '#FFF4E8' : '#FFFFFF',
-          borderRadius: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          cursor: 'pointer',
-          boxShadow: isDragOver ? '4px 6px 0px #4A403A' : '3px 3px 0px #4A403A',
-          transform: isDragOver ? 'scale(1.01)' : 'none'
-        }}
+        className={`drop-zone__target${items.length > 0 ? ' drop-zone__target--compact' : ''}${isDragOver ? ' is-drag-over' : ''}`}
         onClick={() => onSelectFilesDialog(false)}
       >
-        <div style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '50%',
-          background: '#FFF3E4',
-          border: '2px solid #4A403A',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: '10px',
-          boxShadow: '2px 2px 0px #4A403A'
-        }}>
-          <UploadCloud size={28} color={isDragOver ? '#FF8E72' : '#362D27'} />
+        <div className="drop-zone__upload-icon">
+          <UploadCloud className={isDragOver ? 'is-drag-over' : ''} size={28} />
         </div>
 
-        <h3 style={{
-          fontFamily: 'var(--font-cute)',
-          fontSize: '20px',
-          fontWeight: 700,
-          color: '#362D27',
-          marginBottom: '4px'
-        }}>
+        <h3 className="drop-zone__title">
           {t(allowFolders ? 'dropZone.dropFilesAndFolders' : 'dropZone.dropArchives')}
         </h3>
-        <p style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '13px',
-          color: '#6E6158',
-          marginBottom: '16px'
-        }}>
+        <p className="drop-zone__hint">
           {t(allowFolders ? 'dropZone.filesAndFoldersHint' : 'dropZone.archivesHint')}
         </p>
 
         {(hasUnsupportedDrop || validationError) && (
-          <p role="alert" style={{ marginTop: '-8px', marginBottom: '12px', color: '#E76F51', fontSize: '13px' }}>
+          <p role="alert" className="drop-zone__alert">
             {hasUnsupportedDrop ? t('dropZone.unsupportedArchive') : validationError}
           </p>
         )}
 
-        <div style={{ display: 'flex', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
+        <div className="drop-zone__actions" onClick={(e) => e.stopPropagation()}>
           <button
             className="btn-secondary"
             onClick={() => onSelectFilesDialog(false)}
@@ -164,74 +129,49 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
       {/* Selected Items Preview List */}
       {items.length > 0 && (
-        <div className="glass-panel" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontFamily: 'var(--font-cute)', fontSize: '16px', fontWeight: 700, color: '#362D27' }}>
+        <div className="glass-panel drop-zone__selection">
+          <div className="drop-zone__selection-header">
+            <span className="drop-zone__selection-title">
               {t('dropZone.selectedItems', { count: items.length })}
             </span>
             <button
               onClick={onClearItems}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#E76F51',
-                fontFamily: 'var(--font-cute)',
-                fontSize: '15px',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
+              className="drop-zone__clear-button"
             >
               {t('dropZone.clearAll')}
             </button>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="drop-zone__items">
             {items.map((item, idx) => (
               <div
                 key={idx}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: '#FAF7F2',
-                  padding: '10px 14px',
-                  borderRadius: '12px',
-                  border: '1.5px solid #4A403A'
-                }}
+                className="drop-zone__item"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                <div className="drop-zone__item-main">
                   {item.isDirectory ? (
-                    <Folder size={18} color="#FF8E72" />
+                    <Folder className="drop-zone__item-icon drop-zone__item-icon--folder" size={18} />
                   ) : (
-                    <File size={18} color="#5A9EED" />
+                    <File className="drop-zone__item-icon drop-zone__item-icon--file" size={18} />
                   )}
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#362D27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className="drop-zone__item-details">
+                    <div className="drop-zone__item-name">
                       {item.name}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#A3968C', fontFamily: 'var(--font-mono)' }}>
+                    <div className="drop-zone__item-path">
                       {item.path}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
+                <div className="drop-zone__item-actions">
+                  <span className="drop-zone__item-size">
                     {formatBytes(item.size, language)}
                   </span>
                   <button
                     onClick={() => onRemoveItem(idx)}
                     aria-label={t('dropZone.removeItem', { name: item.name })}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#A3968C',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#E76F51')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#A3968C')}
+                    className="drop-zone__remove-button"
                   >
                     <X size={16} />
                   </button>

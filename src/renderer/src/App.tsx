@@ -8,6 +8,7 @@ import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import './styles/theme.css'
+import './App.css'
 import { useTranslation } from 'react-i18next'
 
 export const App: React.FC = () => {
@@ -369,12 +370,12 @@ export const App: React.FC = () => {
   const activeQueueCount = jobs.filter(j => j.status === 'pending' || j.status === 'running').length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
+    <div className="app-shell">
       <TitleBar currentMode={mode} setMode={setMode} activeQueueCount={activeQueueCount} />
 
-      <main style={{ flex: 1, padding: '20px', overflow: 'hidden', background: '#F8FAFC' }}>
+      <main className="app-main">
         {mode === 'compress' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', height: '100%' }}>
+          <div className="app-workspace">
             <DropZone
               items={selectedItems}
               onAddFiles={handleAddFiles}
@@ -390,7 +391,7 @@ export const App: React.FC = () => {
         )}
 
         {mode === 'extract' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', height: '100%' }}>
+          <div className="app-workspace">
             <DropZone
               items={extractItems}
               onAddFiles={handleAddExtractFiles}

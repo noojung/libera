@@ -1,0 +1,20 @@
+.app-shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+  padding: 20px;
+  overflow: hidden;
+  background: #F8FAFC;
+}
+
+.app-workspace {
+  display: grid;
+  height: 100%;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+}

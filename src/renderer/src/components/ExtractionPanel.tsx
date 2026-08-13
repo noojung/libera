@@ -4,6 +4,7 @@ import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import './ExtractionPanel.css'
 
 interface ExtractionPanelProps {
   items: SelectedItem[]
@@ -42,23 +43,23 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
 
   const totalBytes = items.reduce((sum, item) => sum + item.size, 0)
   return (
-    <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', fontWeight: 700, color: '#362D27', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FolderOutput size={18} color="#FF8E72" />
+    <div className="glass-panel extraction-panel">
+      <div className="extraction-panel__header">
+        <h3 className="extraction-panel__title">
+          <FolderOutput className="extraction-panel__title-icon" size={18} />
           {t('extraction.title')}
         </h3>
-        <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
+        <span className="extraction-panel__summary">
           {t('extraction.selected', { count: items.length, size: formatBytes(totalBytes, language) })}
         </span>
       </div>
 
       {/* Target Directory Selector */}
-      <div>
-        <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
+      <div className="extraction-panel__field">
+        <label className="extraction-panel__label">
           {t('extraction.destination')}
         </label>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="extraction-panel__destination-row">
           <input
             type="text"
             className="input-text"
@@ -66,7 +67,7 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
             value={targetDir}
             onChange={(e) => setTargetDir(e.target.value)}
           />
-          <button className="btn-secondary" onClick={handleSelectFolder} style={{ whiteSpace: 'nowrap' }}>
+          <button className="btn-secondary extraction-panel__browse-button" onClick={handleSelectFolder}>
             {t('extraction.browse')}
           </button>
         </div>
@@ -74,28 +75,19 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
 
 
       {/* Extraction Subfolder Option */}
-      <div style={{
-        background: '#FAF7F2',
-        padding: '14px',
-        borderRadius: '12px',
-        border: '1.5px solid #4A403A',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        cursor: 'pointer'
-      }} onClick={() => setCreateSubfolder(!createSubfolder)}>
+      <div className="extraction-panel__subfolder-option" onClick={() => setCreateSubfolder(!createSubfolder)}>
         <input
           type="checkbox"
           checked={createSubfolder}
           onChange={(e) => setCreateSubfolder(e.target.checked)}
-          style={{ width: '18px', height: '18px', accentColor: '#FF8E72', cursor: 'pointer' }}
+          className="extraction-panel__checkbox"
           onClick={(e) => e.stopPropagation()}
         />
         <div>
-          <div style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27' }}>
+          <div className="extraction-panel__option-title">
             {t('extraction.createSubfolder')}
           </div>
-          <div style={{ fontSize: '12px', color: '#6E6158' }}>
+          <div className="extraction-panel__option-description">
             {t('extraction.example', { directory: targetDir || t('extraction.defaultDirectory') })}
           </div>
         </div>
@@ -103,16 +95,9 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
 
       {/* Action Button */}
       <button
-        className="btn-primary"
+        className="btn-primary extraction-panel__start-button"
         onClick={handleExtract}
         disabled={items.length === 0 || !targetDir}
-        style={{
-          width: '100%',
-          justifyContent: 'center',
-          padding: '12px',
-          opacity: (items.length === 0 || !targetDir) ? 0.5 : 1,
-          cursor: (items.length === 0 || !targetDir) ? 'not-allowed' : 'pointer'
-        }}
       >
         <Download size={20} />
         {t('extraction.start')}

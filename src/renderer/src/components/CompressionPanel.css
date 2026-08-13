@@ -1,0 +1,138 @@
+.compression-panel {
+  display: flex;
+  padding: 20px;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.compression-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compression-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.compression-panel__title-icon,
+.compression-panel__level-value {
+  color: #FF8E72;
+}
+
+.compression-panel__summary {
+  color: #6E6158;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.compression-panel__label {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.compression-panel__label--format,
+.compression-panel__label--stacked {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.compression-panel__label--stacked {
+  margin-bottom: 6px;
+}
+
+.compression-panel__format-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.compression-panel__format-button {
+  padding: 10px;
+  border: 1.5px solid #4A403A;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.compression-panel__format-button.is-active {
+  border: 2px solid #FF8E72;
+  background: #FFF3E4;
+  color: #FF8E72;
+  box-shadow: 2px 2px 0 #4A403A;
+}
+
+.compression-panel__level-header {
+  display: flex;
+  margin-bottom: 6px;
+  justify-content: space-between;
+}
+
+.compression-panel__level-value {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compression-panel__range {
+  width: 100%;
+  accent-color: #FF8E72;
+  cursor: pointer;
+}
+
+.compression-panel__optional {
+  color: #6E6158;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.compression-panel__password-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compression-panel__message {
+  margin-top: 6px;
+  color: #6E6158;
+  font-size: 12px;
+}
+
+.compression-panel__message--error {
+  color: #E76F51;
+}
+
+.compression-panel__destination-row {
+  display: flex;
+  gap: 8px;
+}
+
+.compression-panel__browse-button {
+  white-space: nowrap;
+}
+
+.btn-primary.compression-panel__start-button {
+  width: 100%;
+  padding: 12px;
+  justify-content: center;
+}
+
+.btn-primary.compression-panel__start-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
