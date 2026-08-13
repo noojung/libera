@@ -9,22 +9,44 @@ import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
+export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
+export const MAX_IMAGE_PREVIEW_DIMENSION = 16_384
+export const MAX_IMAGE_PREVIEW_PIXELS = 25_000_000
 
 export type ArchivePreviewEncoding = 'utf-8' | 'utf-16le' | 'utf-16be'
+export type ArchivePreviewMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 export type ArchivePreviewErrorCode =
   | 'ENTRY_NOT_FOUND'
   | 'ENTRY_NOT_PREVIEWABLE'
   | 'ENCRYPTED_PREVIEW_UNSUPPORTED'
   | 'NOT_TEXT'
+  | 'UNSUPPORTED_IMAGE'
+  | 'INVALID_IMAGE'
+  | 'IMAGE_TOO_LARGE'
+  | 'IMAGE_DIMENSIONS_TOO_LARGE'
   | 'PREVIEW_CANCELLED'
 
-export interface ArchivePreviewResult {
-  text: string
-  encoding: ArchivePreviewEncoding
-  truncated: boolean
+interface ArchivePreviewBaseResult {
   previewedBytes: number
   totalBytes: number | null
 }
+
+export interface ArchiveTextPreviewResult extends ArchivePreviewBaseResult {
+  kind: 'text'
+  text: string
+  encoding: ArchivePreviewEncoding
+  truncated: boolean
+}
+
+export interface ArchiveImagePreviewResult extends ArchivePreviewBaseResult {
+  kind: 'image'
+  data: Uint8Array
+  mediaType: ArchivePreviewMediaType
+  width: number
+  height: number
+}
+
+export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePreviewResult
 
 export interface ArchivePreviewContext {
   signal?: AbortSignal
@@ -44,6 +66,18 @@ class PreviewLimitReached extends Error {
   }
 }
 
+type CollectedPreviewKind =
+  | { kind: 'text' }
+  | { kind: 'image'; mediaType: ArchivePreviewMediaType }
+  | { kind: 'unsupported-image' }
+
+interface CollectedArchiveEntry {
+  data: Buffer
+  previewKind: CollectedPreviewKind
+  truncated: boolean
+  totalBytes: number | null
+}
+
 function previewError(code: ArchivePreviewErrorCode, message: string): ArchivePreviewError {
   return new ArchivePreviewError(code, message)
 }
@@ -59,24 +93,55 @@ function isAbortError(error: unknown): boolean {
   )
 }
 
-class PreviewCollector extends Writable {
-  private readonly chunks: Buffer[] = []
-  private collectedBytes = 0
-  truncated = false
+function hasBytes(data: Buffer, bytes: readonly number[], offset = 0): boolean {
+  return data.length >= offset + bytes.length && bytes.every((byte, index) => data[offset + index] === byte)
+}
 
-  constructor(private readonly limit: number) {
-    super()
+function sniffPreviewKind(data: Buffer): CollectedPreviewKind | undefined {
+  if (hasBytes(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return { kind: 'image', mediaType: 'image/png' }
+  }
+  if (hasBytes(data, [0xff, 0xd8, 0xff])) return { kind: 'image', mediaType: 'image/jpeg' }
+  if (data.length >= 6 && ['GIF87a', 'GIF89a'].includes(data.toString('ascii', 0, 6))) {
+    return { kind: 'image', mediaType: 'image/gif' }
+  }
+  if (data.length >= 12 && data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
+    return { kind: 'image', mediaType: 'image/webp' }
   }
 
-  _write(chunk: Buffer | Uint8Array, _: BufferEncoding, callback: (error?: Error | null) => void): void {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    const remaining = this.limit - this.collectedBytes
+  const isBmp = data.length >= 2 && data.toString('ascii', 0, 2) === 'BM'
+  const isIco = hasBytes(data, [0x00, 0x00, 0x01, 0x00])
+  const isTiff = hasBytes(data, [0x49, 0x49, 0x2a, 0x00]) || hasBytes(data, [0x4d, 0x4d, 0x00, 0x2a])
+  const isoBrand = data.length >= 12 && data.toString('ascii', 4, 8) === 'ftyp'
+    ? data.toString('ascii', 8, 12)
+    : ''
+  const isUnsupportedIsoImage = ['avif', 'avis', 'heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(isoBrand)
+  if (isBmp || isIco || isTiff || isUnsupportedIsoImage) return { kind: 'unsupported-image' }
+  return undefined
+}
+
+class PreviewCollector extends Writable {
+  private readonly chunks: Buffer[] = []
+  private pending = Buffer.alloc(0)
+  private collectedBytes = 0
+  private detectedKind: CollectedPreviewKind | null = null
+  truncated = false
+
+  get previewKind(): CollectedPreviewKind {
+    return this.detectedKind || { kind: 'text' }
+  }
+
+  private get byteLimit(): number {
+    return this.detectedKind?.kind === 'image' ? MAX_IMAGE_PREVIEW_BYTES : MAX_ARCHIVE_PREVIEW_BYTES
+  }
+
+  private collect(buffer: Buffer, callback: (error?: Error | null) => void): void {
+    const remaining = this.byteLimit - this.collectedBytes
     if (remaining > 0) {
       const slice = buffer.subarray(0, remaining)
       this.chunks.push(Buffer.from(slice))
       this.collectedBytes += slice.length
     }
-
     if (buffer.length > remaining) {
       this.truncated = true
       callback(new PreviewLimitReached())
@@ -85,8 +150,49 @@ class PreviewCollector extends Writable {
     callback()
   }
 
+  _write(chunk: Buffer | Uint8Array, _: BufferEncoding, callback: (error?: Error | null) => void): void {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    if (this.detectedKind) {
+      this.collect(buffer, callback)
+      return
+    }
+
+    const combined = this.pending.length > 0 ? Buffer.concat([this.pending, buffer]) : buffer
+    const detectedKind = sniffPreviewKind(combined)
+    if (!detectedKind && combined.length < 12) {
+      this.pending = Buffer.from(combined)
+      callback()
+      return
+    }
+
+    this.detectedKind = detectedKind || { kind: 'text' }
+    this.pending = Buffer.alloc(0)
+    this.collect(combined, callback)
+  }
+
+  _final(callback: (error?: Error | null) => void): void {
+    if (this.detectedKind || this.pending.length === 0) {
+      if (!this.detectedKind) this.detectedKind = { kind: 'text' }
+      callback()
+      return
+    }
+    this.detectedKind = sniffPreviewKind(this.pending) || { kind: 'text' }
+    const pending = this.pending
+    this.pending = Buffer.alloc(0)
+    this.collect(pending, callback)
+  }
+
   toBuffer(): Buffer {
     return Buffer.concat(this.chunks, this.collectedBytes)
+  }
+}
+
+function collectedEntry(collector: PreviewCollector, totalBytes: number | null): CollectedArchiveEntry {
+  return {
+    data: collector.toBuffer(),
+    previewKind: collector.previewKind,
+    truncated: collector.truncated,
+    totalBytes
   }
 }
 
@@ -94,7 +200,7 @@ async function readZipEntry(
   archivePath: string,
   entryIndex: number,
   signal?: AbortSignal
-): Promise<{ data: Buffer; truncated: boolean; totalBytes: number }> {
+): Promise<CollectedArchiveEntry> {
   const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES)
   try {
     throwIfAborted(signal)
@@ -108,7 +214,7 @@ async function readZipEntry(
       throw previewError('ENCRYPTED_PREVIEW_UNSUPPORTED', 'Encrypted ZIP entries cannot be previewed')
     }
 
-    const collector = new PreviewCollector(MAX_ARCHIVE_PREVIEW_BYTES)
+    const collector = new PreviewCollector()
     try {
       await (entry as FileEntry).getData(Writable.toWeb(collector), {
         signal,
@@ -118,9 +224,7 @@ async function readZipEntry(
         useWebWorkers: false
       })
     } catch (error) {
-      if (collector.truncated) {
-        return { data: collector.toBuffer(), truncated: true, totalBytes: Number(entry.uncompressedSize) }
-      }
+      if (collector.truncated) return collectedEntry(collector, Number(entry.uncompressedSize))
       if (isAbortError(error) || signal?.aborted) {
         throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
       }
@@ -129,12 +233,7 @@ async function readZipEntry(
       }
       throw error
     }
-
-    return {
-      data: collector.toBuffer(),
-      truncated: collector.truncated,
-      totalBytes: Number(entry.uncompressedSize)
-    }
+    return collectedEntry(collector, Number(entry.uncompressedSize))
   } finally {
     await zip.close()
   }
@@ -144,7 +243,7 @@ async function readTarEntry(
   archivePath: string,
   entryIndex: number,
   signal?: AbortSignal
-): Promise<{ data: Buffer; truncated: boolean; totalBytes: number }> {
+): Promise<CollectedArchiveEntry> {
   let entryFound = false
   let entryType: string | undefined
   let totalBytes = 0
@@ -158,7 +257,7 @@ async function readTarEntry(
     resolveEntryComplete = resolve
     rejectEntryComplete = reject
   })
-  const collector = new PreviewCollector(MAX_ARCHIVE_PREVIEW_BYTES)
+  const collector = new PreviewCollector()
   const listing = tar.t({
     strict: true,
     noResume: true,
@@ -198,7 +297,7 @@ async function readTarEntry(
     if (collector.truncated) {
       selectedEntry?.destroy()
       listing.abort(new PreviewLimitReached())
-      return { data: collector.toBuffer(), truncated: true, totalBytes }
+      return collectedEntry(collector, totalBytes)
     }
     if (isAbortError(error) || signal?.aborted) {
       throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
@@ -210,16 +309,16 @@ async function readTarEntry(
   if (!['File', 'OldFile', 'ContiguousFile'].includes(entryType || '')) {
     throw previewError('ENTRY_NOT_PREVIEWABLE', 'Only regular files can be previewed')
   }
-  return { data: collector.toBuffer(), truncated: collector.truncated, totalBytes }
+  return collectedEntry(collector, totalBytes)
 }
 
 async function readGzEntry(
   archivePath: string,
   entryIndex: number,
   signal?: AbortSignal
-): Promise<{ data: Buffer; truncated: boolean; totalBytes: null }> {
+): Promise<CollectedArchiveEntry> {
   if (entryIndex !== 0) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
-  const collector = new PreviewCollector(MAX_ARCHIVE_PREVIEW_BYTES)
+  const collector = new PreviewCollector()
   try {
     await pipeline(
       fs.createReadStream(archivePath),
@@ -235,7 +334,7 @@ async function readGzEntry(
       throw error
     }
   }
-  return { data: collector.toBuffer(), truncated: collector.truncated, totalBytes: null }
+  return collectedEntry(collector, null)
 }
 
 function decodeText(data: Buffer, truncated: boolean): { text: string; encoding: ArchivePreviewEncoding } {
@@ -283,6 +382,125 @@ function decodeText(data: Buffer, truncated: boolean): { text: string; encoding:
   return { text, encoding }
 }
 
+function invalidImage(message: string): ArchivePreviewError {
+  return previewError('INVALID_IMAGE', message)
+}
+
+function parsePngDimensions(data: Buffer): { width: number; height: number } {
+  if (
+    data.length < 24 ||
+    !hasBytes(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) ||
+    data.toString('ascii', 12, 16) !== 'IHDR'
+  ) throw invalidImage('PNG image has an invalid header')
+  return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+}
+
+function parseGifDimensions(data: Buffer): { width: number; height: number } {
+  if (data.length < 10 || !['GIF87a', 'GIF89a'].includes(data.toString('ascii', 0, 6))) {
+    throw invalidImage('GIF image has an invalid header')
+  }
+  return { width: data.readUInt16LE(6), height: data.readUInt16LE(8) }
+}
+
+const JPEG_START_OF_FRAME_MARKERS = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf
+])
+
+function parseJpegDimensions(data: Buffer): { width: number; height: number } {
+  if (data.length < 4 || !hasBytes(data, [0xff, 0xd8, 0xff])) {
+    throw invalidImage('JPEG image has an invalid header')
+  }
+  let offset = 2
+  while (offset < data.length) {
+    while (offset < data.length && data[offset] === 0xff) offset++
+    if (offset >= data.length) break
+    const marker = data[offset++]
+    if (marker === 0xd9 || marker === 0xda) break
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) continue
+    if (offset + 2 > data.length) break
+    const segmentLength = data.readUInt16BE(offset)
+    if (segmentLength < 2 || offset + segmentLength > data.length) {
+      throw invalidImage('JPEG image contains an invalid segment')
+    }
+    if (JPEG_START_OF_FRAME_MARKERS.has(marker)) {
+      if (segmentLength < 7) throw invalidImage('JPEG image has an invalid frame header')
+      return {
+        height: data.readUInt16BE(offset + 3),
+        width: data.readUInt16BE(offset + 5)
+      }
+    }
+    offset += segmentLength
+  }
+  throw invalidImage('JPEG image dimensions could not be read')
+}
+
+function readUInt24LE(data: Buffer, offset: number): number {
+  return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16)
+}
+
+function parseWebpDimensions(data: Buffer): { width: number; height: number } {
+  if (
+    data.length < 20 ||
+    data.toString('ascii', 0, 4) !== 'RIFF' ||
+    data.toString('ascii', 8, 12) !== 'WEBP'
+  ) throw invalidImage('WebP image has an invalid header')
+
+  let offset = 12
+  while (offset + 8 <= data.length) {
+    const chunkType = data.toString('ascii', offset, offset + 4)
+    const chunkSize = data.readUInt32LE(offset + 4)
+    const chunkStart = offset + 8
+    const chunkEnd = chunkStart + chunkSize
+    if (chunkEnd > data.length) throw invalidImage('WebP image contains an invalid chunk')
+
+    if (chunkType === 'VP8X' && chunkSize >= 10) {
+      return {
+        width: readUInt24LE(data, chunkStart + 4) + 1,
+        height: readUInt24LE(data, chunkStart + 7) + 1
+      }
+    }
+    if (chunkType === 'VP8L' && chunkSize >= 5 && data[chunkStart] === 0x2f) {
+      const bits = data.readUInt32LE(chunkStart + 1)
+      return {
+        width: (bits & 0x3fff) + 1,
+        height: ((bits >>> 14) & 0x3fff) + 1
+      }
+    }
+    if (
+      chunkType === 'VP8 ' &&
+      chunkSize >= 10 &&
+      hasBytes(data, [0x9d, 0x01, 0x2a], chunkStart + 3)
+    ) {
+      return {
+        width: data.readUInt16LE(chunkStart + 6) & 0x3fff,
+        height: data.readUInt16LE(chunkStart + 8) & 0x3fff
+      }
+    }
+    offset = chunkEnd + (chunkSize % 2)
+  }
+  throw invalidImage('WebP image dimensions could not be read')
+}
+
+function parseImageDimensions(data: Buffer, mediaType: ArchivePreviewMediaType): { width: number; height: number } {
+  if (mediaType === 'image/png') return parsePngDimensions(data)
+  if (mediaType === 'image/jpeg') return parseJpegDimensions(data)
+  if (mediaType === 'image/gif') return parseGifDimensions(data)
+  return parseWebpDimensions(data)
+}
+
+function validateImageDimensions(width: number, height: number): void {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw invalidImage('Image dimensions are invalid')
+  }
+  if (
+    width > MAX_IMAGE_PREVIEW_DIMENSION ||
+    height > MAX_IMAGE_PREVIEW_DIMENSION ||
+    width * height > MAX_IMAGE_PREVIEW_PIXELS
+  ) {
+    throw previewError('IMAGE_DIMENSIONS_TOO_LARGE', 'Image dimensions exceed the safe preview limit')
+  }
+}
+
 export async function previewArchiveEntry(
   archivePath: string,
   entryId: string,
@@ -298,7 +516,7 @@ export async function previewArchiveEntry(
 
   const ext = path.extname(archivePath).toLowerCase()
   const fullExt = archivePath.toLowerCase()
-  let preview: { data: Buffer; truncated: boolean; totalBytes: number | null }
+  let preview: CollectedArchiveEntry
   if (ext === '.zip') {
     preview = await readZipEntry(archivePath, entryIndex, context.signal)
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
@@ -309,10 +527,30 @@ export async function previewArchiveEntry(
     throw new Error(`Unsupported archive format: ${ext}`)
   }
 
-  const decoded = decodeText(preview.data, preview.truncated)
+  const truncated = preview.truncated || (preview.totalBytes !== null && preview.totalBytes > preview.data.length)
+  if (preview.previewKind.kind === 'unsupported-image') {
+    throw previewError('UNSUPPORTED_IMAGE', 'This image format is not supported for preview')
+  }
+  if (preview.previewKind.kind === 'image') {
+    if (truncated) throw previewError('IMAGE_TOO_LARGE', 'Image exceeds the 10 MiB preview limit')
+    const { width, height } = parseImageDimensions(preview.data, preview.previewKind.mediaType)
+    validateImageDimensions(width, height)
+    return {
+      kind: 'image',
+      data: Uint8Array.from(preview.data),
+      mediaType: preview.previewKind.mediaType,
+      width,
+      height,
+      previewedBytes: preview.data.length,
+      totalBytes: preview.totalBytes
+    }
+  }
+
+  const decoded = decodeText(preview.data, truncated)
   return {
+    kind: 'text',
     ...decoded,
-    truncated: preview.truncated || (preview.totalBytes !== null && preview.totalBytes > preview.data.length),
+    truncated,
     previewedBytes: preview.data.length,
     totalBytes: preview.totalBytes
   }

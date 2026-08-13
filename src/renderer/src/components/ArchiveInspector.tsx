@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { ArchivePreviewResult } from '../../../services/archivePreview'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
-import { ArchiveTextPreviewModal } from './ArchiveTextPreviewModal'
+import { ArchivePreviewModal } from './ArchivePreviewModal'
 import './ArchiveInspector.css'
 
 interface ArchiveEntry {
@@ -343,7 +343,7 @@ export const ArchiveInspector: React.FC = () => {
         </div>
       )}
       {previewEntry && (
-        <ArchiveTextPreviewModal
+        <ArchivePreviewModal
           entryPath={previewEntry.path}
           loading={previewLoading}
           result={previewResult}

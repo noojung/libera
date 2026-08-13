@@ -90,7 +90,7 @@ system.
 | --- | --- | --- |
 | Compression | ZIP, TAR, TGZ, GZ | GZ supports a single file only |
 | Extraction | ZIP, TAR, TGZ, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, and on-demand text previews up to 1 MiB per file |
+| Inspection | ZIP, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
 | Passwords | ZIP | Uses ZipCrypto for compatibility and does not provide strong confidentiality |
 
 ## Safe Extraction Policy
@@ -111,6 +111,11 @@ Text previews are decoded as UTF-8 or BOM-marked UTF-16 and are read directly
 from the archive without creating temporary files. Libera stops after the first
 1 MiB of expanded content, rejects binary data, and does not preview encrypted
 ZIP entries.
+
+PNG, JPEG, WebP, and GIF previews are detected from their file signatures rather
+than their names. Image data is limited to 10 MiB, 16,384 pixels on either axis,
+and 25 megapixels in total. SVG and other image formats are never rendered as
+images, and encrypted ZIP entries remain unavailable without extraction.
 
 Treat untrusted archives with care even when they pass these checks. See [SECURITY.md](SECURITY.md) for the complete security policy and vulnerability reporting instructions.
 

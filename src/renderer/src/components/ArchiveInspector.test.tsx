@@ -1,9 +1,19 @@
 import React from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArchiveInspector } from './ArchiveInspector'
 import { renderWithI18n } from '../test/render'
 import { installElectronApi } from '../test/electronApi'
+
+const createObjectUrl = vi.fn(() => 'blob:archive-preview')
+const revokeObjectUrl = vi.fn()
+Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+
+beforeEach(() => {
+  createObjectUrl.mockClear()
+  revokeObjectUrl.mockClear()
+})
 
 const inspection = (entries: any[]) => ({
   success: true,
@@ -120,7 +130,7 @@ describe('ArchiveInspector', () => {
     await user.click(screen.getByRole('button', { name: 'Open file...' }))
     await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
 
-    expect(screen.getByRole('dialog', { name: 'Text preview' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'File preview' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Loading file contents...')
     expect(api.previewArchiveEntry).toHaveBeenCalledWith(
       'preview.zip',
@@ -131,6 +141,7 @@ describe('ArchiveInspector', () => {
     resolvePreview({
       success: true,
       result: {
+        kind: 'text',
         text: 'preview contents',
         encoding: 'utf-8',
         truncated: true,
@@ -157,6 +168,66 @@ describe('ArchiveInspector', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('This file does not appear to contain supported text.')
   })
 
+  it('displays image previews and revokes their Blob URLs when closed', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['images.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'photo.png', name: 'photo.png', isDirectory: false, size: 24 }
+      ])),
+      previewArchiveEntry: vi.fn().mockResolvedValue({
+        success: true,
+        result: {
+          kind: 'image',
+          data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+          mediaType: 'image/png',
+          width: 320,
+          height: 200,
+          previewedBytes: 24,
+          totalBytes: 24
+        }
+      })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /photo\.png/ }))
+
+    const image = await screen.findByRole('img', { name: 'Preview of photo.png' })
+    expect(image).toHaveAttribute('src', 'blob:archive-preview')
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob))
+    expect(screen.getByText('Format: PNG')).toBeInTheDocument()
+    expect(screen.getByText('320 × 200 · 24 B')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Close file preview' }))
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:archive-preview')
+  })
+
+  it('shows an error when Chromium cannot decode validated image bytes', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['images.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'broken.png', name: 'broken.png', isDirectory: false, size: 24 }
+      ])),
+      previewArchiveEntry: vi.fn().mockResolvedValue({
+        success: true,
+        result: {
+          kind: 'image',
+          data: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+          mediaType: 'image/png',
+          width: 10,
+          height: 10,
+          previewedBytes: 24,
+          totalBytes: 24
+        }
+      })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /broken\.png/ }))
+    fireEvent.error(await screen.findByRole('img'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This image is damaged or cannot be decoded.')
+  })
+
   it('cancels an in-flight preview when the modal closes and ignores its late response', async () => {
     let resolvePreview!: (value: any) => void
     const pendingPreview = new Promise(resolve => { resolvePreview = resolve })
@@ -172,13 +243,13 @@ describe('ArchiveInspector', () => {
     await user.click(screen.getByRole('button', { name: 'Open file...' }))
     await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
     const requestId = previewArchiveEntry.mock.calls[0][2]
-    await user.click(screen.getByRole('button', { name: 'Close text preview' }))
+    await user.click(screen.getByRole('button', { name: 'Close file preview' }))
 
     expect(api.cancelArchivePreview).toHaveBeenCalledWith(requestId)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     resolvePreview({
       success: true,
-      result: { text: 'late contents', encoding: 'utf-8', truncated: false, previewedBytes: 5, totalBytes: 5 }
+      result: { kind: 'text', text: 'late contents', encoding: 'utf-8', truncated: false, previewedBytes: 5, totalBytes: 5 }
     })
     await waitFor(() => expect(screen.queryByText('late contents')).not.toBeInTheDocument())
   })

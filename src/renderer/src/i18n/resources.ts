@@ -96,11 +96,14 @@ export const resources = {
         readFailed: 'Could not read the archive information.',
         inspectFailed: 'An inspection error occurred.',
         preview: {
-          title: 'Text preview',
-          close: 'Close text preview',
+          title: 'File preview',
+          close: 'Close file preview',
           loading: 'Loading file contents...',
           empty: 'This file is empty.',
           encoding: 'Encoding: {{encoding}}',
+          imageAlt: 'Preview of {{path}}',
+          imageFormat: 'Format: {{format}}',
+          imageDetails: '{{width}} × {{height}} · {{size}}',
           truncated: 'Showing the first {{shown}} of {{total}}.',
           truncatedUnknown: 'Showing the first {{shown}}. The remaining content was omitted.',
           errors: {
@@ -108,7 +111,11 @@ export const resources = {
             entryNotPreviewable: 'This archive entry cannot be previewed as text.',
             encryptedPreviewUnsupported: 'Encrypted ZIP files cannot be previewed yet.',
             notText: 'This file does not appear to contain supported text.',
-            previewCancelled: 'The text preview was cancelled.',
+            unsupportedImage: 'This image format is not supported for preview.',
+            invalidImage: 'This image is damaged or cannot be decoded.',
+            imageTooLarge: 'Images larger than 10 MiB cannot be previewed.',
+            imageDimensionsTooLarge: 'This image exceeds the safe preview resolution limit.',
+            previewCancelled: 'The file preview was cancelled.',
             genericPreview: 'The file contents could not be previewed.'
           }
         }
@@ -270,11 +277,14 @@ export const resources = {
         readFailed: '압축 파일 정보를 읽는데 실패했습니다.',
         inspectFailed: '검사 오류가 발생했습니다.',
         preview: {
-          title: '텍스트 미리보기',
-          close: '텍스트 미리보기 닫기',
+          title: '파일 미리보기',
+          close: '파일 미리보기 닫기',
           loading: '파일 내용을 불러오는 중...',
           empty: '빈 파일입니다.',
           encoding: '인코딩: {{encoding}}',
+          imageAlt: '{{path}} 미리보기',
+          imageFormat: '포맷: {{format}}',
+          imageDetails: '{{width}} × {{height}} · {{size}}',
           truncated: '전체 {{total}} 중 처음 {{shown}}만 표시합니다.',
           truncatedUnknown: '처음 {{shown}}만 표시하며 나머지 내용은 생략했습니다.',
           errors: {
@@ -282,7 +292,11 @@ export const resources = {
             entryNotPreviewable: '이 항목은 텍스트로 미리 볼 수 없습니다.',
             encryptedPreviewUnsupported: '암호화된 ZIP 파일은 아직 미리볼 수 없습니다.',
             notText: '지원하는 텍스트 파일로 보이지 않습니다.',
-            previewCancelled: '텍스트 미리보기를 취소했습니다.',
+            unsupportedImage: '지원하지 않는 이미지 미리보기 형식입니다.',
+            invalidImage: '손상되었거나 디코딩할 수 없는 이미지입니다.',
+            imageTooLarge: '10 MiB보다 큰 이미지는 미리볼 수 없습니다.',
+            imageDimensionsTooLarge: '안전한 미리보기 해상도 제한을 초과한 이미지입니다.',
+            previewCancelled: '파일 미리보기를 취소했습니다.',
             genericPreview: '파일 내용을 미리보는 데 실패했습니다.'
           }
         }

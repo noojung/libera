@@ -25,6 +25,10 @@ function classifyError(error: unknown, operation: Operation): string {
       ENTRY_NOT_PREVIEWABLE: 'entryNotPreviewable',
       ENCRYPTED_PREVIEW_UNSUPPORTED: 'encryptedPreviewUnsupported',
       NOT_TEXT: 'notText',
+      UNSUPPORTED_IMAGE: 'unsupportedImage',
+      INVALID_IMAGE: 'invalidImage',
+      IMAGE_TOO_LARGE: 'imageTooLarge',
+      IMAGE_DIMENSIONS_TOO_LARGE: 'imageDimensionsTooLarge',
       PREVIEW_CANCELLED: 'previewCancelled'
     }
     return previewErrorCodes[error.code] || 'genericPreview'

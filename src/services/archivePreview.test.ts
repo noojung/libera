@@ -9,6 +9,7 @@ import { compressArchive } from './compressor'
 import {
   ArchivePreviewError,
   MAX_ARCHIVE_PREVIEW_BYTES,
+  MAX_IMAGE_PREVIEW_BYTES,
   previewArchiveEntry
 } from './archivePreview'
 
@@ -33,6 +34,53 @@ async function writeZip(
     await writer.add(entry.name, reader)
   }
   await fs.writeFile(archivePath, await writer.close())
+}
+
+function createPng(width: number, height: number, byteLength = 24): Buffer {
+  const data = Buffer.alloc(Math.max(byteLength, 24))
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(data)
+  data.writeUInt32BE(13, 8)
+  data.write('IHDR', 12, 'ascii')
+  data.writeUInt32BE(width, 16)
+  data.writeUInt32BE(height, 20)
+  return data
+}
+
+function createJpeg(width: number, height: number): Buffer {
+  return Buffer.from([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x0b, 0x08,
+    (height >>> 8) & 0xff, height & 0xff,
+    (width >>> 8) & 0xff, width & 0xff,
+    0x01, 0x01, 0x11, 0x00,
+    0xff, 0xd9
+  ])
+}
+
+function createGif(width: number, height: number): Buffer {
+  const data = Buffer.alloc(10)
+  data.write('GIF89a', 0, 'ascii')
+  data.writeUInt16LE(width, 6)
+  data.writeUInt16LE(height, 8)
+  return data
+}
+
+function writeUInt24LE(data: Buffer, value: number, offset: number): void {
+  data[offset] = value & 0xff
+  data[offset + 1] = (value >>> 8) & 0xff
+  data[offset + 2] = (value >>> 16) & 0xff
+}
+
+function createWebp(width: number, height: number): Buffer {
+  const data = Buffer.alloc(30)
+  data.write('RIFF', 0, 'ascii')
+  data.writeUInt32LE(data.length - 8, 4)
+  data.write('WEBP', 8, 'ascii')
+  data.write('VP8X', 12, 'ascii')
+  data.writeUInt32LE(10, 16)
+  writeUInt24LE(data, width - 1, 24)
+  writeUInt24LE(data, height - 1, 27)
+  return data
 }
 
 afterEach(async () => {
@@ -62,6 +110,7 @@ describe('previewArchiveEntry', () => {
     }
 
     await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({
+      kind: 'text',
       text: contents,
       encoding: 'utf-8',
       truncated: false,
@@ -79,8 +128,9 @@ describe('previewArchiveEntry', () => {
     const exact = await previewArchiveEntry(exactPath, 'entry-0')
     const oversized = await previewArchiveEntry(oversizedPath, 'entry-0')
 
-    expect(exact).toMatchObject({ truncated: false, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
-    expect(oversized).toMatchObject({ truncated: true, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
+    expect(exact).toMatchObject({ kind: 'text', truncated: false, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
+    expect(oversized).toMatchObject({ kind: 'text', truncated: true, previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES })
+    if (oversized.kind !== 'text') throw new Error('Expected a text preview')
     expect(oversized.text).toHaveLength(MAX_ARCHIVE_PREVIEW_BYTES)
   })
 
@@ -99,6 +149,7 @@ describe('previewArchiveEntry', () => {
     }
 
     await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({
+      kind: 'text',
       truncated: true,
       previewedBytes: MAX_ARCHIVE_PREVIEW_BYTES
     })
@@ -112,6 +163,7 @@ describe('previewArchiveEntry', () => {
 
     const result = await previewArchiveEntry(archivePath, 'entry-0')
 
+    if (result.kind !== 'text') throw new Error('Expected a text preview')
     expect(result.truncated).toBe(true)
     expect(result.text).toBe('a'.repeat(MAX_ARCHIVE_PREVIEW_BYTES - 1))
   })
@@ -132,9 +184,9 @@ describe('previewArchiveEntry', () => {
       { name: 'utf16be.txt', contents: utf16Be }
     ])
 
-    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ text, encoding: 'utf-8' })
-    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ text, encoding: 'utf-16le' })
-    await expect(previewArchiveEntry(archivePath, 'entry-2')).resolves.toMatchObject({ text, encoding: 'utf-16be' })
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ kind: 'text', text, encoding: 'utf-8' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ kind: 'text', text, encoding: 'utf-16le' })
+    await expect(previewArchiveEntry(archivePath, 'entry-2')).resolves.toMatchObject({ kind: 'text', text, encoding: 'utf-16be' })
   })
 
   it('uses the entry id to distinguish duplicate archive paths', async () => {
@@ -146,8 +198,92 @@ describe('previewArchiveEntry', () => {
     await fs.writeFile(sourcePath, 'second')
     await tar.r({ cwd: directory, file: archivePath }, ['duplicate.txt'])
 
-    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ text: 'first' })
-    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ text: 'second' })
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({ kind: 'text', text: 'first' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({ kind: 'text', text: 'second' })
+  })
+
+  it.each([
+    ['ZIP', 'image.zip', false],
+    ['TAR', 'image.tar', false],
+    ['TGZ', 'image.tgz', true],
+    ['TAR.GZ', 'image.tar.gz', true],
+    ['GZ', 'image.bin.gz', true]
+  ] as const)('previews signature-detected PNG data from %s archives', async (format, archiveName, gzip) => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, archiveName)
+    const image = createPng(320, 200)
+
+    if (format === 'ZIP') {
+      await writeZip(archivePath, [{ name: 'no-extension', contents: image }])
+    } else if (format === 'GZ') {
+      await fs.writeFile(archivePath, zlib.gzipSync(image))
+    } else {
+      await fs.writeFile(path.join(directory, 'no-extension'), image)
+      await tar.c({ cwd: directory, file: archivePath, gzip }, ['no-extension'])
+    }
+
+    const result = await previewArchiveEntry(archivePath, 'entry-0')
+    expect(result).toMatchObject({
+      kind: 'image',
+      mediaType: 'image/png',
+      width: 320,
+      height: 200,
+      previewedBytes: image.length
+    })
+    if (result.kind !== 'image') throw new Error('Expected an image preview')
+    expect(Buffer.from(result.data)).toEqual(image)
+  })
+
+  it('reads JPEG, WebP, and GIF dimensions from their headers', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'formats.zip')
+    await writeZip(archivePath, [
+      { name: 'wrong-extension.txt', contents: createJpeg(640, 480) },
+      { name: 'image.webp', contents: createWebp(800, 600) },
+      { name: 'image.gif', contents: createGif(160, 90) }
+    ])
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).resolves.toMatchObject({
+      kind: 'image', mediaType: 'image/jpeg', width: 640, height: 480
+    })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).resolves.toMatchObject({
+      kind: 'image', mediaType: 'image/webp', width: 800, height: 600
+    })
+    await expect(previewArchiveEntry(archivePath, 'entry-2')).resolves.toMatchObject({
+      kind: 'image', mediaType: 'image/gif', width: 160, height: 90
+    })
+  })
+
+  it('rejects images over the byte and dimension limits', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'unsafe-images.zip')
+    await writeZip(archivePath, [
+      { name: 'too-large.png', contents: createPng(1, 1, MAX_IMAGE_PREVIEW_BYTES + 1) },
+      { name: 'too-wide.png', contents: createPng(16_385, 1) },
+      { name: 'too-many-pixels.png', contents: createPng(5_001, 5_000) }
+    ])
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).rejects.toMatchObject({ code: 'IMAGE_DIMENSIONS_TOO_LARGE' })
+    await expect(previewArchiveEntry(archivePath, 'entry-2')).rejects.toMatchObject({ code: 'IMAGE_DIMENSIONS_TOO_LARGE' })
+  })
+
+  it('rejects unsupported and malformed image signatures while keeping SVG as text', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'invalid-images.zip')
+    const malformedPng = Buffer.alloc(24)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(malformedPng)
+    await writeZip(archivePath, [
+      { name: 'unsupported.bmp', contents: Buffer.from([0x42, 0x4d, 0, 0, 0, 0]) },
+      { name: 'malformed.png', contents: malformedPng },
+      { name: 'safe.svg', contents: '<svg><text>source only</text></svg>' }
+    ])
+
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toMatchObject({ code: 'UNSUPPORTED_IMAGE' })
+    await expect(previewArchiveEntry(archivePath, 'entry-1')).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
+    await expect(previewArchiveEntry(archivePath, 'entry-2')).resolves.toMatchObject({
+      kind: 'text', text: '<svg><text>source only</text></svg>'
+    })
   })
 
   it('rejects binary data and non-file entries', async () => {
@@ -166,7 +302,7 @@ describe('previewArchiveEntry', () => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')
     const archivePath = path.join(directory, 'secret.zip')
-    await fs.writeFile(sourcePath, 'secret contents')
+    await fs.writeFile(sourcePath, createPng(32, 32))
     await compressArchive({
       inputPaths: [sourcePath],
       outputPath: archivePath,
