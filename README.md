@@ -68,7 +68,8 @@ the application to a broad audience.
 | `npm run lint` | Run ESLint static analysis |
 | `npm run lint:fix` | Automatically fix supported ESLint issues |
 | `npm run typecheck` | Run TypeScript type checking |
-| `npm test` | Run Vitest service tests |
+| `npm test` | Run Vitest service and React component tests |
+| `npm run test:coverage` | Run tests and generate text and HTML coverage reports |
 | `npm run build` | Type-check and create a production bundle |
 | `npm run dist` | Create distributable files with electron-builder |
 
