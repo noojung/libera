@@ -1,12 +1,12 @@
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import archiver from 'archiver'
+import zipEncrypted from 'archiver-zip-encrypted'
 import zlib from 'zlib'
 
 // Archiver does not provide password protection for ZIP archives itself.
 // This plugin adds the ZipCrypto format used below. It is registered once when
 // this module is loaded; registering it per job would throw in later jobs.
-const zipEncrypted = require('archiver-zip-encrypted')
 archiver.registerFormat('zip-encrypted', zipEncrypted)
 
 export interface CompressionOptions {
