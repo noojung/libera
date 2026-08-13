@@ -2,16 +2,49 @@
 
 Libera is a desktop compression utility built with Electron, TypeScript, and React. It can compress files and folders, safely extract supported archives, and browse their contents.
 
-## Requirements
+## Development Requirements
 
-- Node.js 22 LTS or later
-- npm
+- Git
+- Node.js 22 or later (LTS recommended)
+- npm, which is included with Node.js
+- macOS or Windows for local development
+
+These requirements apply only when running Libera from source. Installing a
+prebuilt release does not require Node.js or npm.
 
 ## Getting Started
+
+Clone the repository and enter the project directory:
+
+```bash
+git clone https://github.com/noojung/libera.git
+cd libera
+```
+
+Confirm that the required tools are available:
+
+```bash
+node --version
+npm --version
+```
+
+Install the locked dependencies and start the Electron development app:
 
 ```bash
 npm ci
 npm run dev
+```
+
+The Electron window opens after Vite finishes its initial build. Press
+<kbd>Ctrl</kbd>+<kbd>C</kbd> in the terminal to stop the development process.
+
+Before submitting a change, run the same validation commands used by CI:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
 ```
 
 ## Installation Notes
@@ -40,6 +73,10 @@ the application to a broad audience.
 | `npm run dist` | Create distributable files with electron-builder |
 
 `npm run dist` writes artifacts to `release/<version>`. The project is configured to build DMG/ZIP files for macOS (x64 and arm64) and an NSIS installer for Windows (x64).
+
+Build macOS installers on macOS and Windows installers on Windows. The GitHub
+Actions release workflow builds each installer on its matching operating
+system.
 
 ## Supported Formats
 
