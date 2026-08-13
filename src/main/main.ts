@@ -2,14 +2,34 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import { promises as fsPromises } from 'fs'
 import { compressArchive, CompressionOptions, calculateTotalSize } from '../services/compressor'
-import { extractArchive, ExtractionOptions, isWrongZipPasswordError, WRONG_ZIP_PASSWORD_ERROR_CODE } from '../services/extractor'
+import {
+  extractArchive,
+  ExtractionError,
+  ExtractionOptions,
+  isWrongZipPasswordError,
+  WRONG_ZIP_PASSWORD_ERROR_CODE
+} from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
 
 let mainWindow: BrowserWindow | null = null
+const activeExtractionControllers = new Map<string, AbortController>()
 
 type Operation = 'compression' | 'extraction' | 'inspection'
 
 function classifyError(error: unknown, operation: Operation): string {
+  if (error instanceof ExtractionError) {
+    const extractionErrorCodes: Record<string, string> = {
+      EXTRACTION_CANCELLED: 'extractionCancelled',
+      INSUFFICIENT_DISK_SPACE: 'insufficientDiskSpace',
+      DESTINATION_FILE_TOO_LARGE: 'destinationFileTooLarge',
+      TOO_MANY_ENTRIES: 'tooManyEntries',
+      ARCHIVE_TOO_LARGE: 'archiveTooLarge',
+      FILE_TOO_LARGE: 'fileTooLarge',
+      DESTINATION_EXISTS: 'destinationExists',
+      UNSAFE_ARCHIVE: 'unsafeArchive'
+    }
+    return extractionErrorCodes[error.code] || 'genericExtraction'
+  }
   const message = error instanceof Error ? error.message : String(error)
   if (message.startsWith('Unsafe archive:')) {
     return message.includes('destination already exists') ? 'destinationExists' : 'unsafeArchive'
@@ -55,6 +75,8 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    for (const controller of activeExtractionControllers.values()) controller.abort()
+    activeExtractionControllers.clear()
     mainWindow = null
   })
 }
@@ -150,10 +172,12 @@ ipcMain.handle('archive:compress', async (_, options: CompressionOptions, jobId:
 })
 
 ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: string) => {
+  const controller = new AbortController()
+  activeExtractionControllers.set(jobId, controller)
   try {
     const result = await extractArchive(options, (progress) => {
       mainWindow?.webContents.send('archive:progress', { jobId, ...progress })
-    })
+    }, { signal: controller.signal })
     return { success: true, result }
   } catch (err: any) {
     return {
@@ -164,7 +188,16 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
         ? WRONG_ZIP_PASSWORD_ERROR_CODE
         : undefined
     }
+  } finally {
+    if (activeExtractionControllers.get(jobId) === controller) activeExtractionControllers.delete(jobId)
   }
+})
+
+ipcMain.handle('archive:cancel', (_, jobId: string) => {
+  const controller = activeExtractionControllers.get(jobId)
+  if (!controller) return false
+  controller.abort()
+  return true
 })
 
 ipcMain.handle('archive:inspect', async (_, archivePath: string) => {

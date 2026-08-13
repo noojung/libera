@@ -1,5 +1,5 @@
 import React from 'react'
-import { FolderOpen, CheckCircle, AlertCircle, Loader2, Archive, Download } from 'lucide-react'
+import { FolderOpen, CheckCircle, AlertCircle, Loader2, Archive, Download, Clock3, XCircle } from 'lucide-react'
 import { ActiveJob } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes, formatDuration } from '../i18n/format'
@@ -9,9 +9,10 @@ interface QueueManagerProps {
   jobs: ActiveJob[]
   onOpenFolder: (path: string) => void
   onClearCompleted: () => void
+  onCancelExtraction: (jobId: string) => void
 }
 
-export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, onClearCompleted }) => {
+export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, onClearCompleted, onCancelExtraction }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
 
@@ -39,7 +40,7 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
           </p>
         </div>
 
-        {jobs.some(j => j.status === 'completed' || j.status === 'error') && (
+        {jobs.some(j => j.status === 'completed' || j.status === 'error' || j.status === 'cancelled') && (
           <button className="btn-secondary" onClick={onClearCompleted}>
             {t('queue.clearCompleted')}
           </button>
@@ -68,7 +69,11 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   ? '6px solid #52B788'
                   : job.status === 'error'
                     ? '6px solid #E76F51'
-                    : '6px solid #FF8E72'
+                    : job.status === 'cancelled'
+                      ? '6px solid #A3968C'
+                      : job.status === 'pending'
+                        ? '6px solid #5A9EED'
+                        : '6px solid #FF8E72'
               }}
             >
               {/* Job Row Header */}
@@ -93,7 +98,14 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   {job.status === 'running' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#FF8E72', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
                       <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                      {job.percent}%
+                      {job.percent === null ? t('queue.processing') : `${job.percent}%`}
+                    </div>
+                  )}
+
+                  {job.status === 'pending' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#5A9EED', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                      <Clock3 size={18} />
+                      {t('queue.pending')}
                     </div>
                   )}
 
@@ -111,7 +123,25 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                     </div>
                   )}
 
-                  {job.outputPath && (
+                  {job.status === 'cancelled' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#A3968C', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
+                      <XCircle size={18} />
+                      {t('queue.cancelled')}
+                    </div>
+                  )}
+
+                  {job.type === 'extract' && (job.status === 'pending' || job.status === 'running') && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => onCancelExtraction(job.id)}
+                      title={t('queue.cancel')}
+                      aria-label={t('queue.cancel')}
+                    >
+                      <XCircle size={15} />
+                    </button>
+                  )}
+
+                  {job.outputPath && job.status === 'completed' && (
                     <button
                       className="btn-secondary"
                       onClick={() => onOpenFolder(job.outputPath!)}
@@ -135,16 +165,18 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                     borderRadius: '999px',
                     overflow: 'hidden'
                   }}>
-                    <div style={{
+                    <div className={job.percent === null ? 'queue-progress__bar queue-progress__bar--indeterminate' : 'queue-progress__bar'} style={{
                       height: '100%',
-                      width: `${job.percent}%`,
+                      width: job.percent === null ? '35%' : `${job.percent}%`,
                       background: 'var(--accent-gradient)',
                       transition: 'width 0.2s ease'
                     }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
                     <span>{job.currentFile || t(`queue.phase.${job.phase}`)}</span>
-                    <span>{formatBytes(job.processedBytes, language)} / {formatBytes(job.totalBytes, language)}</span>
+                    <span>{job.totalBytes === null
+                      ? t('queue.processed', { size: formatBytes(job.processedBytes, language) })
+                      : `${formatBytes(job.processedBytes, language)} / ${formatBytes(job.totalBytes, language)}`}</span>
                   </div>
                 </div>
               )}

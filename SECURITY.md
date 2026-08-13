@@ -11,8 +11,9 @@ Libera applies the following defense-in-depth measures when processing untrusted
 - Verifies that the final extraction path remains inside the selected destination directory.
 - Rejects absolute paths, parent-directory paths, and symbolic or hard link entries.
 - Does not overwrite existing files or follow symbolic links in the destination path.
-- Limits archives to 10,000 entries, 1 GiB total extracted size, and 512 MiB per file.
-- Cleans up partial output files when GZ streaming extraction fails.
+- Limits archives to 100,000 entries, 1 TiB total extracted size, and 1 TiB per file.
+- Requires extraction to leave at least 5% of the destination filesystem, or 1 GiB, free.
+- Enforces output limits while streaming and cleans up files created by failed or cancelled extraction jobs.
 
 ZIP passwords use ZipCrypto for compatibility. This is not a strong confidentiality mechanism and should not be the only protection for sensitive data.
 

@@ -14,11 +14,11 @@ export interface ActiveJob {
   itemCount: number
   format: string
   outputPath?: string
-  status: 'pending' | 'running' | 'completed' | 'error'
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled'
   phase: 'initializing' | 'compressing' | 'extracting' | 'processing' | 'complete'
   processedBytes: number
-  totalBytes: number
-  percent: number
+  totalBytes: number | null
+  percent: number | null
   currentFile?: string
   errorCode?: string
   errorDetail?: string

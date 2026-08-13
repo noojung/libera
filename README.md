@@ -94,8 +94,12 @@ The following checks are applied before and during extraction:
 - Rejects absolute paths and paths that escape the destination directory (Zip Slip).
 - Rejects symbolic and hard links in archives, as well as symbolic links in the destination path.
 - Never overwrites existing files.
-- Limits archives to 10,000 entries, 1 GiB total extracted size, and 512 MiB per file.
-- Removes partially written output files when GZ extraction fails or exceeds a limit.
+- Limits archives to 100,000 entries, 1 TiB total extracted size, and 1 TiB per file.
+- Verifies that extraction leaves at least 5% of the destination filesystem, or 1 GiB, free.
+- Streams extracted data and removes files created by a failed or cancelled extraction.
+
+GZ stores its uncompressed size modulo 4 GiB, so the inspector reports the
+expanded size and compression ratio as unknown until extraction completes.
 
 Treat untrusted archives with care even when they pass these checks. See [SECURITY.md](SECURITY.md) for the complete security policy and vulnerability reporting instructions.
 

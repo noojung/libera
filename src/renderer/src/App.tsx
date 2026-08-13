@@ -20,6 +20,8 @@ export const App: React.FC = () => {
   const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
   const [passwordPromptIncorrect, setPasswordPromptIncorrect] = useState(false)
   const passwordPromptResolver = useRef<((password: string | null) => void) | null>(null)
+  const passwordPromptJobId = useRef<string | null>(null)
+  const cancelledJobIds = useRef(new Set<string>())
 
   const isZipPasswordProtected = async (archivePath: string) => {
     if (!archivePath.toLowerCase().endsWith('.zip') || !(window as any).electronAPI) return false
@@ -27,8 +29,9 @@ export const App: React.FC = () => {
     return response.success && response.result?.passwordProtected === true
   }
 
-  const requestZipPassword = (archiveName: string, incorrectPassword = false) => new Promise<string | null>((resolve) => {
+  const requestZipPassword = (jobId: string, archiveName: string, incorrectPassword = false) => new Promise<string | null>((resolve) => {
     passwordPromptResolver.current = resolve
+    passwordPromptJobId.current = jobId
     setPasswordPromptIncorrect(incorrectPassword)
     setPasswordPromptArchive(archiveName)
   })
@@ -36,17 +39,19 @@ export const App: React.FC = () => {
   const resolvePasswordPrompt = (password: string | null) => {
     passwordPromptResolver.current?.(password)
     passwordPromptResolver.current = null
+    passwordPromptJobId.current = null
     setPasswordPromptIncorrect(false)
     setPasswordPromptArchive(null)
   }
 
   const extractWithPasswordRetry = async (
+    jobId: string,
     archiveName: string,
     passwordProtected: boolean,
     extract: (password?: string) => Promise<any>,
     initialPassword?: string
   ) => {
-    let password = passwordProtected ? initialPassword || await requestZipPassword(archiveName) : undefined
+    let password = passwordProtected ? initialPassword || await requestZipPassword(jobId, archiveName) : undefined
 
     while (password || !passwordProtected) {
       const result = await extract(password || undefined)
@@ -54,7 +59,7 @@ export const App: React.FC = () => {
         return result
       }
 
-      password = await requestZipPassword(archiveName, true)
+      password = await requestZipPassword(jobId, archiveName, true)
     }
 
     return null
@@ -277,7 +282,7 @@ export const App: React.FC = () => {
         itemCount: 1,
         format: item.name.split('.').pop() || 'zip',
         outputPath,
-        status: 'running',
+        status: 'pending',
         phase: 'extracting',
         processedBytes: 0,
         totalBytes: 100,
@@ -293,8 +298,11 @@ export const App: React.FC = () => {
       for (let i = 0; i < extractItems.length; i++) {
         const item = extractItems[i]
         const job = newJobs[i]
+        if (cancelledJobIds.current.has(job.id)) continue
+        setJobs(prev => prev.map(existing => existing.id === job.id ? { ...existing, status: 'running' } : existing))
         const passwordProtected = await isZipPasswordProtected(item.path)
-        const res = await extractWithPasswordRetry(item.name, passwordProtected, (password) =>
+        if (cancelledJobIds.current.has(job.id)) continue
+        const res = await extractWithPasswordRetry(job.id, item.name, passwordProtected, (password) =>
           (window as any).electronAPI.extractArchive({
             archivePath: item.path,
             targetDir: job.outputPath,
@@ -302,6 +310,7 @@ export const App: React.FC = () => {
           }, job.id)
         )
 
+        if (cancelledJobIds.current.has(job.id)) continue
         if (!res) {
           setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', errorCode: 'passwordCancelled' } : j))
           continue
@@ -342,11 +351,22 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleClearCompleted = () => {
-    setJobs(prev => prev.filter(j => j.status === 'running'))
+  const handleCancelExtraction = (jobId: string) => {
+    cancelledJobIds.current.add(jobId)
+    if (passwordPromptJobId.current === jobId) resolvePasswordPrompt(null)
+    setJobs(prev => prev.map(job =>
+      job.id === jobId && job.type === 'extract' && (job.status === 'pending' || job.status === 'running')
+        ? { ...job, status: 'cancelled', errorCode: 'extractionCancelled' }
+        : job
+    ))
+    void (window as any).electronAPI?.cancelExtraction(jobId)
   }
 
-  const activeQueueCount = jobs.filter(j => j.status === 'running').length
+  const handleClearCompleted = () => {
+    setJobs(prev => prev.filter(j => j.status === 'pending' || j.status === 'running'))
+  }
+
+  const activeQueueCount = jobs.filter(j => j.status === 'pending' || j.status === 'running').length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
@@ -397,6 +417,7 @@ export const App: React.FC = () => {
             jobs={jobs}
             onOpenFolder={handleOpenFolder}
             onClearCompleted={handleClearCompleted}
+            onCancelExtraction={handleCancelExtraction}
           />
         )}
       </main>

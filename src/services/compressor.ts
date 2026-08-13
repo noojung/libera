@@ -19,8 +19,8 @@ export interface CompressionOptions {
 
 export interface ProgressData {
   processedBytes: number
-  totalBytes: number
-  percent: number
+  totalBytes: number | null
+  percent: number | null
   phase: 'processing' | 'complete'
   currentFile?: string
 }
@@ -107,7 +107,7 @@ export async function compressArchive(
 
       if (options.password) {
         // ZipCrypto is intentionally used instead of AES so the archive can
-        // also be extracted by the app's current ZIP reader (adm-zip).
+        // also be extracted by the app's current ZIP reader.
         // The UI explains that this is for compatibility, not strong secrecy.
         Object.assign(archiveOptions, {
           password: options.password,

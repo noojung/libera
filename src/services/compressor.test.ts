@@ -3,9 +3,9 @@ import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
-import AdmZip from 'adm-zip'
 import * as tar from 'tar'
 import { calculateTotalSize, compressArchive, type ProgressData } from './compressor'
+import { inspectArchive } from './archiveInspector'
 
 const temporaryDirectories: string[] = []
 
@@ -29,7 +29,7 @@ afterEach(async () => {
 })
 
 describe('calculateTotalSize', () => {
-  it('sums files in nested directories without following symbolic links', async () => {
+  it.skipIf(process.platform === 'win32')('sums files in nested directories without following symbolic links', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     const nestedDir = path.join(sourceDir, 'nested')
@@ -75,7 +75,7 @@ describe('compressArchive', () => {
     expect((await fs.stat(outputPath)).isFile()).toBe(true)
 
     if (format === 'zip') {
-      const entryPaths = new AdmZip(outputPath).getEntries().map(entry => entry.entryName)
+      const entryPaths = (await inspectArchive(outputPath)).entries.map(entry => entry.path)
       expect(entryPaths).toContain('source/docs/readme.txt')
     } else {
       await expect(listTarPaths(outputPath)).resolves.toContain('source/docs/readme.txt')

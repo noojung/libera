@@ -454,6 +454,20 @@ body {
   }
 }
 
+.queue-progress__bar--indeterminate {
+  animation: queue-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes queue-progress-slide {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}
+
 .glow-active {
   animation: cute-bounce-pulse 2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }

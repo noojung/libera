@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
 import * as tar from 'tar'
+import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
 
@@ -76,7 +77,7 @@ describe('inspectArchive', () => {
     }))
   })
 
-  it('uses the GZ trailer to report the uncompressed file metadata', async () => {
+  it('reports GZ uncompressed size as unknown because ISIZE wraps above 4 GiB', async () => {
     const directory = await createTemporaryDirectory()
     const archivePath = path.join(directory, 'notes.txt.gz')
     const contents = 'gzip contents'
@@ -87,13 +88,33 @@ describe('inspectArchive', () => {
     expect(result).toMatchObject({
       format: 'GZ',
       totalFiles: 1,
-      totalUncompressedSize: Buffer.byteLength(contents)
+      totalUncompressedSize: null,
+      overallRatio: null
     })
     expect(result.entries).toEqual([expect.objectContaining({
       name: 'notes.txt',
       path: 'notes.txt',
-      size: Buffer.byteLength(contents)
+      size: null,
+      ratio: null
     })])
+  })
+
+  it('inspects a ZIP64 archive without loading entry contents', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'zip64.zip')
+    const output = new Uint8ArrayWriter()
+    const writer = new ZipWriter(output, { zip64: true, useWebWorkers: false })
+    await writer.add('docs/readme.txt', new TextReader('zip64 contents'))
+    const archive = await writer.close(undefined, { zip64: true })
+    await fs.writeFile(archivePath, archive)
+
+    const result = await inspectArchive(archivePath)
+
+    expect(result).toMatchObject({ format: 'ZIP', totalFiles: 1 })
+    expect(result.entries).toContainEqual(expect.objectContaining({
+      path: 'docs/readme.txt',
+      size: Buffer.byteLength('zip64 contents')
+    }))
   })
 
   it('rejects missing files and unsupported extensions', async () => {

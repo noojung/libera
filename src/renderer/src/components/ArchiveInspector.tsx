@@ -9,11 +9,13 @@ interface ArchiveEntry {
   name: string
   path: string
   isDirectory: boolean
-  size: number
+  size: number | null
   compressedSize?: number
-  ratio?: number
+  ratio?: number | null
   date?: string
 }
+
+const ENTRY_PAGE_SIZE = 500
 
 interface ArchiveBrowserEntry extends ArchiveEntry {
   isVirtual?: boolean
@@ -90,12 +92,14 @@ export const ArchiveInspector: React.FC = () => {
   const [errorKey, setErrorKey] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [currentPath, setCurrentPath] = useState<string>('')
+  const [visibleEntryCount, setVisibleEntryCount] = useState(ENTRY_PAGE_SIZE)
 
   const runInspection = async (filePath: string) => {
     setLoading(true)
     setErrorKey(null)
     setSearchQuery('')
     setCurrentPath('')
+    setVisibleEntryCount(ENTRY_PAGE_SIZE)
     try {
       const response = await (window as any).electronAPI.inspectArchive(filePath)
       if (response.success) {
@@ -164,16 +168,22 @@ export const ArchiveInspector: React.FC = () => {
       return !currentPrefix || normalizedPath.startsWith(currentPrefix)
     })
   }, [inspectData, currentPath])
-  const displayedEntries = (isSearching ? searchableEntries : currentEntries).filter(entry => {
-    if (!isSearching) return true
+  const allDisplayedEntries = useMemo(() => {
+    const entries = isSearching ? searchableEntries : currentEntries
+    if (!isSearching) return entries
     const query = normalizeSearchText(searchQuery, language)
-    return normalizeSearchText(entry.name, language).includes(query) || normalizeSearchText(entry.path, language).includes(query)
-  })
+    return entries.filter(entry =>
+      normalizeSearchText(entry.name, language).includes(query) ||
+      normalizeSearchText(entry.path, language).includes(query)
+    )
+  }, [currentEntries, isSearching, language, searchQuery, searchableEntries])
+  const displayedEntries = allDisplayedEntries.slice(0, visibleEntryCount)
   const breadcrumbs = currentPath ? currentPath.split('/') : []
 
   const moveToPath = (nextPath: string) => {
     setCurrentPath(nextPath)
     setSearchQuery('')
+    setVisibleEntryCount(ENTRY_PAGE_SIZE)
   }
 
   return (
@@ -209,8 +219,8 @@ export const ArchiveInspector: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
             <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.format')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#FF8E72', marginTop: '2px' }}>{inspectData.format}</div></div>
             <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.totalFiles')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#362D27', marginTop: '2px' }}>{t('inspector.fileCount', { count: inspectData.totalFiles })}</div></div>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.extractedSize')}</div><div style={{ fontSize: '16px', fontWeight: 700, color: '#362D27', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>{formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
-            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.efficiency')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#52B788', marginTop: '2px' }}>{t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
+            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.extractedSize')}</div><div style={{ fontSize: '16px', fontWeight: 700, color: '#362D27', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>{inspectData.totalUncompressedSize === null ? t('inspector.unknown') : formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
+            <div className="glass-panel" style={{ padding: '12px' }}><div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t('inspector.efficiency')}</div><div style={{ fontFamily: 'var(--font-cute)', fontSize: '22px', fontWeight: 700, color: '#52B788', marginTop: '2px' }}>{inspectData.overallRatio === null ? t('inspector.unknown') : t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
           </div>
 
           <div className="glass-panel" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -225,9 +235,9 @@ export const ArchiveInspector: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Filter size={16} color="#FF8E72" />
-                <input type="text" className="input-text" placeholder={t('inspector.searchPlaceholder')} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} style={{ width: '260px', padding: '6px 12px', fontSize: '13px' }} />
+                <input type="text" className="input-text" placeholder={t('inspector.searchPlaceholder')} value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setVisibleEntryCount(ENTRY_PAGE_SIZE) }} style={{ width: '260px', padding: '6px 12px', fontSize: '13px' }} />
               </div>
-              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t(isSearching ? 'inspector.searchResults' : 'inspector.currentFolder', { count: displayedEntries.length })}</div>
+              <div style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158', fontWeight: 700 }}>{t(isSearching ? 'inspector.searchResults' : 'inspector.currentFolder', { count: allDisplayedEntries.length })}</div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', paddingBottom: '8px', borderBottom: '2px solid #4A403A', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27' }}>
@@ -244,12 +254,17 @@ export const ArchiveInspector: React.FC = () => {
                     <span style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
                     {isNavigableDirectory && <ChevronRight size={15} color="#A3968C" />}
                   </div>
-                  <div style={{ textAlign: 'right', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>{entry.isDirectory ? '-' : formatBytes(entry.size, language)}</div>
+                  <div style={{ textAlign: 'right', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
                   <div style={{ textAlign: 'right', color: '#A3968C', fontFamily: 'var(--font-mono)' }}>{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
-                  <div style={{ textAlign: 'right', color: entry.ratio && entry.ratio > 0 ? '#52B788' : '#6E6158', fontWeight: 600 }}>{entry.ratio ? `${entry.ratio}%` : '-'}</div>
+                  <div style={{ textAlign: 'right', color: entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? '#52B788' : '#6E6158', fontWeight: 600 }}>{entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}</div>
                 </button>
                 )
               })}
+              {displayedEntries.length < allDisplayedEntries.length && (
+                <button type="button" className="btn-secondary" onClick={() => setVisibleEntryCount(count => count + ENTRY_PAGE_SIZE)} style={{ alignSelf: 'center', margin: '12px' }}>
+                  {t('inspector.loadMore', { count: Math.min(ENTRY_PAGE_SIZE, allDisplayedEntries.length - displayedEntries.length) })}
+                </button>
+              )}
               {displayedEntries.length === 0 && <div style={{ padding: '28px', textAlign: 'center', color: '#6E6158', fontSize: '13px' }}>{t(isSearching ? 'inspector.noSearchResults' : 'inspector.emptyFolder')}</div>}
             </div>
           </div>
