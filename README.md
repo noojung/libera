@@ -14,6 +14,19 @@ npm ci
 npm run dev
 ```
 
+## Installation Notes
+
+The macOS app bundle is ad-hoc signed to keep Electron and its nested helpers
+internally consistent, but it is not signed with a paid Apple Developer ID or
+notarized. Gatekeeper therefore displays a warning after download. After the
+first launch attempt, trusted users can allow the app from **System Settings →
+Privacy & Security → Open Anyway**. Intel iMacs should use the `x64` installer;
+Apple Silicon iMacs should use the `arm64` installer.
+
+The Windows installer is also unsigned, so Windows SmartScreen may display a
+warning. Developer code-signing credentials should be added before distributing
+the application to a broad audience.
+
 ## Development Commands
 
 | Command | Description |
@@ -27,29 +40,6 @@ npm run dev
 | `npm run dist` | Create distributable files with electron-builder |
 
 `npm run dist` writes artifacts to `release/<version>`. The project is configured to build DMG/ZIP files for macOS (x64 and arm64) and an NSIS installer for Windows (x64).
-
-## Releases
-
-Releases are started manually from **GitHub → Actions → Release → Run workflow**. Select the `main` branch and enter the exact stable semantic version without a `v` prefix, such as `1.2.3`.
-
-The workflow validates the requested version, updates `package.json` and `package-lock.json`, and pushes the version commit to `main` as `github-actions[bot]`. After validation and all platform builds succeed, it creates the corresponding `v<version>` tag and publishes these installers:
-
-- `Libera-<version>-mac-x64.dmg`
-- `Libera-<version>-mac-arm64.dmg`
-- `Libera-<version>-windows-x64-setup.exe`
-
-The workflow uses the repository's built-in `GITHUB_TOKEN`; no personal access token is required. Repository rules for `main` must allow GitHub Actions to push the version commit directly.
-
-The macOS app bundle is ad-hoc signed to keep Electron and its nested helpers
-internally consistent, but it is not signed with a paid Apple Developer ID or
-notarized. Gatekeeper therefore displays a warning after download. After the
-first launch attempt, trusted users can allow the app from **System Settings →
-Privacy & Security → Open Anyway**. Intel iMacs should use the `x64` installer;
-Apple Silicon iMacs should use the `arm64` installer.
-
-The Windows installer is also unsigned, so Windows SmartScreen may display a
-warning. Developer code-signing credentials should be added before distributing
-the application to a broad audience.
 
 ## Supported Formats
 
