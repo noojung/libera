@@ -21,7 +21,8 @@ export interface ProgressData {
   processedBytes: number
   totalBytes: number
   percent: number
-  currentFile: string
+  phase: 'processing' | 'complete'
+  currentFile?: string
 }
 
 export type ProgressCallback = (data: ProgressData) => void
@@ -143,6 +144,7 @@ export async function compressArchive(
             processedBytes,
             totalBytes,
             percent,
+            phase: 'processing',
             currentFile: entry.name
           })
         }
@@ -169,7 +171,7 @@ export async function compressArchive(
               processedBytes: totalBytes,
               totalBytes,
               percent: 100,
-              currentFile: 'Complete'
+              phase: 'complete'
             })
           }
           resolve({
@@ -210,6 +212,7 @@ export async function compressArchive(
             processedBytes: processed,
             totalBytes: inputStat.size,
             percent: Math.min(100, Math.round((processed / inputStat.size) * 100)),
+            phase: 'processing',
             currentFile: path.basename(sourceFile)
           })
         }

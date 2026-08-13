@@ -1,6 +1,9 @@
 import React, { useState } from 'react'
 import { UploadCloud, File, Folder, X, FolderPlus, FilePlus } from 'lucide-react'
 import { SelectedItem } from '../types'
+import { useTranslation } from 'react-i18next'
+import { formatBytes } from '../i18n/format'
+import type { AppLanguage } from '../i18n/language'
 
 interface DropZoneProps {
   items: SelectedItem[]
@@ -23,8 +26,10 @@ export const DropZone: React.FC<DropZoneProps> = ({
   acceptedFileExtensions,
   validationError
 }) => {
+  const { t, i18n } = useTranslation()
+  const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [isDragOver, setIsDragOver] = useState(false)
-  const [dropError, setDropError] = useState<string | null>(null)
+  const [hasUnsupportedDrop, setHasUnsupportedDrop] = useState(false)
 
   const acceptsPath = (filePath: string) => {
     if (!acceptedFileExtensions) return true
@@ -65,21 +70,13 @@ export const DropZone: React.FC<DropZoneProps> = ({
       const acceptedPaths = paths.filter(acceptsPath)
 
       if (acceptedPaths.length !== paths.length) {
-        setDropError('ZIP, TAR, TAR.GZ, TGZ, GZ 압축 파일만 추가할 수 있습니다.')
+        setHasUnsupportedDrop(true)
       } else {
-        setDropError(null)
+        setHasUnsupportedDrop(false)
       }
 
       if (acceptedPaths.length > 0) onAddFiles(acceptedPaths)
     }
-  }
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
   return (
@@ -128,7 +125,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           color: '#362D27',
           marginBottom: '4px'
         }}>
-          {allowFolders ? '파일이나 폴더를 여기에 놓아주세요! 🐾' : '압축 파일을 여기에 놓아주세요! 🐾'}
+          {t(allowFolders ? 'dropZone.dropFilesAndFolders' : 'dropZone.dropArchives')}
         </h3>
         <p style={{
           fontFamily: 'var(--font-sans)',
@@ -136,12 +133,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
           color: '#6E6158',
           marginBottom: '16px'
         }}>
-          {allowFolders ? '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능' : 'ZIP, TAR, TAR.GZ, TGZ, GZ 파일만 선택 가능'}
+          {t(allowFolders ? 'dropZone.filesAndFoldersHint' : 'dropZone.archivesHint')}
         </p>
 
-        {(dropError || validationError) && (
+        {(hasUnsupportedDrop || validationError) && (
           <p role="alert" style={{ marginTop: '-8px', marginBottom: '12px', color: '#E76F51', fontSize: '13px' }}>
-            {dropError || validationError}
+            {hasUnsupportedDrop ? t('dropZone.unsupportedArchive') : validationError}
           </p>
         )}
 
@@ -151,7 +148,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
             onClick={() => onSelectFilesDialog(false)}
           >
             <FilePlus size={16} />
-            파일 찾아보기
+            {t('dropZone.browseFiles')}
           </button>
           {allowFolders && (
             <button
@@ -159,7 +156,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
               onClick={() => onSelectFilesDialog(true)}
             >
               <FolderPlus size={16} />
-              폴더 찾아보기
+              {t('dropZone.browseFolders')}
             </button>
           )}
         </div>
@@ -170,7 +167,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
         <div className="glass-panel" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <span style={{ fontFamily: 'var(--font-cute)', fontSize: '16px', fontWeight: 700, color: '#362D27' }}>
-              선택한 항목 ({items.length}개)
+              {t('dropZone.selectedItems', { count: items.length })}
             </span>
             <button
               onClick={onClearItems}
@@ -184,7 +181,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
                 cursor: 'pointer'
               }}
             >
-              전체 비우기
+              {t('dropZone.clearAll')}
             </button>
           </div>
 
@@ -220,10 +217,11 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
-                    {formatSize(item.size)}
+                    {formatBytes(item.size, language)}
                   </span>
                   <button
                     onClick={() => onRemoveItem(idx)}
+                    aria-label={t('dropZone.removeItem', { name: item.name })}
                     style={{
                       background: 'transparent',
                       border: 'none',

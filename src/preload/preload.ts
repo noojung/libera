@@ -2,17 +2,29 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 export type DesktopPlatform = 'macos' | 'windows'
 
+export interface SelectFilesOptions {
+  allowDirectories?: boolean
+  extensions?: string[]
+  title?: string
+  filterName?: string
+}
+
+export interface SaveDialogLabels {
+  archiveFilter: string
+  allFiles: string
+}
+
 export interface ElectronAPI {
   platform: DesktopPlatform
   minimizeWindow: () => Promise<void>
   maximizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
-  selectFiles: (options?: { allowDirectories?: boolean; extensions?: string[]; title?: string }) => Promise<string[]>
-  selectSaveLocation: (defaultName: string, format: string) => Promise<string | null>
-  selectExtractFolder: () => Promise<string | null>
-  compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string }>
-  extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; code?: string }>
-  inspectArchive: (archivePath: string) => Promise<{ success: boolean; result?: any; error?: string }>
+  selectFiles: (options?: SelectFilesOptions) => Promise<string[]>
+  selectSaveLocation: (defaultName: string, format: string, labels?: SaveDialogLabels) => Promise<string | null>
+  selectExtractFolder: (title?: string) => Promise<string | null>
+  compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
+  extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string; code?: string }>
+  inspectArchive: (archivePath: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
   openFolder: (targetPath: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
@@ -26,8 +38,8 @@ const api: ElectronAPI = {
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   selectFiles: (options) => ipcRenderer.invoke('dialog:selectFiles', options),
-  selectSaveLocation: (defaultName, format) => ipcRenderer.invoke('dialog:selectSaveLocation', defaultName, format),
-  selectExtractFolder: () => ipcRenderer.invoke('dialog:selectExtractFolder'),
+  selectSaveLocation: (defaultName, format, labels) => ipcRenderer.invoke('dialog:selectSaveLocation', defaultName, format, labels),
+  selectExtractFolder: (title) => ipcRenderer.invoke('dialog:selectExtractFolder', title),
   compressArchive: (options, jobId) => ipcRenderer.invoke('archive:compress', options, jobId),
   extractArchive: (options, jobId) => ipcRenderer.invoke('archive:extract', options, jobId),
   inspectArchive: (archivePath) => ipcRenderer.invoke('archive:inspect', archivePath),

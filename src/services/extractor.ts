@@ -323,6 +323,7 @@ async function extractZipArchive(
       processedBytes: extractedCount,
       totalBytes: filesToExtract.length,
       percent: filesToExtract.length === 0 ? 100 : Math.round((extractedCount / filesToExtract.length) * 100),
+      phase: 'processing',
       currentFile: entry.archivePath
     })
   }
@@ -377,6 +378,7 @@ async function extractTarArchive(
         processedBytes: processedEntries,
         totalBytes: extractableEntries.length,
         percent: extractableEntries.length === 0 ? 100 : Math.min(100, Math.round((processedEntries / extractableEntries.length) * 100)),
+        phase: 'processing',
         currentFile: entry.path
       })
     }
@@ -412,6 +414,7 @@ async function extractGzArchive(
         processedBytes: extractedBytes,
         totalBytes: MAX_FILE_EXTRACTED_BYTES,
         percent: Math.min(99, Math.round((extractedBytes / MAX_FILE_EXTRACTED_BYTES) * 100)),
+        phase: 'processing',
         currentFile: outputName
       })
       callback(null, chunk)
@@ -434,6 +437,7 @@ async function extractGzArchive(
     processedBytes: extractedBytes,
     totalBytes: extractedBytes,
     percent: 100,
+    phase: 'complete',
     currentFile: outputName
   })
   return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime }

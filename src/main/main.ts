@@ -7,6 +7,21 @@ import { inspectArchive } from '../services/archiveInspector'
 
 let mainWindow: BrowserWindow | null = null
 
+type Operation = 'compression' | 'extraction' | 'inspection'
+
+function classifyError(error: unknown, operation: Operation): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.startsWith('Unsafe archive:')) {
+    return message.includes('destination already exists') ? 'destinationExists' : 'unsafeArchive'
+  }
+  if (/unsupported archive format/i.test(message)) return 'unsupportedArchive'
+  if (/does not exist/i.test(message)) return 'archiveMissing'
+  if (/GZ format supports single files only|No input files specified for GZ/i.test(message)) return 'invalidGzInput'
+  if (operation === 'compression') return 'genericCompression'
+  if (operation === 'extraction') return 'genericExtraction'
+  return 'genericInspection'
+}
+
 function createWindow() {
   const isMacOS = process.platform === 'darwin'
 
@@ -77,7 +92,7 @@ ipcMain.handle('window:close', () => {
   mainWindow?.close()
 })
 
-ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: boolean; extensions?: string[]; title?: string }) => {
+ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: boolean; extensions?: string[]; title?: string; filterName?: string }) => {
   if (!mainWindow) return []
   const properties: ('openFile' | 'openDirectory' | 'multiSelections')[] = ['openFile', 'multiSelections']
   if (options?.allowDirectories) {
@@ -88,7 +103,7 @@ ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: bo
     properties,
     title: options?.title || 'Select Files or Folders to Compress',
     filters: options?.extensions
-      ? [{ name: 'Supported Archive Files', extensions: options.extensions }]
+      ? [{ name: options.filterName || 'Supported archive files', extensions: options.extensions }]
       : undefined
   })
 
@@ -96,14 +111,14 @@ ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: bo
   return result.filePaths
 })
 
-ipcMain.handle('dialog:selectSaveLocation', async (_, defaultName: string, format: string) => {
+ipcMain.handle('dialog:selectSaveLocation', async (_, defaultName: string, format: string, labels?: { archiveFilter?: string; allFiles?: string }) => {
   if (!mainWindow) return null
 
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultName,
     filters: [
-      { name: `${format.toUpperCase()} Archive`, extensions: [format] },
-      { name: 'All Files', extensions: ['*'] }
+      { name: labels?.archiveFilter || `${format.toUpperCase()} archive`, extensions: [format] },
+      { name: labels?.allFiles || 'All files', extensions: ['*'] }
     ]
   })
 
@@ -111,12 +126,12 @@ ipcMain.handle('dialog:selectSaveLocation', async (_, defaultName: string, forma
   return result.filePath
 })
 
-ipcMain.handle('dialog:selectExtractFolder', async () => {
+ipcMain.handle('dialog:selectExtractFolder', async (_, title?: string) => {
   if (!mainWindow) return null
 
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory', 'createDirectory'],
-    title: 'Select Extraction Destination Folder'
+    title: title || 'Select extraction destination folder'
   })
 
   if (result.canceled || result.filePaths.length === 0) return null
@@ -130,7 +145,7 @@ ipcMain.handle('archive:compress', async (_, options: CompressionOptions, jobId:
     })
     return { success: true, result }
   } catch (err: any) {
-    return { success: false, error: err.message || 'Compression failed' }
+    return { success: false, error: err.message || 'Compression failed', errorCode: classifyError(err, 'compression') }
   }
 })
 
@@ -144,6 +159,7 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
     return {
       success: false,
       error: err.message || 'Extraction failed',
+      errorCode: classifyError(err, 'extraction'),
       code: err.code === WRONG_ZIP_PASSWORD_ERROR_CODE || isWrongZipPasswordError(err)
         ? WRONG_ZIP_PASSWORD_ERROR_CODE
         : undefined
@@ -156,7 +172,7 @@ ipcMain.handle('archive:inspect', async (_, archivePath: string) => {
     const result = await inspectArchive(archivePath)
     return { success: true, result }
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to inspect archive' }
+    return { success: false, error: err.message || 'Failed to inspect archive', errorCode: classifyError(err, 'inspection') }
   }
 })
 

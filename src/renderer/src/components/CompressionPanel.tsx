@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Sliders, Archive } from 'lucide-react'
 import { SelectedItem } from '../types'
+import { useTranslation } from 'react-i18next'
+import { formatBytes } from '../i18n/format'
+import type { AppLanguage } from '../i18n/language'
 
 interface CompressionPanelProps {
   items: SelectedItem[]
@@ -13,6 +16,8 @@ interface CompressionPanelProps {
 }
 
 export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onStartCompress }) => {
+  const { t, i18n } = useTranslation()
+  const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [format, setFormat] = useState<'zip' | 'tar' | 'gz' | 'tgz'>('zip')
   const [level, setLevel] = useState<number>(6)
   const [customName] = useState<string>('archive')
@@ -32,7 +37,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const handleSelectSavePath = async () => {
     if ((window as any).electronAPI) {
       const defaultName = `${customName}.${format}`
-      const chosenPath = await (window as any).electronAPI.selectSaveLocation(defaultName, format)
+      const chosenPath = await (window as any).electronAPI.selectSaveLocation(defaultName, format, {
+        archiveFilter: t('dialogs.archiveFilter', { format: format.toUpperCase() }),
+        allFiles: t('dialogs.allFiles')
+      })
       if (chosenPath) {
         setOutputPath(chosenPath)
       }
@@ -40,10 +48,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   }
 
   const getLevelLabel = (lvl: number) => {
-    if (lvl === 0) return '0 - 압축 없음 (가장 빠름)'
-    if (lvl <= 3) return `${lvl} - 빠른 압축`
-    if (lvl <= 6) return `${lvl} - 균형 표준`
-    return `${lvl} - 최대 압축`
+    if (lvl === 0) return t('compression.levelNone', { level: lvl })
+    if (lvl <= 3) return t('compression.levelFast', { level: lvl })
+    if (lvl <= 6) return t('compression.levelBalanced', { level: lvl })
+    return t('compression.levelMaximum', { level: lvl })
   }
 
   const handleCompress = () => {
@@ -62,30 +70,22 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   }
 
   const totalBytes = items.reduce((sum, item) => sum + item.size, 0)
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-
   return (
     <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', fontWeight: 700, color: '#362D27', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Sliders size={18} color="#FF8E72" />
-          압축 옵션 설정 ⚙️
+          {t('compression.title')}
         </h3>
         <span style={{ fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
-          총 용량: {formatSize(totalBytes)}
+          {t('compression.totalSize', { size: formatBytes(totalBytes, language) })}
         </span>
       </div>
 
       {/* Target Format Selector */}
       <div>
         <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '8px', display: 'block' }}>
-          압축 포맷 선택
+          {t('compression.format')}
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
           {(['zip', 'tar', 'gz', 'tgz'] as const).map((fmt) => (
@@ -117,7 +117,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
           <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27' }}>
-            압축 강도 레벨
+            {t('compression.level')}
           </label>
           <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, color: '#FF8E72' }}>
             {getLevelLabel(level)}
@@ -140,17 +140,17 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       {format === 'zip' && (
         <div>
           <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
-            ZIP 비밀번호 <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#6E6158', fontWeight: 400 }}>(선택)</span>
+            {t('compression.zipPassword')} <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#6E6158', fontWeight: 400 }}>{t('compression.optional')}</span>
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <input type="password" className="input-text" placeholder="비밀번호 입력" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-            <input type="password" className="input-text" placeholder="비밀번호 확인" value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
+            <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <input type="password" className="input-text" placeholder={t('compression.confirmPasswordPlaceholder')} value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
           </div>
           {password && password !== passwordConfirmation && (
-            <p style={{ fontSize: '12px', color: '#E76F51', marginTop: '6px' }}>비밀번호가 일치하지 않습니다.</p>
+            <p style={{ fontSize: '12px', color: '#E76F51', marginTop: '6px' }}>{t('compression.passwordMismatch')}</p>
           )}
           {password && password === passwordConfirmation && (
-            <p style={{ fontSize: '12px', color: '#6E6158', marginTop: '6px' }}>ZIP 호환용 암호화가 적용됩니다. 강한 기밀 보호 용도로는 권장하지 않습니다.</p>
+            <p style={{ fontSize: '12px', color: '#6E6158', marginTop: '6px' }}>{t('compression.passwordNotice')}</p>
           )}
         </div>
       )}
@@ -158,18 +158,18 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       {/* Save Destination */}
       <div>
         <label style={{ fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700, color: '#362D27', marginBottom: '6px', display: 'block' }}>
-          저장 위치 선택
+          {t('compression.destination')}
         </label>
         <div style={{ display: 'flex', gap: '8px' }}>
           <input
             type="text"
             className="input-text"
-            placeholder={`저장 경로 지정을 위해 찾아보기를 눌러주세요`}
+            placeholder={t('compression.destinationPlaceholder')}
             value={outputPath}
             onChange={(e) => setOutputPath(e.target.value)}
           />
           <button className="btn-secondary" onClick={handleSelectSavePath} style={{ whiteSpace: 'nowrap' }}>
-            찾아보기
+            {t('compression.browse')}
           </button>
         </div>
       </div>
@@ -188,7 +188,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         }}
       >
         <Archive size={20} />
-        압축 시작하기 🚀
+        {t('compression.start')}
       </button>
     </div>
   )

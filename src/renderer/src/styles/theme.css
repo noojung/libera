@@ -200,8 +200,49 @@ body {
   align-self: stretch;
   display: flex;
   align-items: stretch;
-  margin-left: auto;
   -webkit-app-region: no-drag;
+}
+
+.titlebar__actions {
+  margin-left: auto;
+  padding-right: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__actions--windows {
+  padding-right: 0;
+}
+
+.titlebar__language {
+  display: inline-flex;
+  padding: 2px;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 9px;
+  background: #FFFFFF;
+}
+
+.titlebar__language-button {
+  min-width: 30px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-cute);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.titlebar__language-button.is-active {
+  background: var(--accent-peach);
+  color: #FFFFFF;
+}
+
+.titlebar__language-button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 .titlebar__window-button {
@@ -239,7 +280,20 @@ body {
 
   .titlebar__tab {
     gap: 4px;
-    padding-inline: 9px;
+    padding-inline: 7px;
+    font-size: 13px;
+  }
+
+  .titlebar__tabs {
+    gap: 2px;
+  }
+
+  .titlebar__actions {
+    padding-right: 8px;
+  }
+
+  .titlebar__actions--windows {
+    padding-right: 0;
   }
 }
 

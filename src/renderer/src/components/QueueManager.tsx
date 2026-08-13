@@ -1,6 +1,9 @@
 import React from 'react'
 import { FolderOpen, CheckCircle, AlertCircle, Loader2, Archive, Download } from 'lucide-react'
 import { ActiveJob } from '../types'
+import { useTranslation } from 'react-i18next'
+import { formatBytes, formatDuration } from '../i18n/format'
+import type { AppLanguage } from '../i18n/language'
 
 interface QueueManagerProps {
   jobs: ActiveJob[]
@@ -9,12 +12,18 @@ interface QueueManagerProps {
 }
 
 export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, onClearCompleted }) => {
-  const formatSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  const { t, i18n } = useTranslation()
+  const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
+
+  const getJobName = (job: ActiveJob) => {
+    if (job.type === 'extract') return t('queue.extractName', { name: job.sourceName })
+    if (job.itemCount > 1) return t('queue.compressItems', { count: job.itemCount })
+    return t('queue.compressName', { name: job.sourceName })
+  }
+
+  const getJobError = (job: ActiveJob) => {
+    const fallbackKey = job.type === 'compress' ? 'errors.genericCompression' : 'errors.genericExtraction'
+    return t(job.errorCode ? `errors.${job.errorCode}` : fallbackKey)
   }
 
   return (
@@ -23,16 +32,16 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
       <div className="glass-panel" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h3 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', fontWeight: 700, color: '#362D27' }}>
-            작업 대기열 목록 ({jobs.length}개) 📋
+            {t('queue.title', { count: jobs.length })}
           </h3>
           <p style={{ fontSize: '13px', color: '#6E6158' }}>
-            백그라운드에서 진행 중이거나 완료된 압축 및 해제 작업 상태입니다
+            {t('queue.subtitle')}
           </p>
         </div>
 
         {jobs.some(j => j.status === 'completed' || j.status === 'error') && (
           <button className="btn-secondary" onClick={onClearCompleted}>
-            완료된 작업 지우기
+            {t('queue.clearCompleted')}
           </button>
         )}
       </div>
@@ -42,7 +51,7 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
         {jobs.length === 0 ? (
           <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
             <span style={{ fontFamily: 'var(--font-cute)', fontSize: '18px', color: '#A3968C' }}>
-              진행 중이거나 완료된 작업이 없어요! 🐶
+              {t('queue.empty')}
             </span>
           </div>
         ) : (
@@ -72,10 +81,10 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   )}
                   <div>
                     <h4 style={{ fontFamily: 'var(--font-cute)', fontSize: '17px', fontWeight: 700, color: '#362D27' }}>
-                      {job.name}
+                      {getJobName(job)}
                     </h4>
                     <span style={{ fontFamily: 'var(--font-cute)', fontSize: '14px', color: '#6E6158' }}>
-                      {job.type.toUpperCase()} • {job.format.toUpperCase()}
+                      {t(job.type === 'compress' ? 'queue.typeCompress' : 'queue.typeExtract')} • {job.format.toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -91,14 +100,14 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   {job.status === 'completed' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#52B788', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
                       <CheckCircle size={18} />
-                      완료됨 ({job.durationMs}ms)
+                      {t('queue.completed', { duration: formatDuration(job.durationMs, language) })}
                     </div>
                   )}
 
                   {job.status === 'error' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#E76F51', fontFamily: 'var(--font-cute)', fontSize: '15px', fontWeight: 700 }}>
                       <AlertCircle size={18} />
-                      실패
+                      {t('queue.failed')}
                     </div>
                   )}
 
@@ -106,7 +115,8 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                     <button
                       className="btn-secondary"
                       onClick={() => onOpenFolder(job.outputPath!)}
-                      title="폴더 열기"
+                      title={t('queue.openFolder')}
+                      aria-label={t('queue.openFolder')}
                     >
                       <FolderOpen size={15} />
                     </button>
@@ -133,19 +143,25 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                     }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
-                    <span>{job.currentFile || '처리 중...'}</span>
-                    <span>{formatSize(job.processedBytes)} / {formatSize(job.totalBytes)}</span>
+                    <span>{job.currentFile || t(`queue.phase.${job.phase}`)}</span>
+                    <span>{formatBytes(job.processedBytes, language)} / {formatBytes(job.totalBytes, language)}</span>
                   </div>
+                </div>
+              )}
+
+              {job.status === 'error' && (
+                <div role="alert" style={{ fontSize: '12px', color: '#E76F51' }}>
+                  {getJobError(job)}
                 </div>
               )}
 
               {/* Completed details */}
               {job.status === 'completed' && job.originalSize && job.compressedSize && (
                 <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6E6158', fontFamily: 'var(--font-mono)' }}>
-                  <span>원본: {formatSize(job.originalSize)}</span>
-                  <span>압축 후: {formatSize(job.compressedSize)}</span>
+                  <span>{t('queue.original', { size: formatBytes(job.originalSize, language) })}</span>
+                  <span>{t('queue.compressed', { size: formatBytes(job.compressedSize, language) })}</span>
                   <span style={{ color: '#52B788', fontWeight: 700, fontFamily: 'var(--font-cute)', fontSize: '14px' }}>
-                    {Math.round((1 - (job.compressedSize / job.originalSize)) * 100)}% 절감!
+                    {t('queue.saved', { ratio: Math.round((1 - (job.compressedSize / job.originalSize)) * 100) })}
                   </span>
                 </div>
               )}

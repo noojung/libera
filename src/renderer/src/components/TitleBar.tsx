@@ -2,6 +2,9 @@ import React from 'react'
 import { Archive, Layers, ListTodo, Minus, Search, Square, X } from 'lucide-react'
 import { AppMode } from '../types'
 import logoImg from '../assets/logo.png'
+import { useTranslation } from 'react-i18next'
+import { applyLanguage } from '../i18n'
+import type { AppLanguage } from '../i18n/language'
 
 interface TitleBarProps {
   currentMode: AppMode
@@ -12,13 +15,15 @@ interface TitleBarProps {
 type DesktopPlatform = 'macos' | 'windows'
 
 const tabs = [
-  { mode: 'compress', label: 'Compress', Icon: Archive },
-  { mode: 'extract', label: 'Extract', Icon: Layers },
-  { mode: 'inspect', label: 'Inspector', Icon: Search },
-  { mode: 'queue', label: 'Queue', Icon: ListTodo }
-] satisfies { mode: AppMode; label: string; Icon: typeof Archive }[]
+  { mode: 'compress', labelKey: 'titleBar.compress', Icon: Archive },
+  { mode: 'extract', labelKey: 'titleBar.extract', Icon: Layers },
+  { mode: 'inspect', labelKey: 'titleBar.inspector', Icon: Search },
+  { mode: 'queue', labelKey: 'titleBar.queue', Icon: ListTodo }
+] satisfies { mode: AppMode; labelKey: string; Icon: typeof Archive }[]
 
 export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount }) => {
+  const { t, i18n } = useTranslation()
+  const currentLanguage: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const electronAPI = (window as any).electronAPI
   const platform = electronAPI?.platform as DesktopPlatform | undefined
   const isWindows = platform === 'windows'
@@ -35,8 +40,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <span className="titlebar__brand-name">Libera</span>
       </div>
 
-      <nav className="titlebar__tabs" aria-label="Application mode">
-        {tabs.map(({ mode, label, Icon }) => {
+      <nav className="titlebar__tabs" aria-label={t('titleBar.navigation')}>
+        {tabs.map(({ mode, labelKey, Icon }) => {
           const isActive = currentMode === mode
 
           return (
@@ -48,9 +53,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
               onClick={() => setMode(mode)}
             >
               <Icon size={14} aria-hidden="true" />
-              <span>{label}</span>
+              <span>{t(labelKey)}</span>
               {mode === 'queue' && activeQueueCount > 0 && (
-                <span className="titlebar__queue-count" aria-label={`${activeQueueCount} active jobs`}>
+                <span className="titlebar__queue-count" aria-label={t('titleBar.activeJobs', { count: activeQueueCount })}>
                   {activeQueueCount}
                 </span>
               )}
@@ -59,13 +64,30 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         })}
       </nav>
 
+      <div className={`titlebar__actions${isWindows ? ' titlebar__actions--windows' : ''}`}>
+        <div className="titlebar__language" role="group" aria-label={t('language.selector')}>
+          {(['ko', 'en'] as const).map(language => (
+            <button
+              key={language}
+              type="button"
+              className={`titlebar__language-button${currentLanguage === language ? ' is-active' : ''}`}
+              aria-pressed={currentLanguage === language}
+              title={t(language === 'ko' ? 'language.korean' : 'language.english')}
+              onClick={() => applyLanguage(language)}
+            >
+              {language.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {isWindows && (
         <div className="titlebar__window-controls">
           <button
             type="button"
             className="titlebar__window-button"
-            aria-label="Minimize window"
-            title="Minimize"
+            aria-label={t('titleBar.minimize')}
+            title={t('titleBar.minimize')}
             onClick={handleMinimize}
           >
             <Minus size={15} aria-hidden="true" />
@@ -73,8 +95,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
           <button
             type="button"
             className="titlebar__window-button"
-            aria-label="Maximize or restore window"
-            title="Maximize or restore"
+            aria-label={t('titleBar.maximize')}
+            title={t('titleBar.maximize')}
             onClick={handleMaximize}
           >
             <Square size={12} aria-hidden="true" />
@@ -82,8 +104,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
           <button
             type="button"
             className="titlebar__window-button titlebar__window-button--close"
-            aria-label="Close window"
-            title="Close"
+            aria-label={t('titleBar.close')}
+            title={t('titleBar.close')}
             onClick={handleClose}
           >
             <X size={15} aria-hidden="true" />

@@ -10,15 +10,18 @@ export interface SelectedItem {
 export interface ActiveJob {
   id: string
   type: 'compress' | 'extract'
-  name: string
+  sourceName?: string
+  itemCount: number
   format: string
   outputPath?: string
   status: 'pending' | 'running' | 'completed' | 'error'
+  phase: 'initializing' | 'compressing' | 'extracting' | 'processing' | 'complete'
   processedBytes: number
   totalBytes: number
   percent: number
-  currentFile: string
-  error?: string
+  currentFile?: string
+  errorCode?: string
+  errorDetail?: string
   startTime: number
   durationMs?: number
   compressedSize?: number

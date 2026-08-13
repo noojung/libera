@@ -8,15 +8,17 @@ import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import './styles/theme.css'
+import { useTranslation } from 'react-i18next'
 
 export const App: React.FC = () => {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<AppMode>('compress')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
-  const [extractInputError, setExtractInputError] = useState<string | null>(null)
+  const [extractInputErrorKey, setExtractInputErrorKey] = useState<string | null>(null)
   const [jobs, setJobs] = useState<ActiveJob[]>([])
   const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
-  const [passwordPromptError, setPasswordPromptError] = useState<string | null>(null)
+  const [passwordPromptIncorrect, setPasswordPromptIncorrect] = useState(false)
   const passwordPromptResolver = useRef<((password: string | null) => void) | null>(null)
 
   const isZipPasswordProtected = async (archivePath: string) => {
@@ -25,16 +27,16 @@ export const App: React.FC = () => {
     return response.success && response.result?.passwordProtected === true
   }
 
-  const requestZipPassword = (archiveName: string, errorMessage?: string) => new Promise<string | null>((resolve) => {
+  const requestZipPassword = (archiveName: string, incorrectPassword = false) => new Promise<string | null>((resolve) => {
     passwordPromptResolver.current = resolve
-    setPasswordPromptError(errorMessage || null)
+    setPasswordPromptIncorrect(incorrectPassword)
     setPasswordPromptArchive(archiveName)
   })
 
   const resolvePasswordPrompt = (password: string | null) => {
     passwordPromptResolver.current?.(password)
     passwordPromptResolver.current = null
-    setPasswordPromptError(null)
+    setPasswordPromptIncorrect(false)
     setPasswordPromptArchive(null)
   }
 
@@ -52,7 +54,7 @@ export const App: React.FC = () => {
         return result
       }
 
-      password = await requestZipPassword(archiveName, '비밀번호가 올바르지 않습니다. 다시 입력해 주세요.')
+      password = await requestZipPassword(archiveName, true)
     }
 
     return null
@@ -69,7 +71,8 @@ export const App: React.FC = () => {
                 processedBytes: data.processedBytes,
                 totalBytes: data.totalBytes,
                 percent: data.percent,
-                currentFile: data.currentFile
+                currentFile: data.currentFile,
+                phase: data.phase || 'processing'
               }
             }
             return j
@@ -123,7 +126,10 @@ export const App: React.FC = () => {
 
   const handleSelectFilesDialog = async (allowFolder = false) => {
     if ((window as any).electronAPI) {
-      const paths = await (window as any).electronAPI.selectFiles({ allowDirectories: allowFolder })
+      const paths = await (window as any).electronAPI.selectFiles({
+        allowDirectories: allowFolder,
+        title: t('dialogs.selectCompressInputs')
+      })
       if (paths.length > 0) {
         handleAddFiles(paths)
       }
@@ -157,7 +163,7 @@ export const App: React.FC = () => {
 
     const invalidItems = newItems.filter(item => item.isDirectory || !isSupportedArchive(item.path))
     const validItems = newItems.filter(item => !item.isDirectory && isSupportedArchive(item.path))
-    setExtractInputError(invalidItems.length > 0 ? '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, TAR, TAR.GZ, TGZ, GZ 파일을 선택해 주세요.' : null)
+    setExtractInputErrorKey(invalidItems.length > 0 ? 'dropZone.invalidExtractInput' : null)
 
     setExtractItems(prev => {
       const existingPaths = new Set(prev.map(i => i.path))
@@ -172,7 +178,7 @@ export const App: React.FC = () => {
 
   const handleClearExtractItems = () => {
     setExtractItems([])
-    setExtractInputError(null)
+    setExtractInputErrorKey(null)
   }
 
   const handleSelectExtractFilesDialog = async () => {
@@ -180,7 +186,8 @@ export const App: React.FC = () => {
       const paths = await (window as any).electronAPI.selectFiles({
         allowDirectories: false,
         extensions: ['zip', 'tar', 'tgz', 'gz'],
-        title: 'Select Archive Files to Extract'
+        title: t('dialogs.selectExtractInputs'),
+        filterName: t('dialogs.supportedArchives')
       })
       if (paths.length > 0) {
         handleAddExtractFiles(paths)
@@ -197,19 +204,18 @@ export const App: React.FC = () => {
   }) => {
     const jobId = `job-${Date.now()}`
     const inputPaths = selectedItems.map(i => i.path)
-    const name = selectedItems.length === 1 ? selectedItems[0].name : `${selectedItems.length} items`
-
     const newJob: ActiveJob = {
       id: jobId,
       type: 'compress',
-      name: `Compress ${name}`,
+      sourceName: selectedItems.length === 1 ? selectedItems[0].name : undefined,
+      itemCount: selectedItems.length,
       format: options.format,
       outputPath: options.outputPath,
       status: 'running',
+      phase: 'initializing',
       processedBytes: 0,
       totalBytes: 100,
       percent: 0,
-      currentFile: 'Initializing...',
       startTime: Date.now()
     }
 
@@ -233,6 +239,7 @@ export const App: React.FC = () => {
                 ...j,
                 status: 'completed',
                 percent: 100,
+                phase: 'complete',
                 durationMs: res.result.durationMs,
                 originalSize: res.result.originalSize,
                 compressedSize: res.result.compressedSize
@@ -241,7 +248,8 @@ export const App: React.FC = () => {
               return {
                 ...j,
                 status: 'error',
-                error: res.error
+                errorCode: res.errorCode || 'genericCompression',
+                errorDetail: res.error
               }
             }
           }
@@ -265,14 +273,15 @@ export const App: React.FC = () => {
       return {
         id: jobId,
         type: 'extract',
-        name: `Extract ${item.name}`,
+        sourceName: item.name,
+        itemCount: 1,
         format: item.name.split('.').pop() || 'zip',
         outputPath,
         status: 'running',
+        phase: 'extracting',
         processedBytes: 0,
         totalBytes: 100,
         percent: 0,
-        currentFile: 'Extracting...',
         startTime: Date.now()
       }
     })
@@ -294,7 +303,7 @@ export const App: React.FC = () => {
         )
 
         if (!res) {
-          setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', error: 'Password entry cancelled' } : j))
+          setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'error', errorCode: 'passwordCancelled' } : j))
           continue
         }
 
@@ -306,13 +315,15 @@ export const App: React.FC = () => {
                   ...j,
                   status: 'completed',
                   percent: 100,
+                  phase: 'complete',
                   durationMs: res.result.durationMs
                 }
               } else {
                 return {
                   ...j,
                   status: 'error',
-                  error: res.error
+                  errorCode: res.errorCode || 'genericExtraction',
+                  errorDetail: res.error
                 }
               }
             }
@@ -368,7 +379,7 @@ export const App: React.FC = () => {
               onSelectFilesDialog={handleSelectExtractFilesDialog}
               allowFolders={false}
               acceptedFileExtensions={['.zip', '.tar', '.tgz', '.tar.gz', '.gz']}
-              validationError={extractInputError}
+              validationError={extractInputErrorKey ? t(extractInputErrorKey) : null}
             />
             <ExtractionPanel
               items={extractItems}
@@ -392,7 +403,7 @@ export const App: React.FC = () => {
       {passwordPromptArchive && (
         <PasswordPromptModal
           archiveName={passwordPromptArchive}
-          errorMessage={passwordPromptError}
+          hasIncorrectPassword={passwordPromptIncorrect}
           onConfirm={(password) => resolvePasswordPrompt(password)}
           onCancel={() => resolvePasswordPrompt(null)}
         />

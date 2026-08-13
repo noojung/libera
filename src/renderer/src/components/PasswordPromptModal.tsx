@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react'
 import { LockKeyhole } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 interface PasswordPromptModalProps {
   archiveName: string
-  errorMessage?: string | null
+  hasIncorrectPassword?: boolean
   onConfirm: (password: string) => void
   onCancel: () => void
 }
 
-export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, errorMessage, onConfirm, onCancel }) => {
+export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, hasIncorrectPassword, onConfirm, onCancel }) => {
+  const { t } = useTranslation()
   const [password, setPassword] = useState('')
 
   useEffect(() => {
@@ -32,26 +34,26 @@ export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiv
             <LockKeyhole size={21} color="#FF8E72" />
           </div>
           <div>
-            <h2 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', color: '#362D27' }}>비밀번호가 필요한 ZIP 파일</h2>
+            <h2 style={{ fontFamily: 'var(--font-cute)', fontSize: '20px', color: '#362D27' }}>{t('passwordPrompt.title')}</h2>
             <p style={{ marginTop: '2px', color: '#6E6158', fontSize: '13px', overflowWrap: 'anywhere' }}>{archiveName}</p>
           </div>
         </div>
-        <p style={{ color: '#6E6158', fontSize: '14px', lineHeight: 1.5 }}>이 ZIP 파일은 암호화되어 있습니다. 압축을 해제하려면 비밀번호를 입력해 주세요.</p>
-        {errorMessage && (
-          <p role="alert" style={{ marginTop: '-8px', color: '#E76F51', fontSize: '13px' }}>{errorMessage}</p>
+        <p style={{ color: '#6E6158', fontSize: '14px', lineHeight: 1.5 }}>{t('passwordPrompt.description')}</p>
+        {hasIncorrectPassword && (
+          <p role="alert" style={{ marginTop: '-8px', color: '#E76F51', fontSize: '13px' }}>{t('passwordPrompt.incorrect')}</p>
         )}
         <input
           autoFocus
           type="password"
           className="input-text"
-          placeholder="비밀번호 입력"
+          placeholder={t('passwordPrompt.placeholder')}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           autoComplete="current-password"
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button type="button" className="btn-secondary" onClick={onCancel}>취소</button>
-          <button type="submit" className="btn-primary" disabled={!password} style={{ opacity: password ? 1 : 0.5, cursor: password ? 'pointer' : 'not-allowed' }}>압축 해제</button>
+          <button type="button" className="btn-secondary" onClick={onCancel}>{t('passwordPrompt.cancel')}</button>
+          <button type="submit" className="btn-primary" disabled={!password} style={{ opacity: password ? 1 : 0.5, cursor: password ? 'pointer' : 'not-allowed' }}>{t('passwordPrompt.extract')}</button>
         </div>
       </form>
     </div>
