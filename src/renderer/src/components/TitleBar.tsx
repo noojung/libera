@@ -66,7 +66,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
 
       <div className={`titlebar__actions${isWindows ? ' titlebar__actions--windows' : ''}`}>
         <div className="titlebar__language" role="group" aria-label={t('language.selector')}>
-          {(['ko', 'en'] as const).map(language => (
+          {(['en', 'ko'] as const).map(language => (
             <button
               key={language}
               type="button"
