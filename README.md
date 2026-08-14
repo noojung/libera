@@ -7,8 +7,7 @@ Libera is a desktop compression utility built with Electron, TypeScript, and Rea
 ## Development Requirements
 
 - Git
-- Node.js 24.19.0 (LTS)
-- npm 11.17.0, which is included with Node.js 24.19.0
+- Node.js 24.19.0 LTS (includes npm 11.17.0)
 - macOS or Windows for local development
 
 These requirements apply only when running Libera from source. Installing a
@@ -85,6 +84,28 @@ the application to a broad audience.
 Build macOS installers on macOS and Windows installers on Windows. The GitHub
 Actions release workflow builds each installer on its matching operating
 system.
+
+## Site Development
+
+The project website lives in `site/` and is built with [Hugo](https://gohugo.io/) using the [PaperMod](https://github.com/adityatelange/hugo-PaperMod) theme. Building the site locally requires:
+
+- Go 1.26
+- Hugo Extended 0.165.0
+
+Start a local preview server with live reload:
+
+```bash
+npm run site:dev
+```
+
+Generate the production site into `site/public/`:
+
+```bash
+npm run site:build
+```
+
+The `pages.yml` GitHub Actions workflow builds and deploys the site to GitHub
+Pages automatically when changes under `site/` are pushed to `main`.
 
 ## Supported Formats
 
