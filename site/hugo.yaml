@@ -1,6 +1,6 @@
 baseURL: https://noojung.github.io/libera/
 title: Libera
-defaultContentLanguage: ko
+defaultContentLanguage: en
 defaultContentLanguageInSubdir: false
 enableRobotsTXT: true
 enableEmoji: true
@@ -18,31 +18,11 @@ outputs:
     - HTML
 
 languages:
-  ko:
-    label: 한국어
-    locale: ko-KR
-    contentDir: content/ko
-    weight: 1
-    copyright: "© 2026 Libera"
-    menu:
-      main:
-        - name: 철학
-          url: "#philosophy"
-          weight: 10
-        - name: 기능
-          url: "#features"
-          weight: 20
-        - name: 사용법
-          url: "#how-to"
-          weight: 30
-        - name: 다운로드
-          url: "#download"
-          weight: 40
   en:
     label: English
     locale: en-US
     contentDir: content/en
-    weight: 2
+    weight: 1
     copyright: "© 2026 Libera"
     menu:
       main:
@@ -56,6 +36,26 @@ languages:
           url: "#how-to"
           weight: 30
         - name: Download
+          url: "#download"
+          weight: 40
+  ko:
+    label: 한국어
+    locale: ko-KR
+    contentDir: content/ko
+    weight: 2
+    copyright: "© 2026 Libera"
+    menu:
+      main:
+        - name: 철학
+          url: "#philosophy"
+          weight: 10
+        - name: 기능
+          url: "#features"
+          weight: 20
+        - name: 사용법
+          url: "#how-to"
+          weight: 30
+        - name: 다운로드
           url: "#download"
           weight: 40
 
