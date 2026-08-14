@@ -23,6 +23,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "site:dev": "hugo server --source site --buildDrafts --disableFastRender",
+    "site:build": "hugo --source site --gc --minify",
+    "site:capture": "npm run build && electron scripts/captureSiteScreenshots.cjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",

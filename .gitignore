@@ -19,6 +19,9 @@ out/
 build/
 release/
 coverage/
+/site/public/
+/site/resources/_gen/
+/site/.hugo_build.lock
 
 # Environment variables
 .env

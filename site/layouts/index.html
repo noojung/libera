@@ -1,0 +1,160 @@
+{{- define "main" }}
+<div class="landing-page">
+  {{- with .Params.hero }}
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero__copy">
+      <p class="eyebrow"><span aria-hidden="true">🐾</span> {{ .eyebrow }}</p>
+      <h1 id="hero-title">
+        {{- range .title_lines }}<span>{{ . }}</span>{{ end -}}
+      </h1>
+      <p class="hero__description">{{ .description }}</p>
+      <div class="hero__actions">
+        <a class="button button--primary" href="{{ site.Params.releaseURL }}">{{ .primary_action }}</a>
+        <a class="button button--secondary" href="{{ site.Params.repositoryURL }}">{{ .secondary_action }}</a>
+      </div>
+      <ul class="trust-list" aria-label="{{ .trust_label }}">
+        {{- range .trust_items }}
+        <li><span aria-hidden="true">✓</span>{{ . }}</li>
+        {{- end }}
+      </ul>
+    </div>
+    <div class="hero__visual">
+      <div class="mascot-badge" aria-hidden="true">
+        <img src="{{ "images/libera-logo.png" | relURL }}" alt="">
+      </div>
+      <figure class="app-shot app-shot--hero">
+        <img src="{{ "images/libera-app-compress.png" | relURL }}" alt="{{ .image_alt }}" width="1050" height="692">
+      </figure>
+      <span class="hero__sticker hero__sticker--safe" aria-hidden="true">SAFE</span>
+      <span class="hero__sticker hero__sticker--local" aria-hidden="true">LOCAL</span>
+    </div>
+  </section>
+  {{- end }}
+
+  {{- with .Params.philosophy }}
+  <section id="philosophy" class="landing-section" aria-labelledby="philosophy-title">
+    <div class="section-heading">
+      <p class="section-kicker">{{ .kicker }}</p>
+      <h2 id="philosophy-title">{{ .title }}</h2>
+      <p>{{ .description }}</p>
+    </div>
+    <div class="value-grid">
+      {{- range .items }}
+      <article class="value-card">
+        <span class="card-icon" aria-hidden="true">{{ .icon }}</span>
+        <h3>{{ .title }}</h3>
+        <p>{{ .description }}</p>
+      </article>
+      {{- end }}
+    </div>
+  </section>
+  {{- end }}
+
+  {{- with .Params.features }}
+  <section id="features" class="landing-section" aria-labelledby="features-title">
+    <div class="section-heading section-heading--split">
+      <div>
+        <p class="section-kicker">{{ .kicker }}</p>
+        <h2 id="features-title">{{ .title }}</h2>
+      </div>
+      <p>{{ .description }}</p>
+    </div>
+    <div class="feature-grid">
+      {{- range .items }}
+      <article class="feature-card">
+        <span class="card-icon" aria-hidden="true">{{ .icon }}</span>
+        <div>
+          <h3>{{ .title }}</h3>
+          <p>{{ .description }}</p>
+        </div>
+      </article>
+      {{- end }}
+    </div>
+
+    <div class="showcase" aria-label="{{ .showcase_label }}">
+      {{- range .showcase }}
+      <figure class="showcase-card">
+        <img src="{{ .image | relURL }}" alt="{{ .alt }}" width="1050" height="692" loading="lazy">
+        <figcaption><strong>{{ .title }}</strong><span>{{ .caption }}</span></figcaption>
+      </figure>
+      {{- end }}
+    </div>
+  </section>
+  {{- end }}
+
+  {{- with .Params.how_to }}
+  <section id="how-to" class="landing-section" aria-labelledby="how-to-title">
+    <div class="section-heading">
+      <p class="section-kicker">{{ .kicker }}</p>
+      <h2 id="how-to-title">{{ .title }}</h2>
+      <p>{{ .description }}</p>
+    </div>
+    <div class="workflow-grid">
+      {{- range .workflows }}
+      <article class="workflow-card">
+        <span class="workflow-card__number" aria-hidden="true">{{ .number }}</span>
+        <h3>{{ .title }}</h3>
+        <p>{{ .description }}</p>
+        <ol>
+          {{- range .steps }}<li>{{ . }}</li>{{ end -}}
+        </ol>
+      </article>
+      {{- end }}
+    </div>
+  </section>
+  {{- end }}
+
+  {{- with .Params.formats }}
+  <section class="formats-panel" aria-labelledby="formats-title">
+    <div>
+      <p class="section-kicker">{{ .kicker }}</p>
+      <h2 id="formats-title">{{ .title }}</h2>
+      <p>{{ .description }}</p>
+    </div>
+    <div class="format-list">
+      {{- range .items }}
+      <div class="format-item">
+        <strong>{{ .name }}</strong>
+        <span>{{ .detail }}</span>
+      </div>
+      {{- end }}
+    </div>
+  </section>
+  {{- end }}
+
+  {{- with .Params.download }}
+  <section id="download" class="download-panel" aria-labelledby="download-title">
+    <div class="download-panel__copy">
+      <p class="section-kicker">{{ .kicker }}</p>
+      <h2 id="download-title">{{ .title }}</h2>
+      <p>{{ .description }}</p>
+      <a class="button button--download" href="{{ site.Params.releaseURL }}">{{ .action }}</a>
+    </div>
+    <div class="download-panel__options">
+      {{- range .options }}
+      <div class="os-card">
+        <span aria-hidden="true">{{ .icon }}</span>
+        <div><strong>{{ .name }}</strong><small>{{ .detail }}</small></div>
+      </div>
+      {{- end }}
+      <p class="download-note">{{ .note }}</p>
+    </div>
+    <aside class="security-note">
+      <span aria-hidden="true">🔐</span>
+      <p><strong>{{ .security_title }}</strong>{{ .security_description }}</p>
+    </aside>
+  </section>
+  {{- end }}
+
+  {{- with .Params.closing }}
+  <nav class="site-links" aria-label="{{ .label }}">
+    <span>{{ .message }}</span>
+    <div>
+      <a href="{{ site.Params.repositoryURL }}">GitHub</a>
+      <a href="{{ site.Params.licenseURL }}">{{ .license }}</a>
+      <a href="{{ site.Params.securityURL }}">{{ .security }}</a>
+    </div>
+  </nav>
+  {{- end }}
+</div>
+{{- end }}

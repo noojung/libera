@@ -2,6 +2,8 @@
 
 Libera is a desktop compression utility built with Electron, TypeScript, and React. It can compress files and folders, safely extract supported archives, and browse their contents.
 
+[Website & user guide](https://noojung.github.io/libera/) · [Download the latest release](https://github.com/noojung/libera/releases/latest)
+
 ## Development Requirements
 
 - Git

@@ -1,0 +1,100 @@
+baseURL: https://noojung.github.io/libera/
+title: Libera
+defaultContentLanguage: ko
+defaultContentLanguageInSubdir: false
+enableRobotsTXT: true
+enableEmoji: true
+disableKinds:
+  - taxonomy
+  - term
+  - RSS
+
+module:
+  imports:
+    - path: github.com/adityatelange/hugo-PaperMod
+
+outputs:
+  home:
+    - HTML
+
+languages:
+  ko:
+    label: 한국어
+    locale: ko-KR
+    contentDir: content/ko
+    weight: 1
+    copyright: "© 2026 Libera"
+    menu:
+      main:
+        - name: 철학
+          url: "#philosophy"
+          weight: 10
+        - name: 기능
+          url: "#features"
+          weight: 20
+        - name: 사용법
+          url: "#how-to"
+          weight: 30
+        - name: 다운로드
+          url: "#download"
+          weight: 40
+  en:
+    label: English
+    locale: en-US
+    contentDir: content/en
+    weight: 2
+    copyright: "© 2026 Libera"
+    menu:
+      main:
+        - name: Philosophy
+          url: "#philosophy"
+          weight: 10
+        - name: Features
+          url: "#features"
+          weight: 20
+        - name: How it works
+          url: "#how-to"
+          weight: 30
+        - name: Download
+          url: "#download"
+          weight: 40
+
+params:
+  env: production
+  description: A friendly desktop app for compressing, extracting, and previewing archives safely.
+  author: Libera
+  defaultTheme: auto
+  displayFullLangName: true
+  disableScrollToTop: false
+  disableSpecial1stPost: true
+  hideMeta: true
+  mainSections: []
+  releaseURL: https://github.com/noojung/libera/releases/latest
+  repositoryURL: https://github.com/noojung/libera
+  securityURL: https://github.com/noojung/libera/blob/main/SECURITY.md
+  licenseURL: https://github.com/noojung/libera/blob/main/LICENSE
+  images:
+    - images/libera-app-compress.png
+  label:
+    text: Libera
+    icon: images/libera-logo.png
+    iconHeight: 34
+  assets:
+    disableHLJS: true
+    favicon: images/libera-logo.png
+    favicon16x16: images/libera-logo.png
+    favicon32x32: images/libera-logo.png
+    apple_touch_icon: images/libera-logo.png
+    theme_color: "#FAF7F2"
+    msapplication_TileColor: "#FAF7F2"
+
+minify:
+  disableXML: true
+  minifyOutput: true
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: false
+  highlight:
+    noClasses: false
