@@ -1,6 +1,6 @@
 {
   "name": "libera",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Libera - Cross-platform compression utility desktop app built with Electron, TypeScript, and React",
   "main": "dist/main/main.js",
   "packageManager": "npm@11.17.0",
