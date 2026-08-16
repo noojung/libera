@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import { promises as fsPromises } from 'fs'
-import { compressArchive, CompressionOptions, calculateTotalSize } from '../services/compressor'
+import { compressArchive, CompressionError, CompressionOptions, calculateTotalSize } from '../services/compressor'
 import {
   extractArchive,
   ExtractionError,
@@ -13,6 +13,7 @@ import { inspectArchive } from '../services/archiveInspector'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
 
 let mainWindow: BrowserWindow | null = null
+const activeCompressionControllers = new Map<string, AbortController>()
 const activeExtractionControllers = new Map<string, AbortController>()
 const activePreviewControllers = new Map<string, AbortController>()
 
@@ -34,6 +35,12 @@ function classifyError(error: unknown, operation: Operation): string {
     return previewErrorCodes[error.code] || 'genericPreview'
   }
   if (operation === 'preview') return 'genericPreview'
+  if (error instanceof CompressionError) {
+    const compressionErrorCodes: Record<string, string> = {
+      COMPRESSION_CANCELLED: 'compressionCancelled'
+    }
+    return compressionErrorCodes[error.code] || 'genericCompression'
+  }
   if (error instanceof ExtractionError) {
     const extractionErrorCodes: Record<string, string> = {
       EXTRACTION_CANCELLED: 'extractionCancelled',
@@ -92,6 +99,8 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    for (const controller of activeCompressionControllers.values()) controller.abort()
+    activeCompressionControllers.clear()
     for (const controller of activeExtractionControllers.values()) controller.abort()
     activeExtractionControllers.clear()
     for (const controller of activePreviewControllers.values()) controller.abort()
@@ -180,13 +189,17 @@ ipcMain.handle('dialog:selectExtractFolder', async (_, title?: string) => {
 })
 
 ipcMain.handle('archive:compress', async (_, options: CompressionOptions, jobId: string) => {
+  const controller = new AbortController()
+  activeCompressionControllers.set(jobId, controller)
   try {
     const result = await compressArchive(options, (progress) => {
       mainWindow?.webContents.send('archive:progress', { jobId, ...progress })
-    })
+    }, { signal: controller.signal })
     return { success: true, result }
   } catch (err: any) {
     return { success: false, error: err.message || 'Compression failed', errorCode: classifyError(err, 'compression') }
+  } finally {
+    if (activeCompressionControllers.get(jobId) === controller) activeCompressionControllers.delete(jobId)
   }
 })
 
@@ -213,7 +226,7 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
 })
 
 ipcMain.handle('archive:cancel', (_, jobId: string) => {
-  const controller = activeExtractionControllers.get(jobId)
+  const controller = activeCompressionControllers.get(jobId) || activeExtractionControllers.get(jobId)
   if (!controller) return false
   controller.abort()
   return true

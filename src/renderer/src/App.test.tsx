@@ -55,14 +55,14 @@ vi.mock('./components/ExtractionPanel', () => ({
 vi.mock('./components/ArchiveInspector', () => ({ ArchiveInspector: () => <div>Inspector content</div> }))
 
 vi.mock('./components/QueueManager', () => ({
-  QueueManager: ({ jobs, onCancelExtraction, onClearCompleted, onOpenFolder }: any) => (
+  QueueManager: ({ jobs, onCancelJob, onClearCompleted, onOpenFolder }: any) => (
     <div>
       <button onClick={onClearCompleted}>Clear jobs</button>
       {jobs.map((job: ActiveJob) => (
         <div key={job.id} data-testid={`job-${job.id}`}>
           <span>{`${job.sourceName || 'items'}:${job.status}:${job.percent}:${job.errorCode || ''}`}</span>
-          {job.type === 'extract' && (job.status === 'pending' || job.status === 'running') && (
-            <button onClick={() => onCancelExtraction(job.id)}>{`Cancel ${job.id}`}</button>
+          {(job.status === 'pending' || job.status === 'running') && (
+            <button onClick={() => onCancelJob(job.id)}>{`Cancel ${job.id}`}</button>
           )}
           {job.status === 'completed' && job.outputPath && (
             <button onClick={() => onOpenFolder(job.outputPath!)}>{`Open ${job.id}`}</button>
@@ -224,10 +224,31 @@ describe('App orchestration', () => {
     const cancel = await screen.findByRole('button', { name: /^Cancel job-/ })
     await waitFor(() => expect(api.extractArchive).toHaveBeenCalledOnce())
     await user.click(cancel)
-    expect(api.cancelExtraction).toHaveBeenCalledWith(expect.stringMatching(/^job-/))
+    expect(api.cancelJob).toHaveBeenCalledWith(expect.stringMatching(/^job-/))
     expect(screen.getByText(/one.zip:cancelled:/)).toBeInTheDocument()
 
     result.resolve({ success: true, result: { durationMs: 5 } })
     await waitFor(() => expect(screen.getByText(/one.zip:cancelled:/)).toBeInTheDocument())
+  })
+
+  it('cancels an active compression and ignores its later success', async () => {
+    const result = deferred<any>()
+    const compressArchive = vi.fn<(options: any, jobId: string) => Promise<any>>().mockImplementation(() => result.promise)
+    const api = installElectronApi({
+      getItemStat: vi.fn(async paths => statsFor(paths)),
+      compressArchive
+    })
+    const { user } = renderWithI18n(<App />)
+    await user.click(screen.getByRole('button', { name: 'Add compression file' }))
+    await waitFor(() => expect(screen.getByTestId('compress-count')).toHaveTextContent('1'))
+    await user.click(screen.getByRole('button', { name: 'Submit compression' }))
+    const cancel = await screen.findByRole('button', { name: /^Cancel job-/ })
+    await waitFor(() => expect(api.compressArchive).toHaveBeenCalledOnce())
+    await user.click(cancel)
+    expect(api.cancelJob).toHaveBeenCalledWith(expect.stringMatching(/^job-/))
+    expect(screen.getByText(/input.txt:cancelled:/)).toBeInTheDocument()
+
+    result.resolve({ success: true, result: { durationMs: 5, originalSize: 100, compressedSize: 50 } })
+    await waitFor(() => expect(screen.getByText(/input.txt:cancelled:/)).toBeInTheDocument())
   })
 })

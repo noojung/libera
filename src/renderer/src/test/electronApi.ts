@@ -12,7 +12,7 @@ export function createElectronApiMock(overrides: Partial<ElectronAPI> = {}) {
     selectExtractFolder: vi.fn().mockResolvedValue(null),
     compressArchive: vi.fn().mockResolvedValue({ success: true, result: {} }),
     extractArchive: vi.fn().mockResolvedValue({ success: true, result: {} }),
-    cancelExtraction: vi.fn().mockResolvedValue(true),
+    cancelJob: vi.fn().mockResolvedValue(true),
     inspectArchive: vi.fn().mockResolvedValue({ success: true, result: {} }),
     previewArchiveEntry: vi.fn().mockResolvedValue({ success: true, result: { kind: 'text', text: '', encoding: 'utf-8', truncated: false, previewedBytes: 0, totalBytes: 0 } }),
     cancelArchivePreview: vi.fn().mockResolvedValue(true),

@@ -24,21 +24,30 @@ function job(overrides: Partial<ActiveJob>): ActiveJob {
 }
 
 describe('QueueManager', () => {
-  it('renders active progress and delegates extraction cancellation', async () => {
+  it('renders active progress and delegates cancellation', async () => {
     const onCancel = vi.fn()
     const { user, container } = renderWithI18n(
-      <QueueManager jobs={[job({ percent: null, totalBytes: null })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelExtraction={onCancel} />
+      <QueueManager jobs={[job({ percent: null, totalBytes: null })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelJob={onCancel} />
     )
     expect(screen.getByText('Processing')).toBeInTheDocument()
     expect(container.querySelector('.queue-progress__bar--indeterminate')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Cancel extraction' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalledWith('job-1')
     expect(screen.queryByRole('button', { name: 'Open folder' })).not.toBeInTheDocument()
   })
 
+  it('offers cancellation for a running compression job too', async () => {
+    const onCancel = vi.fn()
+    const { user } = renderWithI18n(
+      <QueueManager jobs={[job({ type: 'compress', status: 'pending' })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelJob={onCancel} />
+    )
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onCancel).toHaveBeenCalledWith('job-1')
+  })
+
   it('renders determinate progress without an inline style', () => {
     renderWithI18n(
-      <QueueManager jobs={[job({ percent: 50 })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelExtraction={vi.fn()} />
+      <QueueManager jobs={[job({ percent: 50 })]} onOpenFolder={vi.fn()} onClearCompleted={vi.fn()} onCancelJob={vi.fn()} />
     )
     const progress = screen.getByRole('progressbar', { name: '50%' })
     expect(progress).toHaveValue(50)
@@ -50,7 +59,7 @@ describe('QueueManager', () => {
     const onClear = vi.fn()
     const completed = job({ status: 'completed', phase: 'complete', percent: 100, durationMs: 1500 })
     const { user } = renderWithI18n(
-      <QueueManager jobs={[completed]} onOpenFolder={onOpen} onClearCompleted={onClear} onCancelExtraction={vi.fn()} />
+      <QueueManager jobs={[completed]} onOpenFolder={onOpen} onClearCompleted={onClear} onCancelJob={vi.fn()} />
     )
     expect(screen.getByText(/Completed/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open folder' }))
@@ -69,7 +78,7 @@ describe('QueueManager', () => {
         ]}
         onOpenFolder={vi.fn()}
         onClearCompleted={vi.fn()}
-        onCancelExtraction={vi.fn()}
+        onCancelJob={vi.fn()}
       />
     )
     expect(screen.getByText('Waiting')).toBeInTheDocument()

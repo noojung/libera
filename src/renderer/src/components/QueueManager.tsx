@@ -10,10 +10,10 @@ interface QueueManagerProps {
   jobs: ActiveJob[]
   onOpenFolder: (path: string) => void
   onClearCompleted: () => void
-  onCancelExtraction: (jobId: string) => void
+  onCancelJob: (jobId: string) => void
 }
 
-export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, onClearCompleted, onCancelExtraction }) => {
+export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, onClearCompleted, onCancelJob }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
 
@@ -116,10 +116,10 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                     </div>
                   )}
 
-                  {job.type === 'extract' && (job.status === 'pending' || job.status === 'running') && (
+                  {(job.status === 'pending' || job.status === 'running') && (
                     <button
                       className="btn-secondary"
-                      onClick={() => onCancelExtraction(job.id)}
+                      onClick={() => onCancelJob(job.id)}
                       title={t('queue.cancel')}
                       aria-label={t('queue.cancel')}
                     >

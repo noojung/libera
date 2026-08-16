@@ -27,6 +27,23 @@ export interface ProgressData {
 
 export type ProgressCallback = (data: ProgressData) => void
 
+export type CompressionErrorCode = 'COMPRESSION_CANCELLED'
+
+export class CompressionError extends Error {
+  constructor(public readonly code: CompressionErrorCode, message: string) {
+    super(message)
+    this.name = 'CompressionError'
+  }
+}
+
+export interface CompressionContext {
+  signal?: AbortSignal
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CompressionError('COMPRESSION_CANCELLED', 'Compression cancelled')
+}
+
 /**
  * Calculates total size of files/directories recursively without following
  * symbolic links. This keeps directory scans non-blocking and prevents
@@ -74,14 +91,18 @@ export async function calculateTotalSize(paths: string[], excludePath?: string):
 
 export async function compressArchive(
   options: CompressionOptions,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  context: CompressionContext = {}
 ): Promise<{ outputPath: string; originalSize: number; compressedSize: number; durationMs: number }> {
   const startTime = Date.now()
   const { inputPaths, outputPath, format, level = 6 } = options
+  const { signal } = context
 
   if (options.password && format !== 'zip') {
     throw new Error('Password protection is currently available for ZIP archives only.')
   }
+
+  throwIfAborted(signal)
 
   // Ensure output directory exists
   const outputDir = path.dirname(outputPath)
@@ -98,6 +119,8 @@ export async function compressArchive(
 
   const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath)
 
+  throwIfAborted(signal)
+
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
     const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
     for (const itemPath of inputPaths) {
@@ -110,9 +133,11 @@ export async function compressArchive(
       }
     }
 
+    throwIfAborted(signal)
+
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath)
-      
+
       const archiverFormat = format === 'tgz'
         ? 'tar'
         : format === 'zip' && options.password
@@ -140,16 +165,44 @@ export async function compressArchive(
       const archive = archiver(archiverFormat as archiver.Format, archiveOptions)
 
       let processedBytes = 0
+      let settled = false
+      let cancelled = false
+
+      const onAbort = () => {
+        if (settled || cancelled) return
+        cancelled = true
+        // Unpipe before aborting/ending so archiver's in-flight append cannot
+        // write to `output` after it starts closing - writing post-close
+        // throws ERR_STREAM_DESTROYED as an uncaught exception since archiver
+        // owns that write, not this promise.
+        archive.unpipe(output)
+        archive.abort()
+        output.end()
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      output.on('error', (err) => {
+        if (settled || cancelled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        reject(err)
+      })
 
       archive.on('warning', (err) => {
+        if (settled || cancelled) return
         if (err.code === 'ENOENT') {
           console.warn('Archiver warning:', err)
         } else {
+          settled = true
+          signal?.removeEventListener('abort', onAbort)
           reject(err)
         }
       })
 
       archive.on('error', (err) => {
+        if (settled || cancelled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
         reject(err)
       })
 
@@ -185,6 +238,14 @@ export async function compressArchive(
       }
 
       output.on('close', async () => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        if (cancelled) {
+          await fsPromises.unlink(outputPath).catch(() => {})
+          reject(new CompressionError('COMPRESSION_CANCELLED', 'Compression cancelled'))
+          return
+        }
         try {
           const compressedSize = (await fsPromises.stat(outputPath)).size
           const durationMs = Date.now() - startTime
@@ -221,10 +282,30 @@ export async function compressArchive(
       throw new Error('GZ format supports single files only. Please use .tgz or .zip for folder compression.')
     }
 
+    throwIfAborted(signal)
+
     return new Promise((resolve, reject) => {
       const gzip = zlib.createGzip({ level })
       const readStream = fs.createReadStream(sourceFile)
       const writeStream = fs.createWriteStream(outputPath)
+
+      let settled = false
+      let cancelled = false
+
+      const onAbort = () => {
+        if (settled || cancelled) return
+        cancelled = true
+        // Unpipe before ending `writeStream` so a chunk already in flight from
+        // `readStream`/`gzip` cannot write to it after it starts closing -
+        // writing post-close throws ERR_STREAM_DESTROYED as an uncaught
+        // exception since the pipe owns that write, not this promise.
+        readStream.unpipe(gzip)
+        gzip.unpipe(writeStream)
+        readStream.destroy()
+        gzip.destroy()
+        writeStream.end()
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
 
       let processed = 0
       readStream.on('data', (chunk) => {
@@ -243,6 +324,14 @@ export async function compressArchive(
       readStream.pipe(gzip).pipe(writeStream)
 
       writeStream.on('finish', async () => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        if (cancelled) {
+          await fsPromises.unlink(outputPath).catch(() => {})
+          reject(new CompressionError('COMPRESSION_CANCELLED', 'Compression cancelled'))
+          return
+        }
         try {
           const compressedSize = (await fsPromises.stat(outputPath)).size
           const durationMs = Date.now() - startTime
@@ -257,9 +346,15 @@ export async function compressArchive(
         }
       })
 
-      writeStream.on('error', reject)
-      readStream.on('error', reject)
-      gzip.on('error', reject)
+      const onError = (err: Error) => {
+        if (settled || cancelled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        reject(err)
+      }
+      writeStream.on('error', onError)
+      readStream.on('error', onError)
+      gzip.on('error', onError)
     })
   } else {
     throw new Error(`Unsupported format: ${format}`)

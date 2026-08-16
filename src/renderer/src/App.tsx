@@ -237,6 +237,8 @@ export const App: React.FC = () => {
         password: options.password
       }, jobId)
 
+      if (cancelledJobIds.current.has(jobId)) return
+
       setJobs(prev =>
         prev.map(j => {
           if (j.id === jobId) {
@@ -352,15 +354,15 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleCancelExtraction = (jobId: string) => {
+  const handleCancelJob = (jobId: string) => {
     cancelledJobIds.current.add(jobId)
     if (passwordPromptJobId.current === jobId) resolvePasswordPrompt(null)
     setJobs(prev => prev.map(job =>
-      job.id === jobId && job.type === 'extract' && (job.status === 'pending' || job.status === 'running')
-        ? { ...job, status: 'cancelled', errorCode: 'extractionCancelled' }
+      job.id === jobId && (job.status === 'pending' || job.status === 'running')
+        ? { ...job, status: 'cancelled', errorCode: job.type === 'compress' ? 'compressionCancelled' : 'extractionCancelled' }
         : job
     ))
-    void (window as any).electronAPI?.cancelExtraction(jobId)
+    void (window as any).electronAPI?.cancelJob(jobId)
   }
 
   const handleClearCompleted = () => {
@@ -418,7 +420,7 @@ export const App: React.FC = () => {
             jobs={jobs}
             onOpenFolder={handleOpenFolder}
             onClearCompleted={handleClearCompleted}
-            onCancelExtraction={handleCancelExtraction}
+            onCancelJob={handleCancelJob}
           />
         )}
       </main>

@@ -150,4 +150,55 @@ describe('compressArchive', () => {
     // Total omits the archive itself, so progress stays a meaningful fraction.
     expect(result.originalSize).toBe(payloadSize * 3)
   }, 30000)
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'file.txt')
+    await fs.writeFile(inputPath, 'data')
+    const outputPath = path.join(directory, 'archive.zip')
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      compressArchive({ inputPaths: [inputPath], outputPath, format: 'zip' }, undefined, { signal: controller.signal })
+    ).rejects.toMatchObject({ name: 'CompressionError', code: 'COMPRESSION_CANCELLED' })
+    await expect(fs.stat(outputPath)).rejects.toThrow()
+  })
+
+  it('cancels a ZIP compression mid-stream and removes the partial output', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir, { recursive: true })
+    for (const name of ['a.bin', 'b.bin', 'c.bin']) {
+      await fs.writeFile(path.join(sourceDir, name), crypto.randomBytes(64 * 1024))
+    }
+    const outputPath = path.join(directory, 'archive.zip')
+    const controller = new AbortController()
+
+    const promise = compressArchive(
+      { inputPaths: [sourceDir], outputPath, format: 'zip' },
+      () => controller.abort(),
+      { signal: controller.signal }
+    )
+
+    await expect(promise).rejects.toMatchObject({ name: 'CompressionError', code: 'COMPRESSION_CANCELLED' })
+    await expect(fs.stat(outputPath)).rejects.toThrow()
+  })
+
+  it('cancels a GZ compression mid-stream and removes the partial output', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'report.bin')
+    const outputPath = path.join(directory, 'report.bin.gz')
+    await fs.writeFile(inputPath, crypto.randomBytes(5 * 1024 * 1024))
+    const controller = new AbortController()
+
+    const promise = compressArchive(
+      { inputPaths: [inputPath], outputPath, format: 'gz' },
+      () => controller.abort(),
+      { signal: controller.signal }
+    )
+
+    await expect(promise).rejects.toMatchObject({ name: 'CompressionError', code: 'COMPRESSION_CANCELLED' })
+    await expect(fs.stat(outputPath)).rejects.toThrow()
+  })
 })

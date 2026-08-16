@@ -25,7 +25,7 @@ export interface ElectronAPI {
   selectExtractFolder: (title?: string) => Promise<string | null>
   compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
   extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string; code?: string }>
-  cancelExtraction: (jobId: string) => Promise<boolean>
+  cancelJob: (jobId: string) => Promise<boolean>
   inspectArchive: (archivePath: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
   previewArchiveEntry: (archivePath: string, entryId: string, requestId: string) => Promise<{ success: boolean; result?: ArchivePreviewResult; error?: string; errorCode?: string }>
   cancelArchivePreview: (requestId: string) => Promise<boolean>
@@ -46,7 +46,7 @@ const api: ElectronAPI = {
   selectExtractFolder: (title) => ipcRenderer.invoke('dialog:selectExtractFolder', title),
   compressArchive: (options, jobId) => ipcRenderer.invoke('archive:compress', options, jobId),
   extractArchive: (options, jobId) => ipcRenderer.invoke('archive:extract', options, jobId),
-  cancelExtraction: (jobId) => ipcRenderer.invoke('archive:cancel', jobId),
+  cancelJob: (jobId) => ipcRenderer.invoke('archive:cancel', jobId),
   inspectArchive: (archivePath) => ipcRenderer.invoke('archive:inspect', archivePath),
   previewArchiveEntry: (archivePath, entryId, requestId) => ipcRenderer.invoke('archive:preview', archivePath, entryId, requestId),
   cancelArchivePreview: (requestId) => ipcRenderer.invoke('archive:cancelPreview', requestId),

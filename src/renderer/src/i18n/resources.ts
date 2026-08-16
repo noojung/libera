@@ -145,7 +145,7 @@ export const resources = {
         pending: 'Waiting',
         processing: 'Processing',
         cancelled: 'Cancelled',
-        cancel: 'Cancel extraction',
+        cancel: 'Cancel',
         processed: '{{size}} extracted',
         openFolder: 'Open folder',
         phase: {
@@ -169,6 +169,7 @@ export const resources = {
         archiveMissing: 'The archive file could not be found.',
         destinationExists: 'A file already exists at the extraction destination.',
         extractionCancelled: 'Extraction was cancelled.',
+        compressionCancelled: 'Compression was cancelled.',
         insufficientDiskSpace: 'There is not enough disk space while preserving the safety reserve.',
         destinationFileTooLarge: 'The destination filesystem cannot store a file this large.',
         tooManyEntries: 'The archive contains more than 100,000 entries.',
@@ -324,7 +325,7 @@ export const resources = {
         pending: '대기 중',
         processing: '처리 중',
         cancelled: '취소됨',
-        cancel: '압축 해제 취소',
+        cancel: '취소',
         processed: '{{size}} 해제됨',
         openFolder: '폴더 열기',
         phase: {
@@ -348,6 +349,7 @@ export const resources = {
         archiveMissing: '압축 파일을 찾을 수 없습니다.',
         destinationExists: '해제 위치에 이미 파일이 있습니다.',
         extractionCancelled: '압축 해제가 취소되었습니다.',
+        compressionCancelled: '압축이 취소되었습니다.',
         insufficientDiskSpace: '안전 여유 공간을 유지하기에는 디스크 공간이 부족합니다.',
         destinationFileTooLarge: '대상 파일시스템에서 이 크기의 파일을 저장할 수 없습니다.',
         tooManyEntries: '압축 파일에 100,000개를 초과하는 항목이 있습니다.',
