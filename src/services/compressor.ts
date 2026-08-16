@@ -31,12 +31,19 @@ export type ProgressCallback = (data: ProgressData) => void
  * Calculates total size of files/directories recursively without following
  * symbolic links. This keeps directory scans non-blocking and prevents
  * symlink cycles from being traversed.
+ *
+ * `excludePath` omits a single absolute path from the total. It is used to
+ * leave the archive being written out of its own size estimate so the
+ * reported progress percentage stays accurate.
  */
-export async function calculateTotalSize(paths: string[]): Promise<number> {
+export async function calculateTotalSize(paths: string[], excludePath?: string): Promise<number> {
   const visitedDirectories = new Set<string>()
+  const excluded = excludePath ? path.resolve(excludePath) : null
 
   const calculatePathSize = async (itemPath: string): Promise<number> => {
     try {
+      if (excluded && path.resolve(itemPath) === excluded) return 0
+
       const stat = await fsPromises.lstat(itemPath)
       if (stat.isSymbolicLink()) return 0
 
@@ -80,11 +87,21 @@ export async function compressArchive(
   const outputDir = path.dirname(outputPath)
   await fsPromises.mkdir(outputDir, { recursive: true })
 
-  const totalBytes = await calculateTotalSize(inputPaths)
+  // The archive frequently lands inside a folder that is itself being
+  // compressed - the default save location is the downloads folder, so
+  // archiving downloads writes downloads/archive.zip. Left alone, the
+  // directory walk picks that file up and streams it into the archive while
+  // it is still being written, so the read never reaches EOF and the whole
+  // job stalls with the progress bar frozen. Skip it everywhere it could be
+  // picked up.
+  const resolvedOutputPath = path.resolve(outputPath)
+
+  const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath)
 
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
     const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
     for (const itemPath of inputPaths) {
+      if (path.resolve(itemPath) === resolvedOutputPath) continue
       try {
         const stat = await fsPromises.lstat(itemPath)
         archiveInputs.push({ itemPath, isDirectory: stat.isDirectory() })
@@ -156,7 +173,12 @@ export async function compressArchive(
       for (const { itemPath, isDirectory } of archiveInputs) {
         const baseName = path.basename(itemPath)
         if (isDirectory) {
-          archive.directory(itemPath, baseName)
+          // Returning false from this callback drops the entry from the walk.
+          // entry.name is relative to itemPath, so resolving the two gives the
+          // absolute path to compare against the archive's own location.
+          archive.directory(itemPath, baseName, entry =>
+            path.resolve(itemPath, entry.name) === resolvedOutputPath ? false : entry
+          )
         } else {
           archive.file(itemPath, { name: baseName })
         }

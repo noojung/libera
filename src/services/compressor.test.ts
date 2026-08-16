@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -122,4 +123,31 @@ describe('compressArchive', () => {
       format: 'gz'
     })).rejects.toThrow('single files only')
   })
+
+  it('excludes the archive from its own input when it is written inside the compressed folder', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir, { recursive: true })
+
+    // Incompressible payload, and an output name that sorts after it so the
+    // directory walk reaches the archive only once it has grown. That is the
+    // real-world shape of this bug: the default save location is the folder
+    // being compressed, so the walk streams the half-written archive into
+    // itself, the read never hits EOF, and the job stalls forever.
+    const payloadSize = 2 * 1024 * 1024
+    for (const name of ['a-data.bin', 'b-data.bin', 'c-data.bin']) {
+      await fs.writeFile(path.join(sourceDir, name), crypto.randomBytes(payloadSize))
+    }
+    const outputPath = path.join(sourceDir, 'z-archive.zip')
+
+    const result = await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip' })
+
+    const entryPaths = (await inspectArchive(outputPath)).entries.map(entry => entry.path)
+    expect(entryPaths).toEqual(
+      expect.arrayContaining(['source/a-data.bin', 'source/b-data.bin', 'source/c-data.bin'])
+    )
+    expect(entryPaths).not.toContain('source/z-archive.zip')
+    // Total omits the archive itself, so progress stays a meaningful fraction.
+    expect(result.originalSize).toBe(payloadSize * 3)
+  }, 30000)
 })
