@@ -22,6 +22,8 @@ coverage/
 /site/public/
 /site/resources/_gen/
 /site/.hugo_build.lock
+test-results/
+playwright-report/
 
 # Environment variables
 .env
