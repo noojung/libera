@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { LockKeyhole } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './PasswordPromptModal.css'
@@ -13,10 +13,12 @@ interface PasswordPromptModalProps {
 export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, hasIncorrectPassword, onConfirm, onCancel }) => {
   const { t } = useTranslation()
   const [password, setPassword] = useState('')
+  const [promptedArchive, setPromptedArchive] = useState(archiveName)
 
-  useEffect(() => {
+  if (archiveName !== promptedArchive) {
+    setPromptedArchive(archiveName)
     setPassword('')
-  }, [archiveName])
+  }
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()

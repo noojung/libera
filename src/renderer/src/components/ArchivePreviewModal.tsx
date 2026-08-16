@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { FileText, Image as ImageIcon, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchivePreviewMediaType, ArchivePreviewResult } from '../../../services/archivePreview'
@@ -27,8 +27,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
 }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [imageLoadFailed, setImageLoadFailed] = useState(false)
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -38,18 +37,18 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  useEffect(() => {
-    setImageLoadFailed(false)
-    if (result?.kind !== 'image') {
-      setImageUrl(null)
-      return
-    }
-
+  const imageUrl = useMemo(() => {
+    if (result?.kind !== 'image') return null
     const bytes = Uint8Array.from(result.data)
-    const url = URL.createObjectURL(new Blob([bytes.buffer], { type: result.mediaType }))
-    setImageUrl(url)
-    return () => URL.revokeObjectURL(url)
+    return URL.createObjectURL(new Blob([bytes.buffer], { type: result.mediaType }))
   }, [result])
+
+  useEffect(() => {
+    if (!imageUrl) return
+    return () => URL.revokeObjectURL(imageUrl)
+  }, [imageUrl])
+
+  const imageLoadFailed = imageUrl !== null && failedImageUrl === imageUrl
 
   const isImage = result?.kind === 'image'
 
@@ -108,7 +107,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
                 className="archive-preview__image"
                 src={imageUrl}
                 alt={t('inspector.preview.imageAlt', { path: entryPath })}
-                onError={() => setImageLoadFailed(true)}
+                onError={() => setFailedImageUrl(imageUrl)}
               />
             ) : (
               <div role="status" className="archive-preview__state">{t('inspector.preview.loading')}</div>

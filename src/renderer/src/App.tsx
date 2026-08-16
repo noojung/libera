@@ -146,7 +146,7 @@ export const App: React.FC = () => {
   const handleAddExtractFiles = async (paths: string[]) => {
     const supportedExtensions = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz']
     const isSupportedArchive = (filePath: string) => supportedExtensions.some(extension => filePath.toLowerCase().endsWith(extension))
-    let newItems: SelectedItem[] = []
+    let newItems: SelectedItem[]
     if ((window as any).electronAPI?.getItemStat) {
       const stats = await (window as any).electronAPI.getItemStat(paths)
       newItems = stats.map((s: { path: string; name: string; isDirectory: boolean; size: number }) => ({
