@@ -11,8 +11,20 @@ permissions:
 
 jobs:
   validate:
-    name: Validate
-    runs-on: ubuntu-latest
+    name: Validate (${{ matrix.os }})
+    # The service tests drive a real filesystem rather than a mock, so they only
+    # exercise a platform's path separators, file locking and case-insensitive
+    # lookups when they actually run on it. Cover the same three targets
+    # release.yml ships, and nothing the project does not ship.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Report every platform, so one red runner does not hide the others.
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - macos-26-intel
     steps:
       - name: Check out source
         uses: actions/checkout@v7

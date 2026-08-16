@@ -213,12 +213,12 @@ jobs:
       matrix:
         include:
           - name: macOS Intel
-            runner: macos-15-intel
+            runner: macos-26-intel
             command: npx electron-builder --mac dmg --x64 --publish never
             artifact: installer-mac-x64
             path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-x64.dmg
           - name: macOS Apple Silicon
-            runner: macos-15
+            runner: macos-latest
             command: npx electron-builder --mac dmg --arm64 --publish never
             artifact: installer-mac-arm64
             path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-arm64.dmg
