@@ -10,7 +10,7 @@ import {
 
 configure({ useWebWorkers: false })
 
-class NodeFileReader extends Reader<string> {
+export class NodeFileReader extends Reader<string> {
   private handle: FileHandle | null = null
 
   constructor(private readonly filePath: string) {

@@ -13,8 +13,22 @@ interface CompressionPanelProps {
     level: number
     outputPath: string
     password?: string
+    splitSize?: number
   }) => void
 }
+
+const MIN_SPLIT_SIZE = 1024 * 1024
+const SPLIT_CHOICES = [
+  { id: '100mb', bytes: 100 * 1024 * 1024, labelKey: 'compression.splitPreset100mb' },
+  { id: '700mb', bytes: 700 * 1024 * 1024, labelKey: 'compression.splitPreset700mb' },
+  { id: '1gb', bytes: 1024 * 1024 * 1024, labelKey: 'compression.splitPreset1gb' },
+  { id: '2gb', bytes: 2 * 1024 * 1024 * 1024, labelKey: 'compression.splitPreset2gb' },
+  // The largest volume a FAT32 filesystem - and zip.js - can hold.
+  { id: '4gb', bytes: 0xffffffff, labelKey: 'compression.splitPreset4gb' },
+  { id: 'custom', bytes: null, labelKey: 'compression.splitPresetCustom' }
+] as const
+
+type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 
 export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onStartCompress }) => {
   const { t, i18n } = useTranslation()
@@ -26,6 +40,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [defaultDir, setDefaultDir] = useState<string>('')
   const [password, setPassword] = useState<string>('')
   const [passwordConfirmation, setPasswordConfirmation] = useState<string>('')
+  const [splitEnabled, setSplitEnabled] = useState<boolean>(false)
+  const [splitPreset, setSplitPreset] = useState<SplitPreset>('100mb')
+  const [splitCustomValue, setSplitCustomValue] = useState<string>('100')
+  const [splitCustomUnit, setSplitCustomUnit] = useState<'MB' | 'GB'>('MB')
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -55,8 +73,20 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     return t('compression.levelMaximum', { level: lvl })
   }
 
+  const splitSize = (() => {
+    const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
+    if (preset?.bytes) return preset.bytes
+    const value = Number(splitCustomValue)
+    if (!Number.isFinite(value) || value <= 0) return NaN
+    return Math.floor(value * (splitCustomUnit === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024))
+  })()
+  const splitInvalid = format === 'zip' && splitEnabled && !(splitSize >= MIN_SPLIT_SIZE)
+
   const handleCompress = () => {
     if (format === 'zip' && password !== passwordConfirmation) {
+      return
+    }
+    if (splitInvalid) {
       return
     }
     const sep = defaultDir.includes('\\') ? '\\' : '/'
@@ -66,7 +96,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       format,
       level,
       outputPath: finalOutput,
-      password: format === 'zip' ? password || undefined : undefined
+      password: format === 'zip' ? password || undefined : undefined,
+      splitSize: format === 'zip' && splitEnabled ? splitSize : undefined
     })
   }
 
@@ -139,6 +170,65 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         </div>
       )}
 
+      {format === 'zip' && (
+        <div className="compression-panel__field">
+          <label className="compression-panel__split-option">
+            <input
+              type="checkbox"
+              className="compression-panel__checkbox"
+              checked={splitEnabled}
+              onChange={(e) => setSplitEnabled(e.target.checked)}
+            />
+            <span className="compression-panel__option-title">{t('compression.splitEnable')}</span>
+          </label>
+
+          {splitEnabled && (
+            <div className="compression-panel__split-card">
+              <label className="compression-panel__label">
+                {t('compression.splitSize')}
+              </label>
+              <div className="compression-panel__split-buttons">
+                {SPLIT_CHOICES.map((choice) => (
+                  <button
+                    key={choice.id}
+                    onClick={() => setSplitPreset(choice.id)}
+                    className={`compression-panel__split-button${splitPreset === choice.id ? ' is-active' : ''}`}
+                  >
+                    {t(choice.labelKey)}
+                  </button>
+                ))}
+              </div>
+
+              {splitPreset === 'custom' && (
+                <div className="compression-panel__split-custom">
+                  <input
+                    type="number"
+                    min="1"
+                    className="input-text compression-panel__split-input"
+                    placeholder={t('compression.splitCustomPlaceholder')}
+                    value={splitCustomValue}
+                    onChange={(e) => setSplitCustomValue(e.target.value)}
+                  />
+                  {(['MB', 'GB'] as const).map((unit) => (
+                    <button
+                      key={unit}
+                      onClick={() => setSplitCustomUnit(unit)}
+                      className={`compression-panel__split-button compression-panel__split-unit${splitCustomUnit === unit ? ' is-active' : ''}`}
+                    >
+                      {t(unit === 'MB' ? 'compression.splitUnitMb' : 'compression.splitUnitGb')}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {splitInvalid && (
+                <p className="compression-panel__message compression-panel__message--error">{t('compression.splitMinimum')}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Save Destination */}
       <div className="compression-panel__field">
         <label className="compression-panel__label compression-panel__label--stacked">
@@ -162,7 +252,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       <button
         className="btn-primary compression-panel__start-button"
         onClick={handleCompress}
-        disabled={items.length === 0 || (format === 'zip' && password !== passwordConfirmation)}
+        disabled={items.length === 0 || (format === 'zip' && password !== passwordConfirmation) || splitInvalid}
       >
         <Archive size={20} />
         {t('compression.start')}

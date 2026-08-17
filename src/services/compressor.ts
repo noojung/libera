@@ -3,6 +3,12 @@ import path from 'path'
 import archiver from 'archiver'
 import zipEncrypted from 'archiver-zip-encrypted'
 import zlib from 'zlib'
+import {
+  MAX_SPLIT_VOLUMES,
+  MIN_SPLIT_SIZE,
+  removeStaleVolumes,
+  writeSplitZip
+} from './splitZipWriter'
 
 // Archiver does not provide password protection for ZIP archives itself.
 // This plugin adds the ZipCrypto format used below. It is registered once when
@@ -15,6 +21,7 @@ export interface CompressionOptions {
   format: 'zip' | 'tar' | 'gz' | 'tgz'
   level?: number // 0 (fastest/none) to 9 (maximum)
   password?: string
+  splitSize?: number // maximum bytes per volume, ZIP only
 }
 
 export interface ProgressData {
@@ -27,7 +34,11 @@ export interface ProgressData {
 
 export type ProgressCallback = (data: ProgressData) => void
 
-export type CompressionErrorCode = 'COMPRESSION_CANCELLED'
+export type CompressionErrorCode =
+  | 'COMPRESSION_CANCELLED'
+  | 'SPLIT_SIZE_TOO_SMALL'
+  | 'SPLIT_NOT_SUPPORTED_FOR_FORMAT'
+  | 'SPLIT_TOO_MANY_VOLUMES'
 
 export class CompressionError extends Error {
   constructor(public readonly code: CompressionErrorCode, message: string) {
@@ -93,13 +104,31 @@ export async function compressArchive(
   options: CompressionOptions,
   onProgress?: ProgressCallback,
   context: CompressionContext = {}
-): Promise<{ outputPath: string; originalSize: number; compressedSize: number; durationMs: number }> {
+): Promise<{
+  outputPath: string
+  originalSize: number
+  compressedSize: number
+  durationMs: number
+  volumePaths?: string[]
+}> {
   const startTime = Date.now()
-  const { inputPaths, outputPath, format, level = 6 } = options
+  const { inputPaths, outputPath, format, level = 6, splitSize } = options
   const { signal } = context
 
   if (options.password && format !== 'zip') {
     throw new Error('Password protection is currently available for ZIP archives only.')
+  }
+
+  if (splitSize !== undefined) {
+    if (format !== 'zip') {
+      throw new CompressionError(
+        'SPLIT_NOT_SUPPORTED_FOR_FORMAT',
+        'Split archives are currently available for ZIP archives only.'
+      )
+    }
+    if (!Number.isFinite(splitSize) || splitSize < MIN_SPLIT_SIZE) {
+      throw new CompressionError('SPLIT_SIZE_TOO_SMALL', 'The split size is below the supported minimum.')
+    }
   }
 
   throwIfAborted(signal)
@@ -107,6 +136,12 @@ export async function compressArchive(
   // Ensure output directory exists
   const outputDir = path.dirname(outputPath)
   await fsPromises.mkdir(outputDir, { recursive: true })
+
+  // Runs before the size scan so last run's volumes are neither counted nor
+  // swept into the archive by the directory walk below.
+  if (splitSize !== undefined) {
+    await removeStaleVolumes(outputPath)
+  }
 
   // The archive frequently lands inside a folder that is itself being
   // compressed - the default save location is the downloads folder, so
@@ -120,6 +155,49 @@ export async function compressArchive(
   const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath)
 
   throwIfAborted(signal)
+
+  // A single-volume split archive is not an ordinary ZIP: zip.js prefixes the
+  // first volume with a 4 byte split signature, which strict readers - this
+  // app's included - reject as prepended data. Anything that fits in one
+  // volume therefore takes the regular path below instead.
+  if (splitSize !== undefined && totalBytes > splitSize) {
+    if (Math.ceil(totalBytes / splitSize) + 1 > MAX_SPLIT_VOLUMES) {
+      throw new CompressionError('SPLIT_TOO_MANY_VOLUMES', 'The split size produces too many volumes.')
+    }
+
+    let split
+    try {
+      split = await writeSplitZip(
+        {
+          source: { inputPaths, totalBytes },
+          volumes: { outputPath, splitSize },
+          squeeze: { level, password: options.password }
+        },
+        onProgress,
+        { signal }
+      )
+    } catch (err) {
+      if (signal?.aborted) throw new CompressionError('COMPRESSION_CANCELLED', 'Compression cancelled')
+      throw err
+    }
+
+    if (onProgress) {
+      onProgress({
+        processedBytes: totalBytes,
+        totalBytes,
+        percent: 100,
+        phase: 'complete'
+      })
+    }
+
+    return {
+      outputPath: split.volumePaths[split.volumePaths.length - 1],
+      originalSize: totalBytes,
+      compressedSize: split.compressedSize,
+      durationMs: Date.now() - startTime,
+      volumePaths: split.volumePaths
+    }
+  }
 
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
     const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []

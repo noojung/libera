@@ -55,7 +55,8 @@
   gap: 10px;
 }
 
-.compression-panel__format-button {
+.compression-panel__format-button,
+.compression-panel__split-button {
   padding: 10px;
   border: 1.5px solid #4A403A;
   border-radius: 12px;
@@ -69,7 +70,8 @@
   transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.compression-panel__format-button.is-active {
+.compression-panel__format-button.is-active,
+.compression-panel__split-button.is-active {
   border: 2px solid #FF8E72;
   background: #FFF3E4;
   color: #FF8E72;
@@ -115,6 +117,80 @@
 
 .compression-panel__message--error {
   color: #E76F51;
+}
+
+.compression-panel__split-option {
+  display: flex;
+  padding: 14px;
+  align-items: center;
+  gap: 10px;
+  border: 1.5px solid #4A403A;
+  border-radius: 12px;
+  background: #FAF7F2;
+  cursor: pointer;
+}
+
+.compression-panel__checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #FF8E72;
+  cursor: pointer;
+}
+
+.compression-panel__option-title {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.compression-panel__split-card {
+  display: flex;
+  margin-top: 12px;
+  padding: 14px;
+  flex-direction: column;
+  gap: 10px;
+  border: 2px dashed #E0D2C4;
+  border-radius: var(--radius-lg);
+  background: #FFFDFA;
+  animation: compression-panel-unfold 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes compression-panel-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.compression-panel__split-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compression-panel__split-button {
+  padding: 7px 12px;
+  font-size: 14px;
+}
+
+.compression-panel__split-custom {
+  display: flex;
+  gap: 8px;
+}
+
+.input-text.compression-panel__split-input {
+  max-width: 110px;
+  padding: 7px 12px;
+  font-size: 14px;
+}
+
+.compression-panel__split-unit {
+  min-width: 54px;
 }
 
 .compression-panel__destination-row {

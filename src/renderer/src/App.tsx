@@ -207,6 +207,7 @@ export const App: React.FC = () => {
     level: number
     outputPath: string
     password?: string
+    splitSize?: number
   }) => {
     const jobId = `job-${Date.now()}`
     const inputPaths = selectedItems.map(i => i.path)
@@ -234,7 +235,8 @@ export const App: React.FC = () => {
         outputPath: options.outputPath,
         format: options.format,
         level: options.level,
-        password: options.password
+        password: options.password,
+        splitSize: options.splitSize
       }, jobId)
 
       if (cancelledJobIds.current.has(jobId)) return
@@ -250,7 +252,9 @@ export const App: React.FC = () => {
                 phase: 'complete',
                 durationMs: res.result.durationMs,
                 originalSize: res.result.originalSize,
-                compressedSize: res.result.compressedSize
+                compressedSize: res.result.compressedSize,
+                outputPath: res.result.outputPath || j.outputPath,
+                volumeCount: res.result.volumePaths?.length
               }
             } else {
               return {

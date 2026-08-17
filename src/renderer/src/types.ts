@@ -26,4 +26,5 @@ export interface ActiveJob {
   durationMs?: number
   compressedSize?: number
   originalSize?: number
+  volumeCount?: number
 }

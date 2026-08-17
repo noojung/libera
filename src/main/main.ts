@@ -37,7 +37,10 @@ function classifyError(error: unknown, operation: Operation): string {
   if (operation === 'preview') return 'genericPreview'
   if (error instanceof CompressionError) {
     const compressionErrorCodes: Record<string, string> = {
-      COMPRESSION_CANCELLED: 'compressionCancelled'
+      COMPRESSION_CANCELLED: 'compressionCancelled',
+      SPLIT_SIZE_TOO_SMALL: 'splitSizeTooSmall',
+      SPLIT_NOT_SUPPORTED_FOR_FORMAT: 'splitNotSupportedForFormat',
+      SPLIT_TOO_MANY_VOLUMES: 'splitTooManyVolumes'
     }
     return compressionErrorCodes[error.code] || 'genericCompression'
   }

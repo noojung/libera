@@ -173,6 +173,9 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   <span className="queue-manager__saved">
                     {t('queue.saved', { ratio: Math.round((1 - (job.compressedSize / job.originalSize)) * 100) })}
                   </span>
+                  {job.volumeCount !== undefined && (
+                    <span>{t('queue.volumes', { count: job.volumeCount })}</span>
+                  )}
                 </div>
               )}
             </div>

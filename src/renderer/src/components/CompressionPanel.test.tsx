@@ -18,8 +18,39 @@ describe('CompressionPanel', () => {
       format: 'zip',
       level: 6,
       outputPath: 'C:\\output\\archive.zip',
-      password: undefined
+      password: undefined,
+      splitSize: undefined
     })
+  })
+
+  it('sends a preset split size once splitting is enabled', async () => {
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Split into volumes' }))
+    await user.click(screen.getByRole('button', { name: '700 MB (CD)' }))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ splitSize: 700 * 1024 * 1024 }))
+  })
+
+  it('rejects a custom split size below the minimum volume', async () => {
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Split into volumes' }))
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    await user.clear(screen.getByPlaceholderText('Size'))
+    await user.type(screen.getByPlaceholderText('Size'), '0')
+    expect(screen.getByText('Each volume must be at least 1 MB.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start compression 🚀' })).toBeDisabled()
+
+    await user.clear(screen.getByPlaceholderText('Size'))
+    await user.type(screen.getByPlaceholderText('Size'), '2')
+    await user.click(screen.getByRole('button', { name: 'GB' }))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ splitSize: 2 * 1024 * 1024 * 1024 }))
   })
 
   it('validates ZIP passwords and sends a selected save path', async () => {
@@ -37,7 +68,7 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
 
     expect(api.selectSaveLocation).toHaveBeenCalledWith('archive.zip', 'zip', expect.any(Object))
-    expect(onStart).toHaveBeenCalledWith({ format: 'zip', level: 9, outputPath: 'D:\\secure.zip', password: 'secret' })
+    expect(onStart).toHaveBeenCalledWith({ format: 'zip', level: 9, outputPath: 'D:\\secure.zip', password: 'secret', splitSize: undefined })
   })
 
   it('hides password inputs for non-ZIP formats and disables empty jobs', async () => {
