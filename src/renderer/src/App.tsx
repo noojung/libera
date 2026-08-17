@@ -7,6 +7,14 @@ import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
+import {
+  NUMBERED_VOLUME_SUFFIX,
+  SUPPORTED_ARCHIVE_EXTENSIONS,
+  isSupportedArchivePath,
+  isZipArchivePath,
+  splitVolumeGroupKey,
+  terminalVolumePath
+} from './utils/archivePaths'
 import './styles/theme.css'
 import './App.css'
 import { useTranslation } from 'react-i18next'
@@ -25,7 +33,7 @@ export const App: React.FC = () => {
   const cancelledJobIds = useRef(new Set<string>())
 
   const isZipPasswordProtected = async (archivePath: string) => {
-    if (!archivePath.toLowerCase().endsWith('.zip') || !(window as any).electronAPI) return false
+    if (!isZipArchivePath(archivePath) || !(window as any).electronAPI) return false
     const response = await (window as any).electronAPI.inspectArchive(archivePath)
     return response.success && response.result?.passwordProtected === true
   }
@@ -144,8 +152,7 @@ export const App: React.FC = () => {
 
   // Extract Tab Handlers
   const handleAddExtractFiles = async (paths: string[]) => {
-    const supportedExtensions = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz']
-    const isSupportedArchive = (filePath: string) => supportedExtensions.some(extension => filePath.toLowerCase().endsWith(extension))
+    const isSupportedArchive = isSupportedArchivePath
     let newItems: SelectedItem[]
     if ((window as any).electronAPI?.getItemStat) {
       const stats = await (window as any).electronAPI.getItemStat(paths)
@@ -173,8 +180,23 @@ export const App: React.FC = () => {
 
     setExtractItems(prev => {
       const existingPaths = new Set(prev.map(i => i.path))
-      const filtered = validItems.filter(i => !existingPaths.has(i.path))
-      return [...prev, ...filtered]
+      const existingGroups = new Set(prev.map(i => splitVolumeGroupKey(i.path)))
+      const added: SelectedItem[] = []
+
+      for (const item of validItems) {
+        // Every volume of a split set resolves to one job on the terminal
+        // volume, so dragging a whole set in does not queue it N times.
+        const groupKey = splitVolumeGroupKey(item.path)
+        if (existingPaths.has(item.path) || existingGroups.has(groupKey)) continue
+        existingGroups.add(groupKey)
+
+        const canonicalPath = terminalVolumePath(item.path)
+        added.push(canonicalPath === item.path
+          ? item
+          : { ...item, path: canonicalPath, name: canonicalPath.split(/[/\\]/).pop() || item.name })
+      }
+
+      return [...prev, ...added]
     })
   }
 
@@ -191,7 +213,9 @@ export const App: React.FC = () => {
     if ((window as any).electronAPI) {
       const paths = await (window as any).electronAPI.selectFiles({
         allowDirectories: false,
-        extensions: ['zip', 'tar', 'tgz', 'gz'],
+        // Electron filters take literal extensions, so only the volume a user
+        // would reach for first is listed; the rest arrive by drag and drop.
+        extensions: ['zip', 'z01', 'tar', 'tgz', 'gz'],
         title: t('dialogs.selectExtractInputs'),
         filterName: t('dialogs.supportedArchives')
       })
@@ -405,7 +429,8 @@ export const App: React.FC = () => {
               onClearItems={handleClearExtractItems}
               onSelectFilesDialog={handleSelectExtractFilesDialog}
               allowFolders={false}
-              acceptedFileExtensions={['.zip', '.tar', '.tgz', '.tar.gz', '.gz']}
+              acceptedFileExtensions={[...SUPPORTED_ARCHIVE_EXTENSIONS]}
+              acceptedFilePatterns={[NUMBERED_VOLUME_SUFFIX]}
               validationError={extractInputErrorKey ? t(extractInputErrorKey) : null}
             />
             <ExtractionPanel

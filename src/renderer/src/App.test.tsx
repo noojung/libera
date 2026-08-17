@@ -27,6 +27,8 @@ vi.mock('./components/DropZone', () => ({
           <>
             <button onClick={() => onAddFiles(['C:\\one.zip', 'C:\\bad.txt'])}>Add extraction files</button>
             <button onClick={() => onAddFiles(['C:\\one.zip', 'C:\\two.tar'])}>Add two archives</button>
+            <button onClick={() => onAddFiles(['C:\\set.z01', 'C:\\set.z02', 'C:\\set.zip'])}>Add a volume set</button>
+            <button onClick={() => onAddFiles(['C:\\solo.z01'])}>Add a lone volume</button>
           </>
         ) : (
           <button onClick={() => onAddFiles(['C:\\input.txt'])}>Add compression file</button>
@@ -167,6 +169,30 @@ describe('App orchestration', () => {
     await waitFor(() => expect(api.extractArchive).toHaveBeenCalledTimes(2))
     expect(extractArchive.mock.calls.map(call => call[0].archivePath)).toEqual(['C:\\one.zip', 'C:\\two.tar'])
     expect(extractArchive.mock.calls.map(call => call[0].targetDir)).toEqual(['C:\\output\\one', 'C:\\output\\two'])
+  })
+
+  it('queues one job for a split volume set and extracts it through the final volume', async () => {
+    const extractArchive = vi.fn<(options: any, jobId: string) => Promise<any>>()
+      .mockResolvedValue({ success: true, result: { durationMs: 5 } })
+    const api = installElectronApi({
+      getItemStat: vi.fn(async paths => statsFor(paths)),
+      inspectArchive: vi.fn().mockResolvedValue({ success: true, result: { passwordProtected: false } }),
+      extractArchive
+    })
+    const { user } = renderWithI18n(<App />)
+    await user.click(screen.getByRole('button', { name: 'Mode extract' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add a volume set' }))
+    await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('1'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    // A lone numbered volume is accepted and canonicalized to its set.
+    await user.click(screen.getByRole('button', { name: 'Add a lone volume' }))
+    await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('2'))
+
+    await user.click(screen.getByRole('button', { name: 'Submit extraction' }))
+    await waitFor(() => expect(api.extractArchive).toHaveBeenCalledTimes(2))
+    expect(extractArchive.mock.calls.map(call => call[0].archivePath)).toEqual(['C:\\set.zip', 'C:\\solo.zip'])
   })
 
   it('retries protected ZIP extraction after a wrong password', async () => {

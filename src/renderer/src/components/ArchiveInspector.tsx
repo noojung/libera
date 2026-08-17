@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { ArchivePreviewResult } from '../../../services/archivePreview'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
+import { isSupportedArchivePath } from '../utils/archivePaths'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
 import './ArchiveInspector.css'
 
@@ -147,7 +148,7 @@ export const ArchiveInspector: React.FC = () => {
     if (!(window as any).electronAPI) return
     const files = await (window as any).electronAPI.selectFiles({
       allowDirectories: false,
-      extensions: ['zip', 'tar', 'tgz', 'gz'],
+      extensions: ['zip', 'z01', 'tar', 'tgz', 'gz'],
       title: t('dialogs.selectExtractInputs'),
       filterName: t('dialogs.supportedArchives')
     })
@@ -173,6 +174,11 @@ export const ArchiveInspector: React.FC = () => {
         // Use the path supplied by the browser when Electron does not provide one.
       }
     }
+    if (!isSupportedArchivePath(filePath)) {
+      setErrorKey('dropZone.unsupportedArchive')
+      return
+    }
+
     setArchivePath(filePath)
     runInspection(filePath)
   }

@@ -7,6 +7,7 @@ import * as tar from 'tar'
 import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
+import { terminalVolumePath } from './splitZipVolumes'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -502,7 +503,7 @@ function validateImageDimensions(width: number, height: number): void {
 }
 
 export async function previewArchiveEntry(
-  archivePath: string,
+  inputPath: string,
   entryId: string,
   context: ArchivePreviewContext = {}
 ): Promise<ArchivePreviewResult> {
@@ -510,6 +511,9 @@ export async function previewArchiveEntry(
   const match = /^entry-(\d+)$/.exec(entryId)
   if (!match) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
   const entryIndex = Number(match[1])
+  // Entry ids index the terminal volume's central directory, so a numbered
+  // volume has to resolve to the same archive the inspector listed.
+  const archivePath = terminalVolumePath(inputPath)
   const stat = await fsPromises.stat(archivePath).catch(() => null)
   if (!stat) throw new Error(`File does not exist: ${archivePath}`)
   if (!stat.isFile()) throw new Error('Archive preview requires a file')

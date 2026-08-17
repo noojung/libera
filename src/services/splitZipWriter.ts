@@ -3,6 +3,13 @@ import type { FileHandle } from 'fs/promises'
 import path from 'path'
 import { SplitDataWriter, ZipWriter, configure, type WritableWriter } from '@zip.js/zip.js'
 import { NodeFileReader } from './zipFileReader'
+import {
+  createVolumePredicate,
+  isSplitVolumeName,
+  normalizeName,
+  splitVolumeBase,
+  volumePathForDisk
+} from './splitZipVolumes'
 import type { ProgressCallback } from './compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
@@ -10,7 +17,7 @@ import type { ProgressCallback } from './compressor'
 configure({ useWebWorkers: false })
 
 export const MIN_SPLIT_SIZE = 1024 * 1024
-export const MAX_SPLIT_VOLUMES = 65535
+export { MAX_SPLIT_VOLUMES } from './splitZipVolumes'
 
 export interface SplitZipOptions {
   source: { inputPaths: string[]; totalBytes: number }
@@ -33,44 +40,6 @@ interface ArchiveEntry {
 
 interface VolumeSink extends WritableWriter {
   init(): Promise<void>
-}
-
-const isWindows = process.platform === 'win32'
-
-function normalizeName(name: string): string {
-  return isWindows ? name.toLowerCase() : name
-}
-
-/**
- * The last volume of a split set carries the `.zip` extension, the preceding
- * ones `.z01`, `.z02` and so on, all sharing this base.
- */
-export function splitVolumeBase(outputPath: string): string {
-  return outputPath.replace(/\.zip$/i, '')
-}
-
-function volumePathForDisk(basePath: string, diskNumber: number): string {
-  return `${basePath}.z${String(diskNumber + 1).padStart(2, '0')}`
-}
-
-export function isSplitVolumeName(baseName: string, candidateName: string): boolean {
-  const base = normalizeName(baseName)
-  const candidate = normalizeName(candidateName)
-  if (!candidate.startsWith(`${base}.`)) return false
-
-  const suffix = candidate.slice(base.length + 1)
-  return suffix === 'zip' || /^z\d{2,}$/.test(suffix)
-}
-
-export function createVolumePredicate(outputPath: string): (candidate: string) => boolean {
-  const directory = path.resolve(path.dirname(outputPath))
-  const baseName = path.basename(splitVolumeBase(outputPath))
-
-  return (candidate) => {
-    const resolved = path.resolve(candidate)
-    if (normalizeName(path.dirname(resolved)) !== normalizeName(directory)) return false
-    return isSplitVolumeName(baseName, path.basename(resolved))
-  }
 }
 
 /**

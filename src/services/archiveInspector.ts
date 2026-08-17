@@ -4,6 +4,7 @@ import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
+import { terminalVolumePath } from './splitZipVolumes'
 
 export interface ArchiveEntry {
   id: string
@@ -19,6 +20,7 @@ export interface ArchiveEntry {
 export interface ArchiveInspectionResult {
   archivePath: string
   format: string
+  volumeCount?: number
   passwordProtected: boolean
   totalFiles: number
   totalUncompressedSize: number | null
@@ -85,17 +87,21 @@ async function inspectTarArchive(
   }
 }
 
-export async function inspectArchive(archivePath: string): Promise<ArchiveInspectionResult> {
+export async function inspectArchive(inputPath: string): Promise<ArchiveInspectionResult> {
+  // Any volume identifies the set, but only the terminal one can be read.
+  const archivePath = terminalVolumePath(inputPath)
   const ext = path.extname(archivePath).toLowerCase()
   const fullExt = archivePath.toLowerCase()
   const stat = await fsPromises.stat(archivePath).catch(() => null)
   if (!stat) throw new Error(`File does not exist: ${archivePath}`)
   if (!stat.isFile()) throw new Error('Archive inspection requires a file')
-  const totalCompressedSize = stat.size
+  let totalCompressedSize = stat.size
 
   if (ext === '.zip') {
     const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES)
     try {
+      // A split set's size is the whole set, not just the volume opened.
+      totalCompressedSize = zip.totalBytes
       if (zip.entries.length > MAX_ARCHIVE_ENTRIES) throw tooManyEntriesError()
       let totalUncompressedSize = 0
       const entries: ArchiveEntry[] = zip.entries.map((entry, index) => {
@@ -117,6 +123,7 @@ export async function inspectArchive(archivePath: string): Promise<ArchiveInspec
       return {
         archivePath,
         format: 'ZIP',
+        volumeCount: zip.volumePaths.length,
         passwordProtected: zip.entries.some(entry => entry.encrypted),
         totalFiles: entries.filter(entry => !entry.isDirectory).length,
         totalUncompressedSize,

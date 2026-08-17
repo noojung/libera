@@ -10,6 +10,7 @@ import {
   WRONG_ZIP_PASSWORD_ERROR_CODE
 } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
+import { SplitVolumeError } from '../services/splitZipVolumes'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
 
 let mainWindow: BrowserWindow | null = null
@@ -33,6 +34,14 @@ function classifyError(error: unknown, operation: Operation): string {
       PREVIEW_CANCELLED: 'previewCancelled'
     }
     return previewErrorCodes[error.code] || 'genericPreview'
+  }
+  if (error instanceof SplitVolumeError) {
+    const splitVolumeErrorCodes: Record<string, string> = {
+      SPLIT_VOLUME_MISSING: 'splitVolumeMissing',
+      SPLIT_VOLUME_MISMATCH: 'splitVolumeMismatch',
+      SPLIT_VOLUME_UNREADABLE: 'splitVolumeUnreadable'
+    }
+    return splitVolumeErrorCodes[error.code] || 'genericExtraction'
   }
   if (operation === 'preview') return 'genericPreview'
   if (error instanceof CompressionError) {

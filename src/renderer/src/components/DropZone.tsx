@@ -14,6 +14,7 @@ interface DropZoneProps {
   onSelectFilesDialog: (allowFolder?: boolean) => void
   allowFolders?: boolean
   acceptedFileExtensions?: string[]
+  acceptedFilePatterns?: RegExp[]
   validationError?: string | null
 }
 
@@ -25,6 +26,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
   onSelectFilesDialog,
   allowFolders = true,
   acceptedFileExtensions,
+  acceptedFilePatterns,
   validationError
 }) => {
   const { t, i18n } = useTranslation()
@@ -33,9 +35,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
   const [hasUnsupportedDrop, setHasUnsupportedDrop] = useState(false)
 
   const acceptsPath = (filePath: string) => {
-    if (!acceptedFileExtensions) return true
+    if (!acceptedFileExtensions && !acceptedFilePatterns) return true
     const normalizedPath = filePath.toLowerCase()
-    return acceptedFileExtensions.some(extension => normalizedPath.endsWith(extension))
+    if (acceptedFileExtensions?.some(extension => normalizedPath.endsWith(extension))) return true
+    // Split volumes are numbered (.z01, .z02 ...) so they need a pattern
+    // rather than a fixed suffix list.
+    return acceptedFilePatterns?.some(pattern => pattern.test(normalizedPath)) ?? false
   }
 
   const handleDragOver = (e: React.DragEvent) => {
