@@ -18,17 +18,17 @@ hero:
 philosophy:
   kicker: What matters to us
   title: File tools should feel comfortable.
-  description: We show only the choices you need, stop risky operations early, and keep file processing on your computer.
+  description: Libera is free for everyone, shows only the choices you need, and keeps your files on your own computer.
   items:
+    - icon: 🎁
+      title: Free for everyone
+      description: No paid tier, no ads, no account to create. Libera is open source, so anyone can read the code or help improve it.
     - icon: ✨
-      title: Easy for everyone
+      title: Easy to pick up
       description: Drop in your files, choose a format and destination, and you are ready. Unfamiliar terms and needless settings stay out of the way.
     - icon: 🛡️
-      title: Safe from the start
-      description: Libera rejects dangerous paths and links, never overwrites an existing file, and cleans up files created by failed jobs.
-    - icon: 🏡
-      title: Stays on your computer
-      description: Your archives are not uploaded to an external server. The files you select are processed directly on your device.
+      title: Safe on your device
+      description: Your archives are never uploaded anywhere. Libera works on your own machine, refuses unsafe paths and links, and never overwrites a file that is already there.
 features:
   kicker: What Libera can do
   title: Everything you need in one place
@@ -37,13 +37,13 @@ features:
     - icon: 📦
       title: Compress your way
       description: Create ZIP, TAR, TGZ, and GZ archives, and tune the compression level to balance speed and file size.
-    - icon: 🌱
+    - icon: 📂
       title: Extract safely
       description: Extract several archives at once and optionally give each one its own folder. Safety checks are always on.
-    - icon: 🔎
+    - icon: 🔍
       title: Look before you extract
       description: Browse folders and search inside an archive. Preview text plus PNG, JPEG, WebP, and GIF images without extracting them.
-    - icon: 🐾
+    - icon: 📋
       title: Keep jobs under control
       description: Follow progress and the current file, cancel extraction or previews, and open the result folder when a job finishes.
   showcase_label: Libera's main screens

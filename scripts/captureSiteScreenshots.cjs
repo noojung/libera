@@ -37,10 +37,15 @@ async function captureScreens() {
   })
 
   await window.loadFile(rendererEntry)
-  await window.webContents.executeJavaScript(`window.localStorage.setItem('libera.language', 'ko')`)
+  await window.webContents.executeJavaScript(`window.localStorage.setItem('libera.language', 'en')`)
   const reloaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve))
   window.webContents.reload()
   await reloaded
+
+  // The window never becomes visible, so Chromium can throttle rendering and
+  // decouple wall-clock waits from what has actually been painted. Disabling
+  // transitions removes that race instead of trying to outwait it.
+  await window.webContents.insertCSS('*, *::before, *::after { transition: none !important; animation: none !important; }')
 
   for (const [fileName, mode] of screens) {
     const selected = await window.webContents.executeJavaScript(`
