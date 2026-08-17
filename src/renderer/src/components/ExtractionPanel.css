@@ -1,8 +1,11 @@
 .extraction-panel {
   display: flex;
   padding: 20px;
+  padding-right: 6px;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .extraction-panel__header {

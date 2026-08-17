@@ -16,5 +16,8 @@
   display: grid;
   height: 100%;
   grid-template-columns: 1.2fr 1fr;
+  /* Pins the row to the workspace so a tall panel scrolls itself instead of
+     growing the row and being clipped by app-main. */
+  grid-template-rows: minmax(0, 1fr);
   gap: 20px;
 }

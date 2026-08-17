@@ -299,22 +299,26 @@ body {
 
 /* Custom Cute Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 14px;
+  height: 14px;
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* The transparent border plus padding-box clipping keeps the thumb away from
+   the container edge, so it never sits on top of a panel's doodle border. */
 ::-webkit-scrollbar-thumb {
   background: #D9CEC1;
+  background-clip: padding-box;
+  border: 4px solid transparent;
   border-radius: 999px;
-  border: 2px solid var(--bg-dark);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #B8A99A;
+  background: #FF8E72;
+  background-clip: padding-box;
 }
 
 /* Cute Doodle Cards & Containers */

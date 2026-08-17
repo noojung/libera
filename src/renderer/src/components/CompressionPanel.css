@@ -1,8 +1,13 @@
 .compression-panel {
   display: flex;
   padding: 20px;
+  /* The scrollbar sits inside the padding box, so the reserved gutter plus this
+     smaller padding still leaves the content inset by 20px like the other sides. */
+  padding-right: 6px;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .compression-panel__header {
