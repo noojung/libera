@@ -28,7 +28,7 @@ philosophy:
       description: Drop in your files, choose a format and destination, and you are ready. Unfamiliar terms and needless settings stay out of the way.
     - icon: 🛡️
       title: Safe on your device
-      description: Your archives are never uploaded anywhere. Libera works on your own machine, refuses unsafe paths and links, and never overwrites a file that is already there.
+      description: Your archives are never uploaded anywhere. Libera works on your own machine.
 features:
   kicker: What Libera can do
   title: Everything you need in one place
