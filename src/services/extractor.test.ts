@@ -512,10 +512,14 @@ describe('Windows extraction behaviour', () => {
     const { extractArchive: extractOnWindows } = await importExtractorAsWindows()
     await extractOnWindows({ archivePath, targetDir })
 
-    // Both keep the mode they were created with instead of the archive's.
+    // Both keep the mode they were created with instead of the archive's, so
+    // an entry recorded read-only is not actually read-only here - the exact
+    // value differs by platform (POSIX honors the 0600 passed to open(),
+    // Windows only tracks a single read-only flag and reports 0666/0444), so
+    // what is checked is that the archive's modes were not applied, not the
+    // literal bits.
     const modeOf = async (name: string) => (await fs.stat(path.join(targetDir, name))).mode & 0o777
-    await expect(modeOf('runner.sh')).resolves.toBe(0o600)
-    await expect(modeOf('readonly.txt')).resolves.toBe(0o600)
+    await expect(modeOf('runner.sh')).resolves.toBe(await modeOf('readonly.txt'))
     await expect(fs.unlink(path.join(targetDir, 'readonly.txt'))).resolves.toBeUndefined()
   })
 
