@@ -6,6 +6,8 @@ import zlib from 'zlib'
 import * as tar from 'tar'
 import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { compressArchive } from './compressor'
+import { inspectArchive } from './archiveInspector'
+import { runSevenZip } from './sevenZip'
 import {
   ArchivePreviewError,
   MAX_ARCHIVE_PREVIEW_BYTES,
@@ -350,4 +352,110 @@ describe('previewArchiveEntry', () => {
 
     await expect(preview).rejects.toMatchObject({ code: 'PREVIEW_CANCELLED' })
   })
+})
+
+describe('7z preview', () => {
+  it('returns an entry byte for byte, so 7-Zip chatter cannot contaminate it', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    // Newline heavy plus a stretch that must survive verbatim.
+    const contents = Array.from({ length: 500 }, (_, index) => `line ${index}`).join('\n')
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), contents)
+    await fs.writeFile(path.join(sourceDir, 'b.txt'), 'second entry')
+    const archivePath = path.join(directory, 'p.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const listing = await inspectArchive(archivePath)
+    const target = listing.entries.find(entry => entry.path.endsWith('a.txt'))!
+
+    const preview = await previewArchiveEntry(archivePath, target.id)
+
+    expect(preview.kind).toBe('text')
+    expect((preview as { text: string }).text).toBe(contents)
+  }, 60_000)
+
+  it('resolves the same ids the inspector handed out', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) {
+      await fs.writeFile(path.join(sourceDir, name), `contents of ${name}`)
+    }
+    const archivePath = path.join(directory, 'ids.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const listing = await inspectArchive(archivePath)
+    for (const entry of listing.entries.filter(one => !one.isDirectory)) {
+      const preview = await previewArchiveEntry(archivePath, entry.id)
+      expect((preview as { text: string }).text).toBe(`contents of ${path.basename(entry.path)}`)
+    }
+  }, 60_000)
+
+  it('previews an image entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'pixel.png'), createPng(1, 1))
+    const archivePath = path.join(directory, 'img.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const listing = await inspectArchive(archivePath)
+    const target = listing.entries.find(entry => entry.path.endsWith('pixel.png'))!
+
+    const preview = await previewArchiveEntry(archivePath, target.id)
+
+    expect(preview).toMatchObject({ kind: 'image', mediaType: 'image/png', width: 1, height: 1 })
+  }, 60_000)
+
+  it('previews an entry of an encrypted archive once given the password', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
+    const archivePath = path.join(directory, 'enc.7z')
+    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+
+    const listing = await inspectArchive(archivePath, { password: 'hunter2' })
+    const target = listing.entries.find(entry => entry.path.endsWith('secret.txt'))!
+
+    // Unlike ZIP, an encrypted 7z entry can be previewed rather than refused.
+    const preview = await previewArchiveEntry(archivePath, target.id, { password: 'hunter2' })
+    expect((preview as { text: string }).text).toBe('secret contents')
+
+    await expect(previewArchiveEntry(archivePath, target.id))
+      .rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+  }, 60_000)
+
+  it('refuses a directory entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(path.join(sourceDir, 'sub'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'sub', 'a.txt'), 'alpha')
+    const archivePath = path.join(directory, 'dir.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const listing = await inspectArchive(archivePath)
+    const folder = listing.entries.find(entry => entry.isDirectory)!
+
+    await expect(previewArchiveEntry(archivePath, folder.id))
+      .rejects.toMatchObject({ code: 'ENTRY_NOT_PREVIEWABLE' })
+  }, 60_000)
+
+  it('truncates an entry larger than the preview cap instead of loading it whole', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'big.txt'), 'x'.repeat(MAX_ARCHIVE_PREVIEW_BYTES + 4096))
+    const archivePath = path.join(directory, 'big.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const listing = await inspectArchive(archivePath)
+    const target = listing.entries.find(entry => entry.path.endsWith('big.txt'))!
+
+    const preview = await previewArchiveEntry(archivePath, target.id)
+
+    expect(preview).toMatchObject({ kind: 'text', truncated: true })
+    expect(preview.previewedBytes).toBeLessThanOrEqual(MAX_ARCHIVE_PREVIEW_BYTES)
+  }, 60_000)
 })

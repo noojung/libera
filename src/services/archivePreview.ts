@@ -7,7 +7,10 @@ import * as tar from 'tar'
 import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
-import { terminalVolumePath } from './splitZipVolumes'
+import { canonicalArchivePath } from './archiveVolumes'
+import { isSevenZipArchivePath } from './sevenZipVolumes'
+import { listSevenZipEntries } from './sevenZipList'
+import { classifySevenZipExit, SevenZipError, spawnSevenZip } from './sevenZip'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -26,6 +29,8 @@ export type ArchivePreviewErrorCode =
   | 'IMAGE_TOO_LARGE'
   | 'IMAGE_DIMENSIONS_TOO_LARGE'
   | 'PREVIEW_CANCELLED'
+  | 'PASSWORD_REQUIRED'
+  | 'WRONG_PASSWORD'
 
 interface ArchivePreviewBaseResult {
   previewedBytes: number
@@ -51,6 +56,8 @@ export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePrevie
 
 export interface ArchivePreviewContext {
   signal?: AbortSignal
+  /** A header-encrypted 7z cannot even be listed without one. */
+  password?: string
 }
 
 export class ArchivePreviewError extends Error {
@@ -502,6 +509,91 @@ function validateImageDimensions(width: number, height: number): void {
   }
 }
 
+/** Restates 7-Zip's password failures as preview failures. */
+function asPreviewPasswordError(error: unknown): unknown {
+  if (error instanceof SevenZipError) {
+    if (error.code === 'SEVEN_ZIP_PASSWORD_REQUIRED') {
+      return previewError('PASSWORD_REQUIRED', 'This archive needs a password to preview')
+    }
+    if (error.code === 'SEVEN_ZIP_WRONG_PASSWORD') {
+      return previewError('WRONG_PASSWORD', 'The archive password is incorrect')
+    }
+  }
+  return error
+}
+
+/**
+ * Reads one entry with `x -so`, which decompresses only the solid block that
+ * entry lives in rather than the whole archive. `-bso0 -bse0` keep 7-Zip's own
+ * chatter off stdout so the stream is nothing but the entry's bytes.
+ */
+async function readSevenZipEntry(
+  archivePath: string,
+  entryIndex: number,
+  password: string | undefined,
+  signal?: AbortSignal
+): Promise<CollectedArchiveEntry> {
+  // A header-encrypted archive fails here rather than at the read below, so
+  // the password errors have to be translated in both places.
+  const listing = await listSevenZipEntries(archivePath, { password, signal, maxEntries: MAX_ARCHIVE_ENTRIES })
+    .catch(error => {
+      throw asPreviewPasswordError(error)
+    })
+  const entry = listing.entries[entryIndex]
+  if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
+  if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
+  // 7z permits two entries to share a path; asking for it by name would then
+  // stream both, so a preview of either would be wrong.
+  if (listing.entries.filter(other => other.path === entry.path).length > 1) {
+    throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
+  }
+  if (entry.encrypted && password === undefined) {
+    throw previewError('PASSWORD_REQUIRED', 'This entry needs a password to preview')
+  }
+
+  const { child } = await spawnSevenZip(
+    ['x', '-so', '-bso0', '-bse0', '--', archivePath, entry.path],
+    password
+  )
+
+  let stderr = ''
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (text: string) => {
+    stderr += text
+  })
+
+  const kill = () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill()
+  }
+  const onAbort = () => kill()
+  signal?.addEventListener('abort', onAbort, { once: true })
+
+  const collector = new PreviewCollector()
+  try {
+    await pipeline(child.stdout, collector)
+  } catch (error) {
+    // Hitting the preview cap is the normal way a large entry ends: the
+    // collector stops the pipe once it has enough to show.
+    if (!collector.truncated) {
+      if (isAbortError(error) || signal?.aborted) {
+        throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+      }
+      throw error
+    }
+  } finally {
+    kill()
+    signal?.removeEventListener('abort', onAbort)
+  }
+
+  const exitCode = await new Promise<number>(resolve => child.on('close', code => resolve(code ?? 0)))
+  if (!collector.truncated) {
+    const failure = classifySevenZipExit(exitCode, stderr, password !== undefined)
+    if (failure) throw asPreviewPasswordError(failure)
+  }
+
+  return collectedEntry(collector, entry.size)
+}
+
 export async function previewArchiveEntry(
   inputPath: string,
   entryId: string,
@@ -513,7 +605,7 @@ export async function previewArchiveEntry(
   const entryIndex = Number(match[1])
   // Entry ids index the terminal volume's central directory, so a numbered
   // volume has to resolve to the same archive the inspector listed.
-  const archivePath = terminalVolumePath(inputPath)
+  const archivePath = canonicalArchivePath(inputPath)
   const stat = await fsPromises.stat(archivePath).catch(() => null)
   if (!stat) throw new Error(`File does not exist: ${archivePath}`)
   if (!stat.isFile()) throw new Error('Archive preview requires a file')
@@ -525,6 +617,8 @@ export async function previewArchiveEntry(
     preview = await readZipEntry(archivePath, entryIndex, context.signal)
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
     preview = await readTarEntry(archivePath, entryIndex, context.signal)
+  } else if (isSevenZipArchivePath(archivePath)) {
+    preview = await readSevenZipEntry(archivePath, entryIndex, context.password, context.signal)
   } else if (ext === '.gz') {
     preview = await readGzEntry(archivePath, entryIndex, context.signal)
   } else {
