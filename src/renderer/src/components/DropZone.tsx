@@ -68,7 +68,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
             const p = (window as any).electronAPI.getPathForFile(f)
             if (p) return p
           } catch {
-            // fallback
+            // Falls through to the File API's own path below.
           }
         }
         return (f as any).path || f.name

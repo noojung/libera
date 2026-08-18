@@ -100,7 +100,6 @@ export const App: React.FC = () => {
     return undefined
   }, [])
 
-  // Compress Tab Handlers
   const handleAddFiles = async (paths: string[]) => {
     let newItems: SelectedItem[] = []
     if ((window as any).electronAPI?.getItemStat) {
@@ -150,7 +149,6 @@ export const App: React.FC = () => {
     }
   }
 
-  // Extract Tab Handlers
   const handleAddExtractFiles = async (paths: string[]) => {
     const isSupportedArchive = isSupportedArchivePath
     let newItems: SelectedItem[]
@@ -225,7 +223,6 @@ export const App: React.FC = () => {
     }
   }
 
-  // Job Triggers
   const handleStartCompress = async (options: {
     format: 'zip' | 'tar' | 'gz' | 'tgz'
     level: number

@@ -133,7 +133,6 @@ export async function compressArchive(
 
   throwIfAborted(signal)
 
-  // Ensure output directory exists
   const outputDir = path.dirname(outputPath)
   await fsPromises.mkdir(outputDir, { recursive: true })
 
@@ -300,7 +299,6 @@ export async function compressArchive(
 
       archive.pipe(output)
 
-      // Add files and directories to archive
       for (const { itemPath, isDirectory } of archiveInputs) {
         const baseName = path.basename(itemPath)
         if (isDirectory) {
@@ -349,7 +347,6 @@ export async function compressArchive(
       archive.finalize()
     })
   } else if (format === 'gz') {
-    // Single file GZIP
     if (inputPaths.length === 0) {
       throw new Error('No input files specified for GZ compression.')
     }
