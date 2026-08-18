@@ -96,4 +96,18 @@ test('compresses a folder to 7z and extracts it back', async ({ app, page, workD
   await expect(page.locator('.queue-manager__job--completed')).toHaveCount(1, { timeout: 60_000 })
   await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
   expect((await fs.stat(outputPath)).size).toBeGreaterThan(0)
+
+  // Now round trip it back out through the extract tab.
+  await page.getByRole('button', { name: 'Extract' }).click()
+  await stubDialogs(app, { filePaths: [outputPath] })
+  await page.getByRole('button', { name: 'Browse files' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  const extractDir = path.join(workDir, 'unpacked')
+  await page.locator('.extraction-panel__destination-row .input-text').fill(extractDir)
+  await page.locator('.extraction-panel__start-button').click()
+
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(2, { timeout: 60_000 })
+  await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
+  expect(await findFile(extractDir, 'one.bin')).not.toBeNull()
 })

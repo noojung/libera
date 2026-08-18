@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { ArchivePreviewResult } from '../../../services/archivePreview'
 import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
-import { isSupportedArchivePath } from '../utils/archivePaths'
+import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '../utils/archivePaths'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
 import './ArchiveInspector.css'
 
@@ -148,7 +148,7 @@ export const ArchiveInspector: React.FC = () => {
     if (!(window as any).electronAPI) return
     const files = await (window as any).electronAPI.selectFiles({
       allowDirectories: false,
-      extensions: ['zip', 'z01', 'tar', 'tgz', 'gz'],
+      extensions: EXTRACT_DIALOG_EXTENSIONS,
       title: t('dialogs.selectExtractInputs'),
       filterName: t('dialogs.supportedArchives')
     })

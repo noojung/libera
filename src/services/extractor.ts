@@ -14,7 +14,10 @@ import * as tar from 'tar'
 import zlib from 'zlib'
 import type { ProgressCallback } from './compressor'
 import { openZipArchive } from './zipFileReader'
-import { isNumberedVolumePath, terminalVolumePath } from './splitZipVolumes'
+import { isNumberedVolumePath } from './splitZipVolumes'
+import { canonicalArchivePath } from './archiveVolumes'
+import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZipVolumes'
+import { extractSevenZipArchive } from './sevenZipExtractor'
 import {
   applyAppleDouble,
   appleDoubleSubjectPath,
@@ -67,12 +70,13 @@ export interface ExtractionOptions {
   password?: string
 }
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()
   if (SUPPORTED_ARCHIVE_EXTENSIONS.some(extension => normalizedPath.endsWith(extension))) return true
-  return isNumberedVolumePath(normalizedPath)
+  // Neither `.z01` nor `.7z.001` ends in a supported extension.
+  return isNumberedVolumePath(normalizedPath) || isSevenZipVolumePath(normalizedPath)
 }
 
 export function isWrongZipPasswordError(error: unknown): boolean {
@@ -386,7 +390,7 @@ export async function extractArchive(
   const { targetDir, selectedEntries, password } = options
   // Any volume of a split set identifies the set; reads start from the volume
   // that carries the central directory.
-  const archivePath = terminalVolumePath(options.archivePath)
+  const archivePath = canonicalArchivePath(options.archivePath)
   const policy = { ...DEFAULT_EXTRACTION_POLICY, ...context.policy }
   const transaction = new ExtractionTransaction()
   let targetRoot: string | undefined
@@ -418,6 +422,12 @@ export async function extractArchive(
     if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
       return await extractTarArchive(
         archivePath, targetRoot, selectedEntries, startTime, policy,
+        diskBudget, transaction, context.signal, onProgress
+      )
+    }
+    if (isSevenZipArchivePath(archivePath)) {
+      return await extractSevenZipArchive(
+        archivePath, targetRoot, selectedEntries, password, startTime, policy,
         diskBudget, transaction, context.signal, onProgress
       )
     }

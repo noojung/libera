@@ -13,8 +13,10 @@ import {
   isSupportedArchivePath,
   isZipArchivePath,
   splitVolumeGroupKey,
+  canonicalArchivePath,
+  EXTRACT_DIALOG_EXTENSIONS,
+  SEVEN_ZIP_VOLUME_SUFFIX,
   type ArchiveFormat,
-  terminalVolumePath
 } from './utils/archivePaths'
 import './styles/theme.css'
 import './App.css'
@@ -189,7 +191,7 @@ export const App: React.FC = () => {
         if (existingPaths.has(item.path) || existingGroups.has(groupKey)) continue
         existingGroups.add(groupKey)
 
-        const canonicalPath = terminalVolumePath(item.path)
+        const canonicalPath = canonicalArchivePath(item.path)
         added.push(canonicalPath === item.path
           ? item
           : { ...item, path: canonicalPath, name: canonicalPath.split(/[/\\]/).pop() || item.name })
@@ -214,7 +216,7 @@ export const App: React.FC = () => {
         allowDirectories: false,
         // Electron filters take literal extensions, so only the volume a user
         // would reach for first is listed; the rest arrive by drag and drop.
-        extensions: ['zip', 'z01', 'tar', 'tgz', 'gz'],
+        extensions: EXTRACT_DIALOG_EXTENSIONS,
         title: t('dialogs.selectExtractInputs'),
         filterName: t('dialogs.supportedArchives')
       })
@@ -430,7 +432,7 @@ export const App: React.FC = () => {
               onSelectFilesDialog={handleSelectExtractFilesDialog}
               allowFolders={false}
               acceptedFileExtensions={[...SUPPORTED_ARCHIVE_EXTENSIONS]}
-              acceptedFilePatterns={[NUMBERED_VOLUME_SUFFIX]}
+              acceptedFilePatterns={[NUMBERED_VOLUME_SUFFIX, SEVEN_ZIP_VOLUME_SUFFIX]}
               validationError={extractInputErrorKey ? t(extractInputErrorKey) : null}
             />
             <ExtractionPanel

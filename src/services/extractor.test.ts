@@ -8,6 +8,7 @@ import { strToU8, zipSync } from 'fflate'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { compressArchive, type ProgressData } from './compressor'
+import { runSevenZip } from './sevenZip'
 import {
   buildExtractionPlan,
   calculateUsableExtractionBytes,
@@ -76,7 +77,9 @@ describe('extractArchive security checks', () => {
   it('recognizes supported archive extensions case-insensitively', () => {
     expect(isSupportedArchivePath('/tmp/archive.ZIP')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.TAR.GZ')).toBe(true)
-    expect(isSupportedArchivePath('/tmp/archive.7z')).toBe(false)
+    expect(isSupportedArchivePath('/tmp/archive.7z')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/archive.7z.001')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/archive.rar')).toBe(false)
   })
 
   it('extracts a normal ZIP entry inside the target directory', async () => {
@@ -564,4 +567,156 @@ describe('Windows extraction behaviour', () => {
 
     await expect(fs.access(path.join(targetDir, '._signed.wasm'))).resolves.toBeUndefined()
   })
+})
+
+describe('7z extraction', () => {
+  async function seedSource(directory: string): Promise<string> {
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(path.join(sourceDir, 'sub'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'alpha')
+    await fs.writeFile(path.join(sourceDir, 'sub', 'b.txt'), 'bravo bravo')
+    await fs.writeFile(path.join(sourceDir, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 })
+    await fs.writeFile(path.join(sourceDir, 'empty.txt'), '')
+    return sourceDir
+  }
+
+  it('restores contents, the executable bit and empty files', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    const archivePath = path.join(directory, 'archive.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const result = await extractArchive({ archivePath, targetDir })
+
+    expect(result.extractedCount).toBe(4)
+    await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('alpha')
+    await expect(fs.readFile(path.join(targetDir, 'src', 'sub', 'b.txt'), 'utf8')).resolves.toBe('bravo bravo')
+    await expect(fs.readFile(path.join(targetDir, 'src', 'empty.txt'), 'utf8')).resolves.toBe('')
+    expect((await fs.stat(path.join(targetDir, 'src', 'run.sh'))).mode & 0o777).toBe(0o755)
+  }, 60_000)
+
+  it('meters every byte it writes, so progress is real rather than inferred', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'payload.bin'), Buffer.alloc(1024 * 1024, 9))
+    const archivePath = path.join(directory, 'metered.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const updates: ProgressData[] = []
+    await extractArchive({ archivePath, targetDir: path.join(directory, 'out') }, data => updates.push(data))
+
+    const processing = updates.filter(update => update.phase === 'processing')
+    expect(processing.length).toBeGreaterThan(1)
+    expect(processing.at(-1)?.processedBytes).toBe(1024 * 1024)
+    expect(updates.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
+  }, 60_000)
+
+  it.skipIf(process.platform === 'win32')('recreates a symlink whose target stays inside the destination', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    await fs.symlink('a.txt', path.join(sourceDir, 'link.txt'))
+    const archivePath = path.join(directory, 'linked.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-snl', '-mx=1', archivePath, sourceDir], undefined)
+
+    await extractArchive({ archivePath, targetDir })
+
+    const linkPath = path.join(targetDir, 'src', 'link.txt')
+    await expect(fs.lstat(linkPath).then(stat => stat.isSymbolicLink())).resolves.toBe(true)
+    await expect(fs.readlink(linkPath)).resolves.toBe('a.txt')
+    await expect(fs.readFile(linkPath, 'utf8')).resolves.toBe('alpha')
+  }, 60_000)
+
+  it.skipIf(process.platform === 'win32')('refuses a symlink pointing outside and writes nothing', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'alpha')
+    await fs.symlink('../../escape.txt', path.join(sourceDir, 'escape.txt'))
+    const archivePath = path.join(directory, 'escape.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-snl', '-mx=1', archivePath, sourceDir], undefined)
+
+    await expect(extractArchive({ archivePath, targetDir }))
+      .rejects.toThrow('symlink target escapes the destination')
+    // Rollback must leave the destination as it found it.
+    await expect(fs.readdir(targetDir).catch(() => [])).resolves.toEqual([])
+  }, 60_000)
+
+  it('extracts only the selected entries', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    const archivePath = path.join(directory, 'partial.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    await extractArchive({ archivePath, targetDir, selectedEntries: ['src/sub'] })
+
+    await expect(fs.readFile(path.join(targetDir, 'src', 'sub', 'b.txt'), 'utf8')).resolves.toBe('bravo bravo')
+    await expect(fs.access(path.join(targetDir, 'src', 'a.txt'))).rejects.toThrow()
+  }, 60_000)
+
+  it('extracts an encrypted archive and rejects the wrong password', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    const archivePath = path.join(directory, 'enc.7z')
+    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+
+    await expect(extractArchive({ archivePath, targetDir: path.join(directory, 'bad'), password: 'nope' }))
+      .rejects.toMatchObject({ code: 'SEVEN_ZIP_WRONG_PASSWORD' })
+
+    const targetDir = path.join(directory, 'good')
+    await extractArchive({ archivePath, targetDir, password: 'hunter2' })
+    await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('alpha')
+  }, 60_000)
+
+  it('does not overwrite a file already in the destination', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    const archivePath = path.join(directory, 'clash.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await fs.mkdir(path.join(targetDir, 'src'), { recursive: true })
+    await fs.writeFile(path.join(targetDir, 'src', 'a.txt'), 'original')
+
+    await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow('destination already exists')
+    await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('original')
+  }, 60_000)
+
+  it('rolls back everything it wrote when cancelled mid-archive', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    for (let index = 0; index < 40; index += 1) {
+      await fs.writeFile(path.join(sourceDir, `f${index}.bin`), Buffer.alloc(256 * 1024, index))
+    }
+    const archivePath = path.join(directory, 'cancel.7z')
+    const targetDir = path.join(directory, 'out')
+    await runSevenZip(['a', '-mx=0', archivePath, sourceDir], undefined)
+
+    const controller = new AbortController()
+    const extraction = extractArchive({ archivePath, targetDir }, data => {
+      if (data.processedBytes > 512 * 1024) controller.abort()
+    }, { signal: controller.signal })
+
+    await expect(extraction).rejects.toMatchObject({ code: 'EXTRACTION_CANCELLED' })
+    await expect(fs.readdir(targetDir).catch(() => [])).resolves.toEqual([])
+  }, 120_000)
+
+  it('extracts a split set opened from a later volume', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
+    await runSevenZip(['a', '-v30k', '-mx=0', path.join(directory, 'set.7z'), sourceDir], undefined)
+    const targetDir = path.join(directory, 'out')
+
+    await extractArchive({ archivePath: path.join(directory, 'set.7z.003'), targetDir })
+
+    const extracted = await fs.readFile(path.join(targetDir, 'src', 'big.bin'))
+    const original = await fs.readFile(path.join(sourceDir, 'big.bin'))
+    expect(extracted.equals(original)).toBe(true)
+  }, 120_000)
 })
