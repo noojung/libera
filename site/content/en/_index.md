@@ -36,7 +36,7 @@ features:
   items:
     - icon: 📦
       title: Compress your way
-      description: Create ZIP, TAR, TGZ, and GZ archives, and tune the compression level to balance speed and file size.
+      description: Create ZIP, 7Z, TAR, TGZ, and GZ archives, and tune the compression level to balance speed and file size.
     - icon: 📂
       title: Extract safely
       description: Extract several archives at once and optionally give each one its own folder. Safety checks are always on.
@@ -74,7 +74,7 @@ how_to:
         - Pick a destination and start.
     - number: "02"
       title: Extract
-      description: Safely extract ZIP, TAR, TGZ, TAR.GZ, or GZ files.
+      description: Safely extract ZIP, 7Z, TAR, TGZ, TAR.GZ, or GZ files.
       steps:
         - Add one or more archives.
         - Choose a destination and subfolder option.
@@ -93,6 +93,8 @@ formats:
   items:
     - name: ZIP
       detail: Compress · extract · inspect · compatibility password
+    - name: 7Z
+      detail: Compress · extract · inspect · AES-256 password
     - name: TAR
       detail: Compress · extract · inspect
     - name: TGZ / TAR.GZ
@@ -112,8 +114,8 @@ download:
       name: Windows
       detail: 64-bit x64
   note: The installers are not currently signed with a public code-signing certificate, so macOS Gatekeeper or Windows SmartScreen may show a warning.
-  security_title: About ZIP passwords
-  security_description: ZIP encryption uses ZipCrypto for compatibility. Do not rely on it as strong confidentiality for sensitive files.
+  security_title: About archive passwords
+  security_description: ZIP encryption uses ZipCrypto for compatibility, so do not rely on it as strong confidentiality for sensitive files. 7Z uses AES-256 and can hide the file list as well.
 closing:
   label: Project links
   message: Made for lighter, safer file handling.

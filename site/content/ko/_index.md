@@ -36,7 +36,7 @@ features:
   items:
     - icon: 📦
       title: 원하는 형식으로 압축
-      description: ZIP, TAR, TGZ, GZ를 지원하며 속도와 용량 사이에서 압축 강도를 조절할 수 있습니다.
+      description: ZIP, 7Z, TAR, TGZ, GZ를 지원하며 속도와 용량 사이에서 압축 강도를 조절할 수 있습니다.
     - icon: 📂
       title: 안전하게 압축 해제
       description: 여러 압축 파일을 한 번에 풀고, 파일별 하위 폴더를 만들 수 있습니다. 안전 검사는 항상 적용됩니다.
@@ -74,7 +74,7 @@ how_to:
         - 저장 위치를 정하고 시작합니다.
     - number: "02"
       title: 압축 풀기
-      description: ZIP, TAR, TGZ, TAR.GZ 또는 GZ 파일을 안전하게 풉니다.
+      description: ZIP, 7Z, TAR, TGZ, TAR.GZ 또는 GZ 파일을 안전하게 풉니다.
       steps:
         - 압축 파일을 하나 이상 추가합니다.
         - 저장 폴더와 하위 폴더 옵션을 고릅니다.
@@ -93,6 +93,8 @@ formats:
   items:
     - name: ZIP
       detail: 압축 · 해제 · 탐색 · 호환용 비밀번호
+    - name: 7Z
+      detail: 압축 · 해제 · 탐색 · AES-256 비밀번호
     - name: TAR
       detail: 압축 · 해제 · 탐색
     - name: TGZ / TAR.GZ
@@ -112,8 +114,8 @@ download:
       name: Windows
       detail: 64비트 x64
   note: 현재 설치 파일은 공인 코드 서명이 없어 macOS Gatekeeper 또는 Windows SmartScreen 경고가 표시될 수 있습니다.
-  security_title: ZIP 비밀번호 안내
-  security_description: ZIP 암호화는 호환성을 위한 ZipCrypto 방식입니다. 민감한 파일의 강한 기밀 보호 수단으로 사용하지 마세요.
+  security_title: 압축 파일 비밀번호 안내
+  security_description: ZIP 암호화는 호환성을 위한 ZipCrypto 방식이라 민감한 파일의 강한 기밀 보호 수단으로는 적합하지 않습니다. 7Z는 AES-256을 사용하며 파일 목록까지 숨길 수 있습니다.
 closing:
   label: 프로젝트 링크
   message: 가볍고 안전한 파일 작업을 위해 만들었습니다.

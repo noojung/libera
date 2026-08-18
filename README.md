@@ -111,21 +111,37 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 | Feature | Formats | Constraints |
 | --- | --- | --- |
-| Compression | ZIP, TAR, TGZ, GZ | GZ supports a single file only |
-| Extraction | ZIP, TAR, TGZ, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
-| Passwords | ZIP | Uses ZipCrypto for compatibility and does not provide strong confidentiality |
+| Compression | ZIP, 7Z, TAR, TGZ, GZ | GZ supports a single file only |
+| Extraction | ZIP, 7Z, TAR, TGZ, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
+| Inspection | ZIP, 7Z, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
+| Passwords | ZIP, 7Z | ZIP uses ZipCrypto for compatibility and does not provide strong confidentiality; 7Z uses AES-256 and can encrypt the entry list as well |
+| Split volumes | ZIP, 7Z | ZIP writes `.z01 … .zip` and is read from the last volume; 7Z writes `.7z.001 …` and is read from the first |
+
+## Third-party Components
+
+Libera bundles the standalone 7-Zip executable (`7za`) to read and write 7Z
+archives, invoking it as a separate program rather than linking it. 7-Zip is
+copyright © 1999-2020 Igor Pavlov and is licensed under the GNU LGPL v2.1 or
+later; its source is available from <https://www.7-zip.org/>. The full license
+text ships with the application and lives at
+`resources/licenses/7-Zip-LICENSE.txt`.
 
 ## Safe Extraction Policy
 
 The following checks are applied before and during extraction:
 
 - Rejects absolute paths and paths that escape the destination directory (Zip Slip).
-- Rejects symbolic and hard links in archives, as well as symbolic links in the destination path.
+- Restores a symbolic link only when its target resolves inside the destination, and rejects hard links outright. Symbolic links in the destination path are always rejected. On Windows, where creating a link needs a privilege the app cannot assume, link entries are rejected instead.
 - Never overwrites existing files.
 - Limits archives to 100,000 entries, 1 TiB total extracted size, and 1 TiB per file.
 - Verifies that extraction leaves at least 5% of the destination filesystem, or 1 GiB, free.
 - Streams extracted data and removes files created by a failed or cancelled extraction.
+
+7Z archives are read through a single `7za x -so` stream rather than letting
+7-Zip write to the destination, so the checks above apply to 7Z exactly as they
+do to the other formats. Because each entry is read to the byte count its
+header declares, an archive that understates a size desynchronises the stream
+and is refused.
 
 GZ stores its uncompressed size modulo 4 GiB, so the inspector reports the
 expanded size and compression ratio as unknown until extraction completes.
