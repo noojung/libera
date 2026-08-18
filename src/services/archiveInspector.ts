@@ -4,7 +4,9 @@ import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
-import { terminalVolumePath } from './splitZipVolumes'
+import { canonicalArchivePath } from './archiveVolumes'
+import { listSevenZipEntries } from './sevenZipList'
+import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZipVolumes'
 
 export interface ArchiveEntry {
   id: string
@@ -87,9 +89,17 @@ async function inspectTarArchive(
   }
 }
 
-export async function inspectArchive(inputPath: string): Promise<ArchiveInspectionResult> {
-  // Any volume identifies the set, but only the terminal one can be read.
-  const archivePath = terminalVolumePath(inputPath)
+export interface ArchiveInspectionOptions {
+  password?: string
+}
+
+export async function inspectArchive(
+  inputPath: string,
+  options: ArchiveInspectionOptions = {}
+): Promise<ArchiveInspectionResult> {
+  // Any volume identifies the set, but only one end of it can be opened, and
+  // which end that is depends on the format.
+  const archivePath = canonicalArchivePath(inputPath)
   const ext = path.extname(archivePath).toLowerCase()
   const fullExt = archivePath.toLowerCase()
   const stat = await fsPromises.stat(archivePath).catch(() => null)
@@ -135,6 +145,54 @@ export async function inspectArchive(inputPath: string): Promise<ArchiveInspecti
       }
     } finally {
       await zip.close()
+    }
+  }
+
+  if (isSevenZipArchivePath(archivePath)) {
+    const listing = await listSevenZipEntries(archivePath, {
+      password: options.password,
+      maxEntries: MAX_ARCHIVE_ENTRIES
+    })
+
+    let totalUncompressedSize = 0
+    const entries: ArchiveEntry[] = listing.entries.map((entry, index) => {
+      const size = entry.isDirectory ? 0 : entry.size
+      totalUncompressedSize += size
+      return {
+        id: `entry-${index}`,
+        name: path.basename(entry.path) || entry.path,
+        path: entry.path,
+        isDirectory: entry.isDirectory,
+        size,
+        // 7-Zip only reports a packed size for the entry that starts a solid
+        // block, so a per-entry ratio would be meaningless for the rest.
+        compressedSize: undefined,
+        ratio: null,
+        date: entry.modified
+      }
+    })
+
+    // A split set's compressed size is the whole set, not the first volume.
+    if (listing.volumeCount > 1) {
+      const volumes = await discoverSevenZipVolumes(archivePath).catch(() => null)
+      if (volumes) {
+        const sizes = await Promise.all(volumes.map(volume => fsPromises.stat(volume).then(one => one.size, () => 0)))
+        totalCompressedSize = sizes.reduce((total, size) => total + size, 0)
+      }
+    }
+
+    return {
+      archivePath,
+      format: '7Z',
+      volumeCount: listing.volumeCount > 1 ? listing.volumeCount : undefined,
+      passwordProtected: listing.anyEncrypted,
+      totalFiles: entries.filter(entry => !entry.isDirectory).length,
+      totalUncompressedSize,
+      totalCompressedSize,
+      overallRatio: totalUncompressedSize > 0
+        ? Math.round((1 - (totalCompressedSize / totalUncompressedSize)) * 100)
+        : 0,
+      entries
     }
   }
 

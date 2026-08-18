@@ -7,6 +7,7 @@ import * as tar from 'tar'
 import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
+import { runSevenZip } from './sevenZip'
 
 const temporaryDirectories: string[] = []
 
@@ -125,4 +126,90 @@ describe('inspectArchive', () => {
     await expect(inspectArchive(path.join(directory, 'missing.zip'))).rejects.toThrow('File does not exist')
     await expect(inspectArchive(textPath)).rejects.toThrow('Unsupported archive format')
   })
+})
+
+describe('inspectArchive for 7z', () => {
+  it('reports entries, sizes and the executable bit', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'docs', 'guide.txt'), 'guide')
+    await fs.writeFile(path.join(sourceDir, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 })
+    const archivePath = path.join(directory, 'archive.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const result = await inspectArchive(archivePath)
+
+    expect(result).toMatchObject({ format: '7Z', passwordProtected: false, totalFiles: 2 })
+    expect(result.entries.map(entry => path.basename(entry.path))).toEqual(
+      expect.arrayContaining(['docs', 'guide.txt', 'run.sh'])
+    )
+    expect(result.entries.find(entry => entry.path.endsWith('guide.txt'))).toMatchObject({
+      isDirectory: false,
+      size: 5
+    })
+  }, 60_000)
+
+  it('assigns positional ids in listing order, which preview resolves against', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) {
+      await fs.writeFile(path.join(sourceDir, name), name)
+    }
+    const archivePath = path.join(directory, 'ordered.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+
+    const first = await inspectArchive(archivePath)
+    const second = await inspectArchive(archivePath)
+
+    expect(first.entries.map(entry => `${entry.id}:${entry.path}`))
+      .toEqual(second.entries.map(entry => `${entry.id}:${entry.path}`))
+    expect(first.entries.map(entry => entry.id)).toEqual(
+      first.entries.map((_, index) => `entry-${index}`)
+    )
+  }, 60_000)
+
+  it('flags an archive whose entries are encrypted', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
+    const archivePath = path.join(directory, 'enc.7z')
+    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], 'hunter2')
+
+    // Headers are readable without a password here, so the listing succeeds
+    // and only the entries are marked encrypted.
+    const result = await inspectArchive(archivePath)
+    expect(result.passwordProtected).toBe(true)
+  }, 60_000)
+
+  it('needs a password before it can list a header-encrypted archive', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
+    const archivePath = path.join(directory, 'hidden.7z')
+    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+
+    await expect(inspectArchive(archivePath))
+      .rejects.toMatchObject({ code: 'SEVEN_ZIP_PASSWORD_REQUIRED' })
+
+    const result = await inspectArchive(archivePath, { password: 'hunter2' })
+    expect(result.totalFiles).toBe(1)
+  }, 60_000)
+
+  it('reports a split set opened from any volume as one archive', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
+    await runSevenZip(['a', '-v30k', '-mx=0', path.join(directory, 'set.7z'), sourceDir], undefined)
+
+    const result = await inspectArchive(path.join(directory, 'set.7z.003'))
+
+    expect(result.format).toBe('7Z')
+    expect(result.volumeCount).toBeGreaterThan(1)
+    expect(result.entries.some(entry => entry.path.endsWith('big.bin'))).toBe(true)
+  }, 60_000)
 })
