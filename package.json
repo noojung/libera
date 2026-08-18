@@ -50,6 +50,16 @@
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
       "identity": "-",
       "hardenedRuntime": false,
+      "extraResources": [
+        {
+          "from": "node_modules/7zip-bin/mac/${arch}/7za",
+          "to": "7zip/7za"
+        },
+        {
+          "from": "resources/licenses/7-Zip-LICENSE.txt",
+          "to": "7zip/LICENSE.txt"
+        }
+      ],
       "electronLanguages": [
         "en",
         "ko"
@@ -78,6 +88,16 @@
         "en-US",
         "ko"
       ],
+      "extraResources": [
+        {
+          "from": "node_modules/7zip-bin/win/${arch}/7za.exe",
+          "to": "7zip/7za.exe"
+        },
+        {
+          "from": "resources/licenses/7-Zip-LICENSE.txt",
+          "to": "7zip/LICENSE.txt"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -90,6 +110,7 @@
   },
   "dependencies": {
     "@zip.js/zip.js": "^2.8.45",
+    "7zip-bin": "^5.2.0",
     "archiver": "7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
