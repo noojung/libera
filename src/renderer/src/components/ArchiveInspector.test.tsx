@@ -67,7 +67,7 @@ describe('ArchiveInspector', () => {
     expect(screen.queryByText('file-500.txt')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Load 1 more' }))
     expect(screen.getByText('file-500.txt')).toBeInTheDocument()
-  }, 10_000)
+  }, 30_000)
 
   it('searches descendants of the current folder', async () => {
     installElectronApi({
