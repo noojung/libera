@@ -17,8 +17,6 @@ export interface SevenZipWriteOptions {
   outputPath: string
   totalBytes: number
   level: number
-  password?: string
-  encryptHeaders?: boolean
   splitSize?: number
 }
 
@@ -60,7 +58,7 @@ export async function writeSevenZipArchive(
   onProgress?: ProgressCallback,
   context: { signal?: AbortSignal } = {}
 ): Promise<SevenZipWriteResult> {
-  const { inputPaths, outputPath, totalBytes, level, password, encryptHeaders, splitSize } = options
+  const { inputPaths, outputPath, totalBytes, level, splitSize } = options
 
   if (splitSize !== undefined && Math.ceil(totalBytes / splitSize) > MAX_SEVEN_ZIP_VOLUMES) {
     throw new SevenZipError('SEVEN_ZIP_FAILED', 'The split size produces too many volumes.')
@@ -81,7 +79,6 @@ export async function writeSevenZipArchive(
     // Store symbolic links as links rather than following them, which would
     // both inflate the archive and make a link cycle traversable.
     '-snl',
-    ...(password !== undefined && encryptHeaders ? ['-mhe=on'] : []),
     ...(splitSize !== undefined ? [`-v${splitSize}b`] : []),
     '--',
     outputPath,
@@ -90,7 +87,7 @@ export async function writeSevenZipArchive(
 
   let currentFile: string | undefined
   try {
-    await runSevenZip(args, password, {
+    await runSevenZip(args, undefined, {
       signal: context.signal,
       onProgress: progress => {
         if (progress.currentFile !== undefined) currentFile = progress.currentFile

@@ -94,7 +94,7 @@ formats:
     - name: ZIP
       detail: Compress · extract · inspect · compatibility password
     - name: 7Z
-      detail: Compress · extract · inspect · AES-256 password
+      detail: Compress · extract · inspect
     - name: TAR
       detail: Compress · extract · inspect
     - name: TGZ / TAR.GZ
@@ -114,8 +114,8 @@ download:
       name: Windows
       detail: 64-bit x64
   note: The installers are not currently signed with a public code-signing certificate, so macOS Gatekeeper or Windows SmartScreen may show a warning.
-  security_title: About archive passwords
-  security_description: ZIP encryption uses ZipCrypto for compatibility, so do not rely on it as strong confidentiality for sensitive files. 7Z uses AES-256 and can hide the file list as well.
+  security_title: About ZIP passwords
+  security_description: ZIP encryption uses ZipCrypto for compatibility. Do not rely on it as strong confidentiality for sensitive files.
 closing:
   label: Project links
   message: Made for lighter, safer file handling.

@@ -32,14 +32,12 @@ export interface CompressionOptions {
   format: ArchiveFormat
   level?: number // 0 (fastest/none) to 9 (maximum)
   password?: string
-  /** Encrypts the entry list too, so the archive cannot be listed unopened. */
-  encryptHeaders?: boolean
   splitSize?: number // maximum bytes per volume, ZIP and 7Z only
 }
 
-/** ZIP encrypts with ZipCrypto for reach, 7z with AES-256. */
+/** Only ZIP archives can be created with a password. */
 export function supportsPassword(format: ArchiveFormat): boolean {
-  return format === 'zip' || format === '7z'
+  return format === 'zip'
 }
 
 export function supportsSplit(format: ArchiveFormat): boolean {
@@ -138,7 +136,7 @@ export async function compressArchive(
   const { signal } = context
 
   if (options.password && !supportsPassword(format)) {
-    throw new Error('Password protection is currently available for ZIP and 7Z archives only.')
+    throw new Error('Password protection is currently available for ZIP archives only.')
   }
 
   if (splitSize !== undefined) {
@@ -187,8 +185,6 @@ export async function compressArchive(
         outputPath,
         totalBytes,
         level,
-        password: options.password,
-        encryptHeaders: options.encryptHeaders,
         splitSize
       },
       onProgress,

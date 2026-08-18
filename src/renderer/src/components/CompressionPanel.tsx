@@ -14,7 +14,6 @@ interface CompressionPanelProps {
     level: number
     outputPath: string
     password?: string
-    encryptHeaders?: boolean
     splitSize?: number
   }) => void
 }
@@ -36,7 +35,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [format, setFormat] = useState<ArchiveFormat>('zip')
-  const [encryptHeaders, setEncryptHeaders] = useState(true)
   const [level, setLevel] = useState<number>(6)
   const [customName] = useState<string>('archive')
   const [outputPath, setOutputPath] = useState<string>('')
@@ -100,7 +98,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       level,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
-      encryptHeaders: format === '7z' ? encryptHeaders : undefined,
       splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined
     })
   }
@@ -159,7 +156,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       {supportsPassword(format) && (
         <div className="compression-panel__field">
           <label className="compression-panel__label compression-panel__label--stacked">
-            {t('compression.archivePassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
+            {t('compression.zipPassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
           </label>
           <div className="compression-panel__password-grid">
             <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
@@ -169,21 +166,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
           )}
           {password && password === passwordConfirmation && (
-            <>
-              {/* 7z encrypts with AES-256, ZIP with ZipCrypto for reach. */}
-              <p className="compression-panel__message">
-                {t(format === '7z' ? 'compression.passwordNotice7z' : 'compression.passwordNotice')}
-              </p>
-              {format === '7z' && (
-                <label className="compression-panel__split-option">
-                  <input type="checkbox" checked={encryptHeaders} onChange={(e) => setEncryptHeaders(e.target.checked)} />
-                  <span>{t('compression.encryptHeaders')}</span>
-                </label>
-              )}
-              {format === '7z' && encryptHeaders && (
-                <p className="compression-panel__message">{t('compression.encryptHeadersHint')}</p>
-              )}
-            </>
+            <p className="compression-panel__message">{t('compression.passwordNotice')}</p>
           )}
         </div>
       )}

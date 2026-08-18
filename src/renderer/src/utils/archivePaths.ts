@@ -66,9 +66,9 @@ export const COMPRESSION_FORMATS = ['zip', 'tar', 'gz', 'tgz', '7z'] as const
 
 export type ArchiveFormat = (typeof COMPRESSION_FORMATS)[number]
 
-/** ZIP encrypts with ZipCrypto for reach, 7z with AES-256. */
+/** Only ZIP archives can be created with a password. */
 export function supportsPassword(format: ArchiveFormat): boolean {
-  return format === 'zip' || format === '7z'
+  return format === 'zip'
 }
 
 export function supportsSplit(format: ArchiveFormat): boolean {
