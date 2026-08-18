@@ -204,13 +204,37 @@ body {
 }
 
 .titlebar__actions {
+  display: flex;
+  align-items: center;
   margin-left: auto;
   padding-right: 12px;
+  gap: 8px;
   -webkit-app-region: no-drag;
 }
 
 .titlebar__actions--windows {
   padding-right: 0;
+}
+
+.titlebar__info-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 9px;
+  background: #FFFFFF;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.titlebar__info-button:hover {
+  color: var(--accent-peach);
+}
+
+.titlebar__info-button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 .titlebar__language {

@@ -6,6 +6,7 @@ import { ExtractionPanel } from './components/ExtractionPanel'
 import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
+import { LicensesModal } from './components/LicensesModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import {
   NUMBERED_VOLUME_SUFFIX,
@@ -403,10 +404,17 @@ export const App: React.FC = () => {
   }
 
   const activeQueueCount = jobs.filter(j => j.status === 'pending' || j.status === 'running').length
+  const [showLicenses, setShowLicenses] = useState(false)
 
   return (
     <div className="app-shell">
-      <TitleBar currentMode={mode} setMode={setMode} activeQueueCount={activeQueueCount} />
+      <TitleBar
+        currentMode={mode}
+        setMode={setMode}
+        activeQueueCount={activeQueueCount}
+        onShowLicenses={() => setShowLicenses(true)}
+      />
+      {showLicenses && <LicensesModal onClose={() => setShowLicenses(false)} />}
 
       <main className="app-main">
         {mode === 'compress' && (

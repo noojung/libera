@@ -1,5 +1,5 @@
 import React from 'react'
-import { Archive, Layers, ListTodo, Minus, Search, Square, X } from 'lucide-react'
+import { Archive, Info, Layers, ListTodo, Minus, Search, Square, X } from 'lucide-react'
 import { AppMode } from '../types'
 import logoImg from '../assets/logo.png'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +10,7 @@ interface TitleBarProps {
   currentMode: AppMode
   setMode: (mode: AppMode) => void
   activeQueueCount: number
+  onShowLicenses: () => void
 }
 
 type DesktopPlatform = 'macos' | 'windows'
@@ -21,7 +22,7 @@ const tabs = [
   { mode: 'queue', labelKey: 'titleBar.queue', Icon: ListTodo }
 ] satisfies { mode: AppMode; labelKey: string; Icon: typeof Archive }[]
 
-export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount, onShowLicenses }) => {
   const { t, i18n } = useTranslation()
   const currentLanguage: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const electronAPI = (window as any).electronAPI
@@ -65,6 +66,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
       </nav>
 
       <div className={`titlebar__actions${isWindows ? ' titlebar__actions--windows' : ''}`}>
+        <button
+          type="button"
+          className="titlebar__info-button"
+          aria-label={t('titleBar.openSourceLicenses')}
+          title={t('titleBar.openSourceLicenses')}
+          onClick={onShowLicenses}
+        >
+          <Info size={16} aria-hidden="true" />
+        </button>
         <div className="titlebar__language" role="group" aria-label={t('language.selector')}>
           {(['en', 'ko'] as const).map(language => (
             <button

@@ -21,8 +21,11 @@
     }
   },
   "scripts": {
+    "predev": "node scripts/generateThirdPartyLicenses.cjs",
     "dev": "vite",
+    "prebuild": "node scripts/generateThirdPartyLicenses.cjs",
     "build": "tsc --noEmit && vite build",
+    "pretest": "node scripts/generateThirdPartyLicenses.cjs",
     "site:dev": "hugo server --source site --buildDrafts --disableFastRender",
     "site:build": "hugo --source site --gc --minify",
     "site:capture": "npm run build && electron scripts/captureSiteScreenshots.cjs",

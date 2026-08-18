@@ -12,7 +12,7 @@ describe('TitleBar', () => {
   it('switches tabs, displays active jobs, and keeps English first', async () => {
     installElectronApi()
     const setMode = vi.fn()
-    const { user } = renderWithI18n(<TitleBar currentMode="compress" setMode={setMode} activeQueueCount={2} />)
+    const { user } = renderWithI18n(<TitleBar currentMode="compress" setMode={setMode} activeQueueCount={2} onShowLicenses={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: 'Compress' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByLabelText('2 active jobs')).toHaveTextContent('2')
@@ -26,9 +26,20 @@ describe('TitleBar', () => {
     expect(applyLanguage).toHaveBeenCalledWith('ko')
   })
 
+  it('opens the licenses screen', async () => {
+    installElectronApi()
+    const onShowLicenses = vi.fn()
+    const { user } = renderWithI18n(
+      <TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={onShowLicenses} />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open source licenses' }))
+    expect(onShowLicenses).toHaveBeenCalledOnce()
+  })
+
   it('calls Windows window controls and hides them on macOS', async () => {
     const api = installElectronApi()
-    const { user, rerender } = renderWithI18n(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} />)
+    const { user, rerender } = renderWithI18n(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: 'Minimize window' }))
     await user.click(screen.getByRole('button', { name: 'Maximize or restore window' }))
@@ -38,7 +49,7 @@ describe('TitleBar', () => {
     expect(api.closeWindow).toHaveBeenCalledOnce()
 
     ;(api as any).platform = 'macos'
-    rerender(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} />)
+    rerender(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Minimize window' })).not.toBeInTheDocument()
   })
 })

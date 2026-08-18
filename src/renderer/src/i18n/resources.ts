@@ -16,7 +16,8 @@ export const resources = {
         activeJobs_other: '{{count}} active jobs',
         minimize: 'Minimize window',
         maximize: 'Maximize or restore window',
-        close: 'Close window'
+        close: 'Close window',
+        openSourceLicenses: 'Open source licenses'
       },
       dropZone: {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
@@ -200,6 +201,12 @@ export const resources = {
         fileTooLarge: 'A file in the archive would exceed the 1 TiB limit.',
         invalidGzInput: 'GZ compression supports one file only.'
       },
+      licenses: {
+        title: 'Open source licenses',
+        description: 'Libera is built with the open source packages below.',
+        selectPackage: 'Select a package to read its license.',
+        close: 'Close'
+      },
       dialogs: {
         selectCompressInputs: 'Select files or folders to compress',
         selectExtractInputs: 'Select archive files to extract',
@@ -226,7 +233,8 @@ export const resources = {
         activeJobs: '진행 중인 작업 {{count}}개',
         minimize: '창 최소화',
         maximize: '창 최대화 또는 복원',
-        close: '창 닫기'
+        close: '창 닫기',
+        openSourceLicenses: '오픈소스 라이선스'
       },
       dropZone: {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
@@ -401,6 +409,12 @@ export const resources = {
         archiveTooLarge: '압축 해제 결과가 1 TiB 제한을 초과합니다.',
         fileTooLarge: '압축 파일 내부의 파일이 1 TiB 제한을 초과합니다.',
         invalidGzInput: 'GZ 압축은 파일 하나만 지원합니다.'
+      },
+      licenses: {
+        title: '오픈소스 라이선스',
+        description: 'Libera는 아래의 오픈소스 패키지로 만들어졌습니다.',
+        selectPackage: '왼쪽에서 패키지를 선택하면 라이선스를 볼 수 있습니다.',
+        close: '닫기'
       },
       dialogs: {
         selectCompressInputs: '압축할 파일 또는 폴더 선택',

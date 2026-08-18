@@ -1,0 +1,154 @@
+.licenses-modal {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: flex;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(54, 45, 39, 0.42);
+}
+
+.licenses-modal__dialog {
+  display: flex;
+  width: min(760px, 100%);
+  height: min(560px, 100%);
+  min-height: 320px;
+  padding: 20px;
+  overflow: hidden;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.licenses-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.licenses-modal__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.licenses-modal__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid #4A403A;
+  border-radius: 50%;
+  background: #F0F9EC;
+  color: #52B788;
+}
+
+.licenses-modal__title {
+  color: #362D27;
+  font-family: var(--font-cute);
+  font-size: 20px;
+}
+
+.licenses-modal__description {
+  margin-top: 2px;
+  color: #6E6158;
+  font-size: 13px;
+}
+
+.licenses-modal__close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid #4A403A;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #362D27;
+  cursor: pointer;
+}
+
+.licenses-modal__close:hover {
+  background: #FFF3E4;
+}
+
+.licenses-modal__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #E8DFD5;
+  border-radius: 12px;
+  background: #FCFAF7;
+}
+
+.licenses-modal__list {
+  display: flex;
+  overflow-y: auto;
+  flex: 0 0 220px;
+  flex-direction: column;
+  border-right: 1px solid #E8DFD5;
+}
+
+.licenses-modal__package {
+  display: flex;
+  padding: 10px 14px;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  border-bottom: 1px solid #EFE9E1;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.licenses-modal__package:hover {
+  background: #FFF3E4;
+}
+
+.licenses-modal__package.is-active {
+  background: #FFE8D1;
+}
+
+.licenses-modal__package-name {
+  color: #362D27;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.licenses-modal__package-meta {
+  color: #6E6158;
+  font-size: 11px;
+}
+
+.licenses-modal__text-panel {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.licenses-modal__text {
+  width: 100%;
+  padding: 18px;
+  overflow: auto;
+  color: #362D27;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
+.licenses-modal__empty {
+  display: flex;
+  flex: 1;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  color: #6E6158;
+  text-align: center;
+}
