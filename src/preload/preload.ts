@@ -30,6 +30,7 @@ export interface ElectronAPI {
   previewArchiveEntry: (archivePath: string, entryId: string, requestId: string, password?: string) => Promise<{ success: boolean; result?: ArchivePreviewResult; error?: string; errorCode?: string; code?: string }>
   cancelArchivePreview: (requestId: string) => Promise<boolean>
   openFolder: (targetPath: string) => Promise<void>
+  openExternalLink: (url: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
   getPathForFile: (file: File) => string
@@ -51,6 +52,7 @@ const api: ElectronAPI = {
   previewArchiveEntry: (archivePath, entryId, requestId, password) => ipcRenderer.invoke('archive:preview', archivePath, entryId, requestId, password),
   cancelArchivePreview: (requestId) => ipcRenderer.invoke('archive:cancelPreview', requestId),
   openFolder: (targetPath) => ipcRenderer.invoke('shell:openFolder', targetPath),
+  openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),
   getPathForFile: (file) => webUtils.getPathForFile(file),

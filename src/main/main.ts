@@ -324,6 +324,14 @@ ipcMain.handle('shell:openFolder', async (_, targetPath: string) => {
   }
 })
 
+ipcMain.handle('shell:openExternal', async (_, url: string) => {
+  // Every caller today passes a link baked in at build time, but the scheme
+  // is still checked so this can never become a way to hand the OS an
+  // arbitrary string - file:// or a custom protocol handler, say.
+  if (!/^https?:\/\//i.test(url)) return
+  await shell.openExternal(url)
+})
+
 ipcMain.handle('system:getDefaultOutputDir', async () => {
   try {
     return app.getPath('downloads') || app.getPath('documents') || app.getPath('userData')

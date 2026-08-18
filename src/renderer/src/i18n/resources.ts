@@ -17,7 +17,7 @@ export const resources = {
         minimize: 'Minimize window',
         maximize: 'Maximize or restore window',
         close: 'Close window',
-        openSourceLicenses: 'Open source licenses'
+        about: 'App info'
       },
       dropZone: {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
@@ -207,6 +207,17 @@ export const resources = {
         selectPackage: 'Select a package to read its license.',
         close: 'Close'
       },
+      about: {
+        title: 'App info',
+        tagline: '🐾 A desktop archive tool for macOS and Windows',
+        version: 'Version {{version}}',
+        website: 'Website',
+        viewSource: 'View source',
+        openSourceLicenses: 'Open source licenses',
+        openSourceLicensesHint: 'See what Libera is built with.',
+        copyright: '© {{year}} {{holder}}',
+        close: 'Close'
+      },
       dialogs: {
         selectCompressInputs: 'Select files or folders to compress',
         selectExtractInputs: 'Select archive files to extract',
@@ -234,7 +245,7 @@ export const resources = {
         minimize: '창 최소화',
         maximize: '창 최대화 또는 복원',
         close: '창 닫기',
-        openSourceLicenses: '오픈소스 라이선스'
+        about: '앱 정보'
       },
       dropZone: {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
@@ -414,6 +425,17 @@ export const resources = {
         title: '오픈소스 라이선스',
         description: 'Libera는 아래의 오픈소스 패키지로 만들어졌습니다.',
         selectPackage: '왼쪽에서 패키지를 선택하면 라이선스를 볼 수 있습니다.',
+        close: '닫기'
+      },
+      about: {
+        title: '앱 정보',
+        tagline: '🐾 macOS와 Windows를 위한 데스크톱 압축 관리 도구',
+        version: '버전 {{version}}',
+        website: '홈페이지',
+        viewSource: '소스 보기',
+        openSourceLicenses: '오픈소스 라이선스',
+        openSourceLicensesHint: 'Libera가 어떤 오픈소스로 만들어졌는지 확인하세요.',
+        copyright: '© {{year}} {{holder}}',
         close: '닫기'
       },
       dialogs: {

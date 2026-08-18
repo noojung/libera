@@ -2,6 +2,12 @@
   "name": "libera",
   "version": "1.0.8",
   "description": "Libera - Cross-platform compression utility desktop app built with Electron, TypeScript, and React",
+  "author": "Hyunwoo Jung",
+  "homepage": "https://noojung.github.io/libera/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noojung/libera.git"
+  },
   "main": "dist/main/main.js",
   "packageManager": "npm@11.17.0",
   "engines": {
@@ -21,11 +27,12 @@
     }
   },
   "scripts": {
-    "predev": "node scripts/generateThirdPartyLicenses.cjs",
+    "generate:metadata": "node scripts/generateThirdPartyLicenses.cjs && node scripts/generateAppInfo.cjs",
+    "predev": "npm run generate:metadata",
     "dev": "vite",
-    "prebuild": "node scripts/generateThirdPartyLicenses.cjs",
+    "prebuild": "npm run generate:metadata",
     "build": "tsc --noEmit && vite build",
-    "pretest": "node scripts/generateThirdPartyLicenses.cjs",
+    "pretest": "npm run generate:metadata",
     "site:dev": "hugo server --source site --buildDrafts --disableFastRender",
     "site:build": "hugo --source site --gc --minify",
     "site:capture": "npm run build && electron scripts/captureSiteScreenshots.cjs",

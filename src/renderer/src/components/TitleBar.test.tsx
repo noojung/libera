@@ -12,7 +12,7 @@ describe('TitleBar', () => {
   it('switches tabs, displays active jobs, and keeps English first', async () => {
     installElectronApi()
     const setMode = vi.fn()
-    const { user } = renderWithI18n(<TitleBar currentMode="compress" setMode={setMode} activeQueueCount={2} onShowLicenses={vi.fn()} />)
+    const { user } = renderWithI18n(<TitleBar currentMode="compress" setMode={setMode} activeQueueCount={2} onShowAbout={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: 'Compress' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByLabelText('2 active jobs')).toHaveTextContent('2')
@@ -26,20 +26,20 @@ describe('TitleBar', () => {
     expect(applyLanguage).toHaveBeenCalledWith('ko')
   })
 
-  it('opens the licenses screen', async () => {
+  it('opens the app info screen', async () => {
     installElectronApi()
-    const onShowLicenses = vi.fn()
+    const onShowAbout = vi.fn()
     const { user } = renderWithI18n(
-      <TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={onShowLicenses} />
+      <TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={onShowAbout} />
     )
 
-    await user.click(screen.getByRole('button', { name: 'Open source licenses' }))
-    expect(onShowLicenses).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'App info' }))
+    expect(onShowAbout).toHaveBeenCalledOnce()
   })
 
   it('calls Windows window controls and hides them on macOS', async () => {
     const api = installElectronApi()
-    const { user, rerender } = renderWithI18n(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={vi.fn()} />)
+    const { user, rerender } = renderWithI18n(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: 'Minimize window' }))
     await user.click(screen.getByRole('button', { name: 'Maximize or restore window' }))
@@ -49,7 +49,7 @@ describe('TitleBar', () => {
     expect(api.closeWindow).toHaveBeenCalledOnce()
 
     ;(api as any).platform = 'macos'
-    rerender(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowLicenses={vi.fn()} />)
+    rerender(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Minimize window' })).not.toBeInTheDocument()
   })
 })

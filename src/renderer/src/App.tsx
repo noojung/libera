@@ -7,6 +7,7 @@ import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { LicensesModal } from './components/LicensesModal'
+import { AboutModal } from './components/AboutModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import {
   NUMBERED_VOLUME_SUFFIX,
@@ -404,6 +405,7 @@ export const App: React.FC = () => {
   }
 
   const activeQueueCount = jobs.filter(j => j.status === 'pending' || j.status === 'running').length
+  const [showAbout, setShowAbout] = useState(false)
   const [showLicenses, setShowLicenses] = useState(false)
 
   return (
@@ -412,9 +414,18 @@ export const App: React.FC = () => {
         currentMode={mode}
         setMode={setMode}
         activeQueueCount={activeQueueCount}
-        onShowLicenses={() => setShowLicenses(true)}
+        onShowAbout={() => setShowAbout(true)}
       />
-      {showLicenses && <LicensesModal onClose={() => setShowLicenses(false)} />}
+      {showAbout && (
+        <AboutModal
+          onClose={() => setShowAbout(false)}
+          onShowLicenses={() => { setShowAbout(false); setShowLicenses(true) }}
+        />
+      )}
+      {/* Closing the licenses list returns to the info screen it opened from. */}
+      {showLicenses && (
+        <LicensesModal onClose={() => { setShowLicenses(false); setShowAbout(true) }} />
+      )}
 
       <main className="app-main">
         {mode === 'compress' && (

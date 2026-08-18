@@ -10,7 +10,7 @@ interface TitleBarProps {
   currentMode: AppMode
   setMode: (mode: AppMode) => void
   activeQueueCount: number
-  onShowLicenses: () => void
+  onShowAbout: () => void
 }
 
 type DesktopPlatform = 'macos' | 'windows'
@@ -22,7 +22,7 @@ const tabs = [
   { mode: 'queue', labelKey: 'titleBar.queue', Icon: ListTodo }
 ] satisfies { mode: AppMode; labelKey: string; Icon: typeof Archive }[]
 
-export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount, onShowLicenses }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount, onShowAbout }) => {
   const { t, i18n } = useTranslation()
   const currentLanguage: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const electronAPI = (window as any).electronAPI
@@ -69,9 +69,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
         <button
           type="button"
           className="titlebar__info-button"
-          aria-label={t('titleBar.openSourceLicenses')}
-          title={t('titleBar.openSourceLicenses')}
-          onClick={onShowLicenses}
+          aria-label={t('titleBar.about')}
+          title={t('titleBar.about')}
+          onClick={onShowAbout}
         >
           <Info size={16} aria-hidden="true" />
         </button>
