@@ -97,18 +97,20 @@ export function isWrongSevenZipPasswordText(text: string): boolean {
 export function classifySevenZipExit(
   exitCode: number,
   stderr: string,
-  suppliedPassword: boolean
+  suppliedPassword: boolean,
+  stdout: string = ''
 ): SevenZipError | null {
   if (exitCode === 0 || exitCode === 1) return null
   if (exitCode === 255) return new SevenZipError('SEVEN_ZIP_CANCELLED', '7-Zip was stopped', exitCode)
 
-  if (isWrongSevenZipPasswordText(stderr)) {
+  const combinedOutput = `${stdout}\n${stderr}`
+  if (isWrongSevenZipPasswordText(combinedOutput)) {
     return suppliedPassword
       ? new SevenZipError('SEVEN_ZIP_WRONG_PASSWORD', 'Wrong archive password', exitCode)
       : new SevenZipError('SEVEN_ZIP_PASSWORD_REQUIRED', 'The archive needs a password', exitCode)
   }
 
-  const detail = stderr.trim().split('\n').filter(Boolean).slice(-3).join(' ') || `exit code ${exitCode}`
+  const detail = (stderr || stdout).trim().split('\n').filter(Boolean).slice(-3).join(' ') || `exit code ${exitCode}`
   return new SevenZipError('SEVEN_ZIP_FAILED', `7-Zip failed: ${detail}`, exitCode)
 }
 
@@ -245,7 +247,7 @@ export async function runSevenZip(
     if (cancelled) throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7-Zip was cancelled')
     if (timedOut) throw new SevenZipError('SEVEN_ZIP_FAILED', '7-Zip timed out')
 
-    const failure = classifySevenZipExit(exitCode, stderr, password !== undefined)
+    const failure = classifySevenZipExit(exitCode, stderr, password !== undefined, stdout)
     if (failure) throw failure
 
     return { stdout, stderr, exitCode }

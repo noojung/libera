@@ -69,6 +69,9 @@ describe('classifySevenZipExit', () => {
     const message = 'ERROR: enc.7z : Can not open encrypted archive. Wrong password?'
     expect(classifySevenZipExit(2, message, false)?.code).toBe('SEVEN_ZIP_PASSWORD_REQUIRED')
     expect(classifySevenZipExit(2, message, true)?.code).toBe('SEVEN_ZIP_WRONG_PASSWORD')
+    // Windows 7-Zip writes error messages to stdout rather than stderr.
+    expect(classifySevenZipExit(2, '', false, message)?.code).toBe('SEVEN_ZIP_PASSWORD_REQUIRED')
+    expect(classifySevenZipExit(2, '', true, message)?.code).toBe('SEVEN_ZIP_WRONG_PASSWORD')
   })
 
   it('maps the user-stop status to cancellation', () => {

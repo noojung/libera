@@ -240,7 +240,9 @@ describe('against a real archive', () => {
     await fs.writeFile(path.join(sourceDir, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 })
     await fs.writeFile(path.join(sourceDir, 'empty.txt'), '')
     await fs.writeFile(path.join(sourceDir, 'sub', '공백 이름.txt'), 'x')
-    await fs.symlink('a.txt', path.join(sourceDir, 'link.txt'))
+    if (process.platform !== 'win32') {
+      await fs.symlink('a.txt', path.join(sourceDir, 'link.txt'))
+    }
 
     const archivePath = path.join(directory, 't.7z')
     await runSevenZip(['a', '-snl', '-mx=1', archivePath, sourceDir], undefined)
@@ -249,10 +251,13 @@ describe('against a real archive', () => {
     const byName = new Map(listing.entries.map(entry => [path.basename(entry.path), entry]))
 
     expect(byName.get('src')).toMatchObject({ isDirectory: true })
-    expect(byName.get('a.txt')).toMatchObject({ isDirectory: false, size: 5, mode: 0o644 })
-    expect(byName.get('run.sh')).toMatchObject({ mode: 0o755, isSymlink: false })
+    expect(byName.get('a.txt')).toMatchObject({ isDirectory: false, size: 5 })
     expect(byName.get('empty.txt')).toMatchObject({ size: 0, isDirectory: false })
-    expect(byName.get('link.txt')).toMatchObject({ isSymlink: true })
+    if (process.platform !== 'win32') {
+      expect(byName.get('a.txt')).toMatchObject({ mode: 0o644 })
+      expect(byName.get('run.sh')).toMatchObject({ mode: 0o755, isSymlink: false })
+      expect(byName.get('link.txt')).toMatchObject({ isSymlink: true })
+    }
     // A name with a space and Hangul must survive the round trip. macOS stores
     // filenames decomposed, so 7-Zip reports NFD and the comparison has to
     // normalize - paths themselves are passed through untouched, since

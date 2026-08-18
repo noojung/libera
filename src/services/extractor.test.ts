@@ -593,7 +593,9 @@ describe('7z extraction', () => {
     await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('alpha')
     await expect(fs.readFile(path.join(targetDir, 'src', 'sub', 'b.txt'), 'utf8')).resolves.toBe('bravo bravo')
     await expect(fs.readFile(path.join(targetDir, 'src', 'empty.txt'), 'utf8')).resolves.toBe('')
-    expect((await fs.stat(path.join(targetDir, 'src', 'run.sh'))).mode & 0o777).toBe(0o755)
+    if (process.platform !== 'win32') {
+      expect((await fs.stat(path.join(targetDir, 'src', 'run.sh'))).mode & 0o777).toBe(0o755)
+    }
   }, 60_000)
 
   it('meters every byte it writes, so progress is real rather than inferred', async () => {
