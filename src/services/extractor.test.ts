@@ -234,6 +234,33 @@ describe('extractArchive security checks', () => {
     await expect(fs.readFile(path.join(targetDir, '._notes.txt'), 'utf8')).resolves.toBe('not a sidecar')
   })
 
+  it.skipIf(process.platform !== 'darwin')('propagates the archive\'s quarantine flag onto the top level extracted item', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { 'App/Contents/Info.plist': 'plist', 'App/Contents/MacOS/App': 'binary' })
+    const quarantineValue = '0081;00000000;Safari;'
+    await execFileAsync('xattr', ['-w', 'com.apple.quarantine', quarantineValue, archivePath])
+
+    await extractArchive({ archivePath, targetDir })
+
+    const { stdout } = await execFileAsync('xattr', ['-p', 'com.apple.quarantine', path.join(targetDir, 'App')])
+    expect(stdout.trim()).toBe(quarantineValue)
+    await expect(execFileAsync('xattr', ['-p', 'com.apple.quarantine', path.join(targetDir, 'App', 'Contents', 'Info.plist')]))
+      .rejects.toThrow()
+  })
+
+  it.skipIf(process.platform !== 'darwin')('leaves extracted items unquarantined when the archive itself carries no quarantine flag', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { 'note.txt': 'content' })
+
+    await extractArchive({ archivePath, targetDir })
+
+    await expect(execFileAsync('xattr', ['-p', 'com.apple.quarantine', path.join(targetDir, 'note.txt')])).rejects.toThrow()
+  })
+
   it.skipIf(process.platform === 'win32')('leaves the restrictive default mode on entries that record no permissions', async () => {
     const directory = await createTemporaryDirectory()
     const archivePath = path.join(directory, 'archive.zip')

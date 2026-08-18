@@ -3,6 +3,8 @@ import type { FileHandle } from 'fs/promises'
 import path from 'path'
 import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import {
   ERR_ENCRYPTED,
   ERR_INVALID_PASSWORD,
@@ -548,6 +550,48 @@ async function validateSelectedDestinations(targetRoot: string, entries: Planned
 // sidecars stay ordinary files, which is what every other unzip tool does.
 const mergesAppleDouble = process.platform === 'darwin'
 
+const execFileAsync = promisify(execFile)
+
+// Finder's Archive Utility copies the archive's own quarantine flag onto
+// everything it extracts, which is what makes Gatekeeper evaluate a freshly
+// unzipped app on first open (and, as a side effect, register it with
+// Launch Services right away instead of waiting on Finder's own icon pass).
+// A plain filesystem writer has nothing to inherit that flag from, so it is
+// restored by hand here, on the top level output items only - that already
+// covers everything the user can double click, and touching every nested
+// file in a large bundle would be a lot of `xattr` calls for no benefit.
+const propagatesQuarantine = process.platform === 'darwin'
+const QUARANTINE_ATTRIBUTE = 'com.apple.quarantine'
+
+async function readQuarantineAttributeHex(sourcePath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('xattr', ['-px', QUARANTINE_ATTRIBUTE, sourcePath])
+    return stdout.replace(/\s/g, '') || null
+  } catch {
+    return null
+  }
+}
+
+function topLevelSegment(entryPath: string): string {
+  const normalizedPath = entryPath.replace(/\\/g, '/')
+  const separatorIndex = normalizedPath.indexOf('/')
+  return separatorIndex === -1 ? normalizedPath : normalizedPath.slice(0, separatorIndex)
+}
+
+async function propagateQuarantine(
+  sourceArchivePath: string,
+  targetRoot: string,
+  topLevelNames: Iterable<string>
+): Promise<void> {
+  if (!propagatesQuarantine) return
+  const hexValue = await readQuarantineAttributeHex(sourceArchivePath)
+  if (!hexValue) return
+
+  for (const name of topLevelNames) {
+    await execFileAsync('xattr', ['-wx', QUARANTINE_ATTRIBUTE, hexValue, path.join(targetRoot, name)]).catch(() => undefined)
+  }
+}
+
 // Windows creates symbolic links only for a process that is elevated or in
 // developer mode. Leaving link entries rejected there keeps the clear "not
 // supported" message instead of failing part way through with a privilege
@@ -749,6 +793,10 @@ async function extractZipArchive(
     }
 
     meter.complete()
+    const topLevelNames = new Set(
+      plan.entries.filter(entry => entry.shouldExtract).map(entry => topLevelSegment(entry.archivePath))
+    )
+    await propagateQuarantine(archivePath, targetRoot, topLevelNames)
     return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime }
   } finally {
     await zip.close()
@@ -862,6 +910,8 @@ async function extractTarArchive(
   }
 
   meter.complete()
+  const topLevelNames = new Set(selectedPlan.map(entry => topLevelSegment(entry.archivePath)))
+  await propagateQuarantine(archivePath, targetRoot, topLevelNames)
   return {
     targetDir: targetRoot,
     extractedCount: selectedPlan.filter(entry => !entry.isDirectory).length,
@@ -911,6 +961,7 @@ async function extractGzArchive(
   }
 
   meter.complete(outputName)
+  await propagateQuarantine(archivePath, targetRoot, [outputName])
   return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime }
 }
 
