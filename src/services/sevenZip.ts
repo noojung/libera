@@ -113,12 +113,28 @@ export function classifySevenZipExit(
 }
 
 /**
- * Always passes `-y` and a `-p` argument even when there is no password: given
- * an encrypted archive and no `-p`, 7-Zip prompts on the console and, with
- * stdio piped, waits forever. `stdin: 'ignore'` is the second line of defence.
+ * A password is never put on the command line, where it would be readable from
+ * the process list for as long as the job runs. 7-Zip is made to prompt for it
+ * instead and the answer is written to its stdin, which needs opposite argv
+ * treatment per command:
+ *
+ * - `a` only prompts when `-p` is present, so an empty `-p` (no value, no
+ *   secret) is added to ask for one; it then asks twice, to confirm.
+ * - read commands prompt exactly when the archive turns out to need it, but
+ *   only if `-p` is absent - supplying `-p` reads as "the password is the
+ *   empty string" and suppresses the prompt.
+ *
+ * With no password the argv is identical and stdin is simply closed, so a
+ * prompt hits EOF and 7-Zip exits instead of hanging.
  */
 export function buildSevenZipArguments(args: string[], password: string | undefined): string[] {
-  return ['-y', `-p${password ?? ''}`, ...args]
+  const asksForPasswordOnStdin = password !== undefined && args[0] === 'a'
+  return asksForPasswordOnStdin ? ['-y', '-p', ...args] : ['-y', ...args]
+}
+
+/** `a` asks for the password and then a confirmation; reads ask once. */
+export function sevenZipPasswordPromptCount(args: string[]): number {
+  return args[0] === 'a' ? 2 : 1
 }
 
 export interface SevenZipSpawn {
@@ -133,10 +149,32 @@ export async function spawnSevenZip(
 ): Promise<SevenZipSpawn> {
   const binaryPath = await resolveSevenZipBinaryPath()
   const child = spawn(binaryPath, buildSevenZipArguments(args, password), {
-    stdio: ['ignore', stdoutMode, 'pipe'],
+    stdio: ['pipe', stdoutMode, 'pipe'],
     windowsHide: true
   }) as ChildProcessWithoutNullStreams
+  answerPasswordPrompts(child, args, password)
   return { child, binaryPath }
+}
+
+/**
+ * Feeds the password prompt and then closes stdin. Closing matters even with
+ * no password: it turns a prompt the caller cannot answer into an immediate
+ * error rather than a process that waits forever.
+ */
+function answerPasswordPrompts(
+  child: ChildProcessWithoutNullStreams,
+  args: string[],
+  password: string | undefined
+): void {
+  // 7-Zip exits on its own for an archive that needs no password, closing the
+  // pipe under us; that EPIPE is expected and carries no information.
+  child.stdin.on('error', () => undefined)
+
+  if (password !== undefined) {
+    const answer = `${password}\n`.repeat(sevenZipPasswordPromptCount(args))
+    child.stdin.write(answer)
+  }
+  child.stdin.end()
 }
 
 /**

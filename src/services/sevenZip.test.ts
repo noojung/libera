@@ -9,6 +9,7 @@ import {
   parseSevenZipProgressLine,
   runSevenZip,
   SevenZipError,
+  sevenZipPasswordPromptCount,
   splitSevenZipChunks
 } from './sevenZip'
 import { resetSevenZipBinaryCache, resolveSevenZipBinaryPath, SEVEN_ZIP_PATH_ENV } from './sevenZipBinary'
@@ -95,9 +96,25 @@ describe('isWrongSevenZipPasswordText', () => {
 })
 
 describe('buildSevenZipArguments', () => {
-  it('always passes -y and a -p, so an encrypted archive cannot make 7-Zip prompt', () => {
-    expect(buildSevenZipArguments(['l', 'a.7z'], undefined)).toEqual(['-y', '-p', 'l', 'a.7z'])
-    expect(buildSevenZipArguments(['l', 'a.7z'], 'hunter2')).toEqual(['-y', '-phunter2', 'l', 'a.7z'])
+  it('never puts the password on the command line, where the process list would expose it', () => {
+    expect(buildSevenZipArguments(['l', 'enc.7z'], 'hunter2')).toEqual(['-y', 'l', 'enc.7z'])
+    expect(buildSevenZipArguments(['a', 'out.7z', 'src'], 'hunter2')).toEqual(['-y', '-p', 'a', 'out.7z', 'src'])
+    expect(buildSevenZipArguments(['a', 'out.7z', 'src'], 'hunter2').join(' ')).not.toContain('hunter2')
+  })
+
+  it('adds an empty -p only for `a`, which otherwise never prompts', () => {
+    // Read commands are the opposite: supplying -p reads as "empty password"
+    // and suppresses the prompt we need.
+    expect(buildSevenZipArguments(['a', 'out.7z'], undefined)).toEqual(['-y', 'a', 'out.7z'])
+    expect(buildSevenZipArguments(['x', 'enc.7z'], undefined)).toEqual(['-y', 'x', 'enc.7z'])
+  })
+})
+
+describe('sevenZipPasswordPromptCount', () => {
+  it('answers the confirmation prompt that only `a` asks', () => {
+    expect(sevenZipPasswordPromptCount(['a', 'out.7z'])).toBe(2)
+    expect(sevenZipPasswordPromptCount(['x', 'enc.7z'])).toBe(1)
+    expect(sevenZipPasswordPromptCount(['l', 'enc.7z'])).toBe(1)
   })
 })
 
@@ -147,4 +164,54 @@ describe('runSevenZip', () => {
     await expect(runSevenZip(['l', path.join(directory, 'missing.7z')], undefined))
       .rejects.toBeInstanceOf(SevenZipError)
   })
+})
+
+describe('password handling over stdin', () => {
+  const password = 'ab cd 한글!'
+
+  async function createEncryptedArchive(): Promise<{ directory: string; archivePath: string }> {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'secret contents')
+    const archivePath = path.join(directory, 'enc.7z')
+    await runSevenZip(['a', '-mhe=on', archivePath, sourceDir], password)
+    return { directory, archivePath }
+  }
+
+  it('round trips an encrypted archive with a password carrying spaces and non-ASCII', async () => {
+    const { directory, archivePath } = await createEncryptedArchive()
+    const targetDir = path.join(directory, 'out')
+
+    await runSevenZip(['x', `-o${targetDir}`, archivePath], password)
+
+    const extracted = await fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')
+    expect(extracted).toBe('secret contents')
+  }, 30_000)
+
+  it('rejects a wrong password rather than producing an empty extraction', async () => {
+    const { directory, archivePath } = await createEncryptedArchive()
+
+    await expect(runSevenZip(['x', `-o${path.join(directory, 'bad')}`, archivePath], 'wrong-password'))
+      .rejects.toMatchObject({ code: 'SEVEN_ZIP_WRONG_PASSWORD' })
+  }, 30_000)
+
+  it('reports a header-encrypted archive as needing a password instead of hanging on the prompt', async () => {
+    const { archivePath } = await createEncryptedArchive()
+
+    // No password means stdin closes immediately; 7-Zip must error, not wait.
+    await expect(runSevenZip(['l', archivePath], undefined))
+      .rejects.toMatchObject({ code: 'SEVEN_ZIP_PASSWORD_REQUIRED' })
+  }, 30_000)
+
+  it('ignores a password handed to an archive that does not need one', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'plain contents')
+    const archivePath = path.join(directory, 'plain.7z')
+    await runSevenZip(['a', archivePath, sourceDir], undefined)
+
+    await expect(runSevenZip(['l', archivePath], password)).resolves.toMatchObject({ exitCode: 0 })
+  }, 30_000)
 })
