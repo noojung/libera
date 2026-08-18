@@ -79,3 +79,21 @@ test('extracts an archive it just produced', async ({ app, page, workDir }) => {
   expect(restored).not.toBeNull()
   expect(await fs.readFile(restored as string, 'utf8')).toBe(contents)
 })
+
+test('compresses a folder to 7z and extracts it back', async ({ app, page, workDir }) => {
+  const source = path.join(workDir, 'source')
+  await seedFiles(source, ['one.bin', 'two.bin'], 128 * 1024)
+  const outputPath = path.join(workDir, 'out', 'archive.7z')
+
+  await stubDialogs(app, { filePaths: [source] })
+  await page.getByRole('button', { name: 'Browse folders' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '.7Z' }).click()
+  await page.locator('.compression-panel__destination-row .input-text').fill(outputPath)
+  await page.locator('.compression-panel__start-button').click()
+
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(1, { timeout: 60_000 })
+  await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
+  expect((await fs.stat(outputPath)).size).toBeGreaterThan(0)
+})

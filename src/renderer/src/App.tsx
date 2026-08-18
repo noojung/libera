@@ -13,6 +13,7 @@ import {
   isSupportedArchivePath,
   isZipArchivePath,
   splitVolumeGroupKey,
+  type ArchiveFormat,
   terminalVolumePath
 } from './utils/archivePaths'
 import './styles/theme.css'
@@ -224,10 +225,11 @@ export const App: React.FC = () => {
   }
 
   const handleStartCompress = async (options: {
-    format: 'zip' | 'tar' | 'gz' | 'tgz'
+    format: ArchiveFormat
     level: number
     outputPath: string
     password?: string
+    encryptHeaders?: boolean
     splitSize?: number
   }) => {
     const jobId = `job-${Date.now()}`
@@ -257,6 +259,7 @@ export const App: React.FC = () => {
         format: options.format,
         level: options.level,
         password: options.password,
+        encryptHeaders: options.encryptHeaders,
         splitSize: options.splitSize
       }, jobId)
 

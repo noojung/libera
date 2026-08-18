@@ -3,16 +3,18 @@ import { Sliders, Archive } from 'lucide-react'
 import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
+import { COMPRESSION_FORMATS, supportsPassword, supportsSplit, type ArchiveFormat } from '../utils/archivePaths'
 import type { AppLanguage } from '../i18n/language'
 import './CompressionPanel.css'
 
 interface CompressionPanelProps {
   items: SelectedItem[]
   onStartCompress: (options: {
-    format: 'zip' | 'tar' | 'gz' | 'tgz'
+    format: ArchiveFormat
     level: number
     outputPath: string
     password?: string
+    encryptHeaders?: boolean
     splitSize?: number
   }) => void
 }
@@ -33,7 +35,8 @@ type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onStartCompress }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
-  const [format, setFormat] = useState<'zip' | 'tar' | 'gz' | 'tgz'>('zip')
+  const [format, setFormat] = useState<ArchiveFormat>('zip')
+  const [encryptHeaders, setEncryptHeaders] = useState(true)
   const [level, setLevel] = useState<number>(6)
   const [customName] = useState<string>('archive')
   const [outputPath, setOutputPath] = useState<string>('')
@@ -80,10 +83,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     if (!Number.isFinite(value) || value <= 0) return NaN
     return Math.floor(value * (splitCustomUnit === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024))
   })()
-  const splitInvalid = format === 'zip' && splitEnabled && !(splitSize >= MIN_SPLIT_SIZE)
+  const splitInvalid = supportsSplit(format) && splitEnabled && !(splitSize >= MIN_SPLIT_SIZE)
 
   const handleCompress = () => {
-    if (format === 'zip' && password !== passwordConfirmation) {
+    if (supportsPassword(format) && password !== passwordConfirmation) {
       return
     }
     if (splitInvalid) {
@@ -96,8 +99,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       format,
       level,
       outputPath: finalOutput,
-      password: format === 'zip' ? password || undefined : undefined,
-      splitSize: format === 'zip' && splitEnabled ? splitSize : undefined
+      password: supportsPassword(format) ? password || undefined : undefined,
+      encryptHeaders: format === '7z' ? encryptHeaders : undefined,
+      splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined
     })
   }
 
@@ -120,7 +124,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {t('compression.format')}
         </label>
         <div className="compression-panel__format-grid">
-          {(['zip', 'tar', 'gz', 'tgz'] as const).map((fmt) => (
+          {COMPRESSION_FORMATS.map((fmt) => (
             <button
               key={fmt}
               onClick={() => setFormat(fmt)}
@@ -152,10 +156,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         />
       </div>
 
-      {format === 'zip' && (
+      {supportsPassword(format) && (
         <div className="compression-panel__field">
           <label className="compression-panel__label compression-panel__label--stacked">
-            {t('compression.zipPassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
+            {t('compression.archivePassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
           </label>
           <div className="compression-panel__password-grid">
             <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
@@ -165,12 +169,26 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
           )}
           {password && password === passwordConfirmation && (
-            <p className="compression-panel__message">{t('compression.passwordNotice')}</p>
+            <>
+              {/* 7z encrypts with AES-256, ZIP with ZipCrypto for reach. */}
+              <p className="compression-panel__message">
+                {t(format === '7z' ? 'compression.passwordNotice7z' : 'compression.passwordNotice')}
+              </p>
+              {format === '7z' && (
+                <label className="compression-panel__split-option">
+                  <input type="checkbox" checked={encryptHeaders} onChange={(e) => setEncryptHeaders(e.target.checked)} />
+                  <span>{t('compression.encryptHeaders')}</span>
+                </label>
+              )}
+              {format === '7z' && encryptHeaders && (
+                <p className="compression-panel__message">{t('compression.encryptHeadersHint')}</p>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {format === 'zip' && (
+      {supportsSplit(format) && (
         <div className="compression-panel__field">
           <label className="compression-panel__split-option">
             <input
@@ -252,7 +270,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       <button
         className="btn-primary compression-panel__start-button"
         onClick={handleCompress}
-        disabled={items.length === 0 || (format === 'zip' && password !== passwordConfirmation) || splitInvalid}
+        disabled={items.length === 0 || (supportsPassword(format) && password !== passwordConfirmation) || splitInvalid}
       >
         <Archive size={20} />
         {t('compression.start')}

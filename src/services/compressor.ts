@@ -9,19 +9,41 @@ import {
   removeStaleVolumes,
   writeSplitZip
 } from './splitZipWriter'
+import { writeSevenZipArchive } from './sevenZipWriter'
+
+/** A split set's compressed size is the whole set, not the volume opened. */
+async function totalOutputSize(outputPaths: string[]): Promise<number> {
+  const sizes = await Promise.all(
+    outputPaths.map(outputPath => fsPromises.stat(outputPath).then(stat => stat.size, () => 0))
+  )
+  return sizes.reduce((total, size) => total + size, 0)
+}
 
 // Archiver does not provide password protection for ZIP archives itself.
 // This plugin adds the ZipCrypto format used below. It is registered once when
 // this module is loaded; registering it per job would throw in later jobs.
 archiver.registerFormat('zip-encrypted', zipEncrypted)
 
+export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
+
 export interface CompressionOptions {
   inputPaths: string[]
   outputPath: string
-  format: 'zip' | 'tar' | 'gz' | 'tgz'
+  format: ArchiveFormat
   level?: number // 0 (fastest/none) to 9 (maximum)
   password?: string
-  splitSize?: number // maximum bytes per volume, ZIP only
+  /** Encrypts the entry list too, so the archive cannot be listed unopened. */
+  encryptHeaders?: boolean
+  splitSize?: number // maximum bytes per volume, ZIP and 7Z only
+}
+
+/** ZIP encrypts with ZipCrypto for reach, 7z with AES-256. */
+export function supportsPassword(format: ArchiveFormat): boolean {
+  return format === 'zip' || format === '7z'
+}
+
+export function supportsSplit(format: ArchiveFormat): boolean {
+  return format === 'zip' || format === '7z'
 }
 
 export interface ProgressData {
@@ -115,15 +137,15 @@ export async function compressArchive(
   const { inputPaths, outputPath, format, level = 6, splitSize } = options
   const { signal } = context
 
-  if (options.password && format !== 'zip') {
-    throw new Error('Password protection is currently available for ZIP archives only.')
+  if (options.password && !supportsPassword(format)) {
+    throw new Error('Password protection is currently available for ZIP and 7Z archives only.')
   }
 
   if (splitSize !== undefined) {
-    if (format !== 'zip') {
+    if (!supportsSplit(format)) {
       throw new CompressionError(
         'SPLIT_NOT_SUPPORTED_FOR_FORMAT',
-        'Split archives are currently available for ZIP archives only.'
+        'Split archives are currently available for ZIP and 7Z archives only.'
       )
     }
     if (!Number.isFinite(splitSize) || splitSize < MIN_SPLIT_SIZE) {
@@ -154,6 +176,34 @@ export async function compressArchive(
   const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath)
 
   throwIfAborted(signal)
+
+  // 7z runs before the ZIP split branch below: 7-Zip handles volumes itself,
+  // through a switch, and numbers them even when the whole archive fits in
+  // one - so it has no equivalent of that branch's single-volume special case.
+  if (format === '7z') {
+    const written = await writeSevenZipArchive(
+      {
+        inputPaths,
+        outputPath,
+        totalBytes,
+        level,
+        password: options.password,
+        encryptHeaders: options.encryptHeaders,
+        splitSize
+      },
+      onProgress,
+      { signal }
+    )
+
+    const compressedSize = await totalOutputSize(written.volumePaths ?? [written.outputPath])
+    return {
+      outputPath: written.outputPath,
+      originalSize: totalBytes,
+      compressedSize,
+      durationMs: Date.now() - startTime,
+      ...(written.volumePaths ? { volumePaths: written.volumePaths } : {})
+    }
+  }
 
   // A single-volume split archive is not an ordinary ZIP: zip.js prefixes the
   // first volume with a 4 byte split signature, which strict readers - this

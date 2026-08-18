@@ -7,6 +7,8 @@ import zlib from 'zlib'
 import * as tar from 'tar'
 import { calculateTotalSize, compressArchive, type ProgressData } from './compressor'
 import { inspectArchive } from './archiveInspector'
+import { runSevenZip } from './sevenZip'
+import { MIN_SPLIT_SIZE } from './splitZipWriter'
 
 const temporaryDirectories: string[] = []
 
@@ -116,7 +118,7 @@ describe('compressArchive', () => {
       outputPath: path.join(directory, 'archive.tar'),
       format: 'tar',
       password: 'not-supported'
-    })).rejects.toThrow('ZIP archives only')
+    })).rejects.toThrow('ZIP and 7Z archives only')
     await expect(compressArchive({
       inputPaths: [sourceDir],
       outputPath: path.join(directory, 'archive.gz'),
@@ -201,4 +203,118 @@ describe('compressArchive', () => {
     await expect(promise).rejects.toMatchObject({ name: 'CompressionError', code: 'COMPRESSION_CANCELLED' })
     await expect(fs.stat(outputPath)).rejects.toThrow()
   })
+})
+
+describe('7z compression', () => {
+  it('writes a readable archive and reports its size', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'docs', 'guide.txt'), 'guide contents')
+    const outputPath = path.join(directory, 'archive.7z')
+
+    const result = await compressArchive({ inputPaths: [sourceDir], outputPath, format: '7z' })
+
+    expect(result.outputPath).toBe(outputPath)
+    expect(result.compressedSize).toBeGreaterThan(0)
+    const listing = await inspectArchive(outputPath)
+    expect(listing.entries.some(entry => entry.path.endsWith('guide.txt'))).toBe(true)
+  }, 60_000)
+
+  it('reports progress that finishes at complete', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'payload.bin')
+    await fs.writeFile(sourcePath, Buffer.alloc(2 * 1024 * 1024, 7))
+    const outputPath = path.join(directory, 'progress.7z')
+
+    const updates: ProgressData[] = []
+    await compressArchive({ inputPaths: [sourcePath], outputPath, format: '7z' }, data => updates.push(data))
+
+    expect(updates.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
+    expect(updates.every(update => (update.percent ?? 0) <= 100)).toBe(true)
+  }, 60_000)
+
+  it('encrypts with a password and refuses the wrong one on extraction', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'secret.txt')
+    await fs.writeFile(sourcePath, 'secret contents')
+    const outputPath = path.join(directory, 'enc.7z')
+
+    await compressArchive({ inputPaths: [sourcePath], outputPath, format: '7z', password: 'hunter2' })
+
+    expect((await inspectArchive(outputPath)).passwordProtected).toBe(true)
+    await expect(runSevenZip(['x', `-o${path.join(directory, 'bad')}`, outputPath], 'wrong'))
+      .rejects.toMatchObject({ code: 'SEVEN_ZIP_WRONG_PASSWORD' })
+  }, 60_000)
+
+  it('hides the entry list when header encryption is requested', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'secret.txt')
+    await fs.writeFile(sourcePath, 'secret contents')
+    const outputPath = path.join(directory, 'hidden.7z')
+
+    await compressArchive({
+      inputPaths: [sourcePath],
+      outputPath,
+      format: '7z',
+      password: 'hunter2',
+      encryptHeaders: true
+    })
+
+    await expect(inspectArchive(outputPath)).rejects.toMatchObject({ code: 'SEVEN_ZIP_PASSWORD_REQUIRED' })
+    await expect(inspectArchive(outputPath, { password: 'hunter2' })).resolves.toMatchObject({ totalFiles: 1 })
+  }, 60_000)
+
+  it('splits into numbered volumes and returns the first one', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'big.bin')
+    await fs.writeFile(sourcePath, Buffer.alloc(5 * 1024 * 1024).map(() => Math.floor(Math.random() * 256)))
+    const outputPath = path.join(directory, 'set.7z')
+
+    const result = await compressArchive({
+      inputPaths: [sourcePath],
+      outputPath,
+      format: '7z',
+      level: 0,
+      splitSize: MIN_SPLIT_SIZE
+    })
+
+    // The opposite of ZIP, where the terminal volume is the one that opens.
+    expect(result.outputPath).toBe(`${outputPath}.001`)
+    expect(result.volumePaths?.length).toBeGreaterThan(1)
+    expect(result.compressedSize).toBeGreaterThan(MIN_SPLIT_SIZE)
+    await expect(inspectArchive(result.outputPath)).resolves.toMatchObject({ format: '7Z' })
+  }, 120_000)
+
+  it('clears a previous run so 7-Zip cannot append to it', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'first.txt'), 'first')
+    const outputPath = path.join(directory, 'again.7z')
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: '7z' })
+
+    await fs.rm(path.join(sourceDir, 'first.txt'))
+    await fs.writeFile(path.join(sourceDir, 'second.txt'), 'second')
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: '7z' })
+
+    const paths = (await inspectArchive(outputPath)).entries.map(entry => path.basename(entry.path))
+    expect(paths).toContain('second.txt')
+    expect(paths).not.toContain('first.txt')
+  }, 60_000)
+
+  it('keeps the archive out of its own input tree', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.bin'), Buffer.alloc(512 * 1024, 3))
+    // The archive is written inside the folder being compressed, which is what
+    // the default save location does.
+    const outputPath = path.join(sourceDir, 'self.7z')
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: '7z' })
+
+    const paths = (await inspectArchive(outputPath)).entries.map(entry => path.basename(entry.path))
+    expect(paths).not.toContain('self.7z')
+  }, 60_000)
 })

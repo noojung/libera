@@ -35,3 +35,18 @@ export function splitVolumeGroupKey(archivePath: string): string {
   const canonical = terminalVolumePath(archivePath)
   return canonical.toLowerCase()
 }
+
+// The compression formats the panel offers, mirroring compressor.ts's own
+// union and capability helpers for the same reason as the path rules above.
+export const COMPRESSION_FORMATS = ['zip', 'tar', 'gz', 'tgz', '7z'] as const
+
+export type ArchiveFormat = (typeof COMPRESSION_FORMATS)[number]
+
+/** ZIP encrypts with ZipCrypto for reach, 7z with AES-256. */
+export function supportsPassword(format: ArchiveFormat): boolean {
+  return format === 'zip' || format === '7z'
+}
+
+export function supportsSplit(format: ArchiveFormat): boolean {
+  return format === 'zip' || format === '7z'
+}

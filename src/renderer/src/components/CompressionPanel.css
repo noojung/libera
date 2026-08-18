@@ -56,7 +56,9 @@
 
 .compression-panel__format-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Fits however many formats there are rather than a hardcoded count, so a
+     fifth one does not wrap onto a row of its own. */
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 10px;
 }
 

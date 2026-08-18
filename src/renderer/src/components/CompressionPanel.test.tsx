@@ -71,11 +71,55 @@ describe('CompressionPanel', () => {
     expect(onStart).toHaveBeenCalledWith({ format: 'zip', level: 9, outputPath: 'D:\\secure.zip', password: 'secret', splitSize: undefined })
   })
 
-  it('hides password inputs for non-ZIP formats and disables empty jobs', async () => {
+  it('hides password inputs for formats that cannot encrypt, and disables empty jobs', async () => {
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Start compression 🚀' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '.TAR' }))
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
+  })
+
+  it('offers password and split for 7z, which supports both', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+
+    expect(screen.getByPlaceholderText('Enter password')).toBeInTheDocument()
+    expect(screen.getByText('Split into volumes')).toBeInTheDocument()
+  })
+
+  it('offers header encryption only for 7z, and only once a password is confirmed', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    // The option is meaningless until there is a password to hide behind.
+    expect(screen.queryByText('Hide the file list too')).not.toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+
+    expect(screen.getByText('Hide the file list too')).toBeInTheDocument()
+    expect(screen.getByText('AES-256 encryption will be used.')).toBeInTheDocument()
+  })
+
+  it('passes the 7z encryption options through to the job', async () => {
+    const onStart = vi.fn()
+    installElectronApi({ selectSaveLocation: vi.fn().mockResolvedValue('D:\\secure.7z') })
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: 'a.txt', name: 'a.txt', isDirectory: false, size: 10 }]} onStartCompress={onStart} />
+    )
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: '7z',
+      password: 'secret',
+      encryptHeaders: true
+    }))
   })
 })

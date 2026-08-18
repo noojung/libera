@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SUPPORTED_ARCHIVE_EXTENSIONS, isSupportedArchivePath } from './extractor'
 import { terminalVolumePath } from './splitZipVolumes'
+import { supportsPassword, supportsSplit, type ArchiveFormat } from './compressor'
 import * as renderer from '../renderer/src/utils/archivePaths'
 
 // The renderer cannot import the services (they pull in fs/path), so it keeps
@@ -54,5 +55,26 @@ describe('renderer archive path helper', () => {
     expect(renderer.splitVolumeGroupKey('C:\\archives\\archive.z01')).toBe(key)
     expect(renderer.splitVolumeGroupKey('C:\\archives\\archive.z42')).toBe(key)
     expect(renderer.splitVolumeGroupKey('C:\\archives\\other.zip')).not.toBe(key)
+  })
+})
+
+// The format capability helpers are duplicated for the same reason as the path
+// rules: CompressionPanel needs them and cannot import compressor.ts.
+describe('renderer compression format helper', () => {
+  it('offers exactly the formats compressArchive accepts', () => {
+    const serviceFormats: ArchiveFormat[] = ['zip', 'tar', 'gz', 'tgz', '7z']
+    expect([...renderer.COMPRESSION_FORMATS]).toEqual(serviceFormats)
+  })
+
+  it('agrees with the service about which formats take a password', () => {
+    for (const format of renderer.COMPRESSION_FORMATS) {
+      expect(renderer.supportsPassword(format)).toBe(supportsPassword(format))
+    }
+  })
+
+  it('agrees with the service about which formats can be split', () => {
+    for (const format of renderer.COMPRESSION_FORMATS) {
+      expect(renderer.supportsSplit(format)).toBe(supportsSplit(format))
+    }
   })
 })
