@@ -92,15 +92,15 @@ formats:
   description: Libera focuses on the archive formats people use most often.
   items:
     - name: ZIP
-      detail: Compress · extract · inspect · compatibility password
+      detail: compress · extract · inspect · compatibility password
     - name: 7Z
-      detail: Compress · extract · inspect
+      detail: compress · extract · inspect
     - name: TAR
-      detail: Compress · extract · inspect
+      detail: compress · extract · inspect
     - name: TGZ / TAR.GZ
-      detail: Compress · extract · inspect
+      detail: compress · extract · inspect
     - name: GZ
-      detail: Single-file compression · extraction · preview
+      detail: single-file compression · extraction · preview
 download:
   kicker: Start for free
   title: Meet Libera today.
