@@ -12,6 +12,7 @@ import {
   SUPPORTED_ARCHIVE_EXTENSIONS,
   isSupportedArchivePath,
   isZipArchivePath,
+  isSevenZipArchivePath,
   splitVolumeGroupKey,
   canonicalArchivePath,
   EXTRACT_DIALOG_EXTENSIONS,
@@ -35,10 +36,14 @@ export const App: React.FC = () => {
   const passwordPromptJobId = useRef<string | null>(null)
   const cancelledJobIds = useRef(new Set<string>())
 
-  const isZipPasswordProtected = async (archivePath: string) => {
-    if (!isZipArchivePath(archivePath) || !(window as any).electronAPI) return false
+  const archiveNeedsPassword = async (archivePath: string) => {
+    const encryptable = isZipArchivePath(archivePath) || isSevenZipArchivePath(archivePath)
+    if (!encryptable || !(window as any).electronAPI) return false
     const response = await (window as any).electronAPI.inspectArchive(archivePath)
-    return response.success && response.result?.passwordProtected === true
+    // A header-encrypted 7z cannot even be listed, so the failure itself is
+    // the answer rather than something to report.
+    if (!response.success) return response.code === 'PASSWORD_REQUIRED'
+    return response.result?.passwordProtected === true
   }
 
   const requestZipPassword = (jobId: string, archiveName: string, incorrectPassword = false) => new Promise<string | null>((resolve) => {
@@ -333,7 +338,7 @@ export const App: React.FC = () => {
         const job = newJobs[i]
         if (cancelledJobIds.current.has(job.id)) continue
         setJobs(prev => prev.map(existing => existing.id === job.id ? { ...existing, status: 'running' } : existing))
-        const passwordProtected = await isZipPasswordProtected(item.path)
+        const passwordProtected = await archiveNeedsPassword(item.path)
         if (cancelledJobIds.current.has(job.id)) continue
         const res = await extractWithPasswordRetry(job.id, item.name, passwordProtected, (password) =>
           (window as any).electronAPI.extractArchive({

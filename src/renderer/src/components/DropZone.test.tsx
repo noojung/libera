@@ -41,7 +41,7 @@ describe('DropZone', () => {
     })
 
     expect(props.onAddFiles).toHaveBeenCalledWith(['C:\\drop\\valid.ZIP'])
-    expect(screen.getByRole('alert')).toHaveTextContent('Only ZIP, TAR, TAR.GZ, TGZ, and GZ')
+    expect(screen.getByRole('alert')).toHaveTextContent('Only ZIP, 7Z, TAR, TAR.GZ, TGZ, and GZ')
     expect(screen.queryByRole('button', { name: 'Browse folders' })).not.toBeInTheDocument()
   })
 

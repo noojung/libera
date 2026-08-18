@@ -12,6 +12,7 @@ import {
 import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/splitZipVolumes'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
+import { SevenZipError } from '../services/sevenZip'
 
 let mainWindow: BrowserWindow | null = null
 const activeCompressionControllers = new Map<string, AbortController>()
@@ -20,10 +21,30 @@ const activePreviewControllers = new Map<string, AbortController>()
 
 type Operation = 'compression' | 'extraction' | 'inspection' | 'preview'
 
+/**
+ * The machine readable half of a password failure. The renderer prompts on
+ * this rather than on the translated message, and it reuses the wire code the
+ * ZIP extract path already speaks so the retry loop needs no second vocabulary.
+ */
+function passwordFailureCode(error: unknown): string | undefined {
+  if (error instanceof SevenZipError) {
+    if (error.code === 'SEVEN_ZIP_PASSWORD_REQUIRED') return 'PASSWORD_REQUIRED'
+    if (error.code === 'SEVEN_ZIP_WRONG_PASSWORD') return WRONG_ZIP_PASSWORD_ERROR_CODE
+  }
+  if (error instanceof ArchivePreviewError) {
+    if (error.code === 'PASSWORD_REQUIRED') return 'PASSWORD_REQUIRED'
+    if (error.code === 'WRONG_PASSWORD') return WRONG_ZIP_PASSWORD_ERROR_CODE
+  }
+  if (isWrongZipPasswordError(error)) return WRONG_ZIP_PASSWORD_ERROR_CODE
+  return undefined
+}
+
 function classifyError(error: unknown, operation: Operation): string {
   if (error instanceof ArchivePreviewError) {
     const previewErrorCodes: Record<string, string> = {
       ENTRY_NOT_FOUND: 'entryNotFound',
+      PASSWORD_REQUIRED: 'passwordRequired',
+      WRONG_PASSWORD: 'wrongArchivePassword',
       ENTRY_NOT_PREVIEWABLE: 'entryNotPreviewable',
       ENCRYPTED_PREVIEW_UNSUPPORTED: 'encryptedPreviewUnsupported',
       NOT_TEXT: 'notText',
@@ -42,6 +63,20 @@ function classifyError(error: unknown, operation: Operation): string {
       SPLIT_VOLUME_UNREADABLE: 'splitVolumeUnreadable'
     }
     return splitVolumeErrorCodes[error.code] || 'genericExtraction'
+  }
+  if (error instanceof SevenZipError) {
+    const sevenZipErrorCodes: Record<string, string> = {
+      SEVEN_ZIP_UNAVAILABLE: 'sevenZipUnavailable',
+      SEVEN_ZIP_PASSWORD_REQUIRED: 'passwordRequired',
+      SEVEN_ZIP_WRONG_PASSWORD: 'wrongArchivePassword',
+      SEVEN_ZIP_CANCELLED: operation === 'compression' ? 'compressionCancelled' : 'extractionCancelled'
+    }
+    const mapped = sevenZipErrorCodes[error.code]
+    if (mapped) return mapped
+    return operation === 'compression' ? 'genericCompression'
+      : operation === 'extraction' ? 'genericExtraction'
+      : operation === 'preview' ? 'genericPreview'
+      : 'genericInspection'
   }
   if (operation === 'preview') return 'genericPreview'
   if (error instanceof CompressionError) {
@@ -226,9 +261,7 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
       success: false,
       error: err.message || 'Extraction failed',
       errorCode: classifyError(err, 'extraction'),
-      code: err.code === WRONG_ZIP_PASSWORD_ERROR_CODE || isWrongZipPasswordError(err)
-        ? WRONG_ZIP_PASSWORD_ERROR_CODE
-        : undefined
+      code: passwordFailureCode(err)
     }
   } finally {
     if (activeExtractionControllers.get(jobId) === controller) activeExtractionControllers.delete(jobId)
@@ -242,27 +275,33 @@ ipcMain.handle('archive:cancel', (_, jobId: string) => {
   return true
 })
 
-ipcMain.handle('archive:inspect', async (_, archivePath: string) => {
+ipcMain.handle('archive:inspect', async (_, archivePath: string, password?: string) => {
   try {
-    const result = await inspectArchive(archivePath)
+    const result = await inspectArchive(archivePath, { password })
     return { success: true, result }
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to inspect archive', errorCode: classifyError(err, 'inspection') }
+    return {
+      success: false,
+      error: err.message || 'Failed to inspect archive',
+      errorCode: classifyError(err, 'inspection'),
+      code: passwordFailureCode(err)
+    }
   }
 })
 
-ipcMain.handle('archive:preview', async (_, archivePath: string, entryId: string, requestId: string) => {
+ipcMain.handle('archive:preview', async (_, archivePath: string, entryId: string, requestId: string, password?: string) => {
   activePreviewControllers.get(requestId)?.abort()
   const controller = new AbortController()
   activePreviewControllers.set(requestId, controller)
   try {
-    const result = await previewArchiveEntry(archivePath, entryId, { signal: controller.signal })
+    const result = await previewArchiveEntry(archivePath, entryId, { signal: controller.signal, password })
     return { success: true, result }
   } catch (err: any) {
     return {
       success: false,
       error: err.message || 'Failed to preview archive entry',
-      errorCode: classifyError(err, 'preview')
+      errorCode: classifyError(err, 'preview'),
+      code: passwordFailureCode(err)
     }
   } finally {
     if (activePreviewControllers.get(requestId) === controller) activePreviewControllers.delete(requestId)

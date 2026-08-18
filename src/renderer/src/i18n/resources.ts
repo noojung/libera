@@ -22,15 +22,15 @@ export const resources = {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
         dropArchives: 'Drop archive files here! 🐾',
         filesAndFoldersHint: 'Select multiple files, folders, or archives to extract',
-        archivesHint: 'ZIP, TAR, TAR.GZ, TGZ, and GZ files only',
+        archivesHint: 'ZIP, 7Z, TAR, TAR.GZ, TGZ, and GZ files only',
         browseFiles: 'Browse files',
         browseFolders: 'Browse folders',
         selectedItems_one: '{{count}} selected item',
         selectedItems_other: '{{count}} selected items',
         clearAll: 'Clear all',
         removeItem: 'Remove {{name}}',
-        unsupportedArchive: 'Only ZIP, TAR, TAR.GZ, TGZ, and GZ archive files can be added.',
-        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, TAR, TAR.GZ, TGZ, or GZ files.'
+        unsupportedArchive: 'Only ZIP, 7Z, TAR, TAR.GZ, TGZ, and GZ archive files can be added.',
+        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, 7Z, TAR, TAR.GZ, TGZ, or GZ files.'
       },
       compression: {
         title: 'Compression options ⚙️',
@@ -136,8 +136,8 @@ export const resources = {
         }
       },
       passwordPrompt: {
-        title: 'Password-protected ZIP file',
-        description: 'This ZIP file is encrypted. Enter its password to extract it.',
+        title: 'Password-protected archive',
+        description: 'This archive is encrypted. Enter its password to open it.',
         placeholder: 'Enter password',
         incorrect: 'The password is incorrect. Please try again.',
         cancel: 'Cancel',
@@ -189,6 +189,9 @@ export const resources = {
         compressionCancelled: 'Compression was cancelled.',
         splitSizeTooSmall: 'Each volume must be at least 1 MB.',
         splitNotSupportedForFormat: 'Splitting is available for ZIP and 7Z archives only.',
+        passwordRequired: 'This archive needs a password.',
+        wrongArchivePassword: 'The archive password is incorrect.',
+        sevenZipUnavailable: 'The bundled 7-Zip component is missing, so 7Z archives cannot be handled.',
         splitTooManyVolumes: 'That volume size would create too many files. Choose a larger size.',
         splitVolumeMissing: 'A volume of this split archive is missing. Keep every volume (.z01, .z02 … and .zip) together in one folder.',
         splitVolumeMismatch: 'The split archive volumes in this folder do not form one complete set.',
@@ -232,14 +235,14 @@ export const resources = {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
         dropArchives: '압축 파일을 여기에 놓아주세요! 🐾',
         filesAndFoldersHint: '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능',
-        archivesHint: 'ZIP, TAR, TAR.GZ, TGZ, GZ 파일만 선택 가능',
+        archivesHint: 'ZIP, 7Z, TAR, TAR.GZ, TGZ, GZ 파일만 선택 가능',
         browseFiles: '파일 찾아보기',
         browseFolders: '폴더 찾아보기',
         selectedItems: '선택한 항목 ({{count}}개)',
         clearAll: '전체 비우기',
         removeItem: '{{name}} 제거',
-        unsupportedArchive: 'ZIP, TAR, TAR.GZ, TGZ, GZ 압축 파일만 추가할 수 있습니다.',
-        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, TAR, TAR.GZ, TGZ, GZ 파일을 선택해 주세요.'
+        unsupportedArchive: 'ZIP, 7Z, TAR, TAR.GZ, TGZ, GZ 압축 파일만 추가할 수 있습니다.',
+        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, 7Z, TAR, TAR.GZ, TGZ, GZ 파일을 선택해 주세요.'
       },
       compression: {
         title: '압축 옵션 설정 ⚙️',
@@ -341,8 +344,8 @@ export const resources = {
         }
       },
       passwordPrompt: {
-        title: '비밀번호가 필요한 ZIP 파일',
-        description: '이 ZIP 파일은 암호화되어 있습니다. 압축을 해제하려면 비밀번호를 입력해 주세요.',
+        title: '비밀번호가 필요한 압축 파일',
+        description: '이 압축 파일은 암호화되어 있습니다. 열려면 비밀번호를 입력해 주세요.',
         placeholder: '비밀번호 입력',
         incorrect: '비밀번호가 올바르지 않습니다. 다시 입력해 주세요.',
         cancel: '취소',
@@ -391,6 +394,9 @@ export const resources = {
         compressionCancelled: '압축이 취소되었습니다.',
         splitSizeTooSmall: '분할 크기는 최소 1 MB 이상이어야 합니다.',
         splitNotSupportedForFormat: '분할 압축은 ZIP과 7Z 형식에서만 사용할 수 있습니다.',
+        passwordRequired: '이 압축 파일은 비밀번호가 필요합니다.',
+        wrongArchivePassword: '압축 파일 비밀번호가 올바르지 않습니다.',
+        sevenZipUnavailable: '내장된 7-Zip 구성 요소를 찾을 수 없어 7Z 압축 파일을 처리할 수 없습니다.',
         splitTooManyVolumes: '이 분할 크기로는 파일이 너무 많이 생성됩니다. 더 큰 크기를 선택해 주세요.',
         splitVolumeMissing: '분할 압축 파일의 볼륨이 없습니다. 모든 볼륨(.z01, .z02 … 과 .zip)을 같은 폴더에 함께 두어야 합니다.',
         splitVolumeMismatch: '이 폴더의 분할 볼륨들이 완전한 한 세트를 이루지 않습니다.',

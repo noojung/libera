@@ -45,7 +45,7 @@ describe('ArchiveInspector', () => {
     expect(screen.getByText('inside.txt')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Archive root' }))
     expect(screen.getByText('root.txt')).toBeInTheDocument()
-    expect(api.inspectArchive).toHaveBeenCalledWith('C:\\archives\\sample.zip')
+    expect(api.inspectArchive).toHaveBeenCalledWith('C:\\archives\\sample.zip', undefined)
   })
 
   it('loads entries in pages of 500', async () => {
@@ -113,7 +113,7 @@ describe('ArchiveInspector', () => {
     fireEvent.drop(container.firstElementChild!, {
       dataTransfer: { files: [new File(['zip'], 'dropped.zip')] }
     })
-    await waitFor(() => expect(api.inspectArchive).toHaveBeenCalledWith('C:\\drop\\dropped.zip'))
+    await waitFor(() => expect(api.inspectArchive).toHaveBeenCalledWith('C:\\drop\\dropped.zip', undefined))
   })
 
   it('loads and displays a truncated text preview when a file is clicked', async () => {
@@ -135,7 +135,8 @@ describe('ArchiveInspector', () => {
     expect(api.previewArchiveEntry).toHaveBeenCalledWith(
       'preview.zip',
       'entry-0',
-      expect.stringMatching(/^archive-preview-/)
+      expect.stringMatching(/^archive-preview-/),
+      undefined
     )
 
     resolvePreview({
@@ -252,5 +253,35 @@ describe('ArchiveInspector', () => {
       result: { kind: 'text', text: 'late contents', encoding: 'utf-8', truncated: false, previewedBytes: 5, totalBytes: 5 }
     })
     await waitFor(() => expect(screen.queryByText('late contents')).not.toBeInTheDocument())
+  })
+  it('prompts for a password when the archive headers are encrypted, then lists it', async () => {
+    const inspectArchive = vi.fn()
+      // A header-encrypted 7z cannot be listed at all until a password arrives.
+      .mockResolvedValueOnce({ success: false, code: 'PASSWORD_REQUIRED', errorCode: 'passwordRequired' })
+      .mockResolvedValueOnce({ success: false, code: 'WRONG_ZIP_PASSWORD', errorCode: 'wrongArchivePassword' })
+      .mockResolvedValueOnce(inspection([
+        { id: 'entry-0', path: 'secret.txt', name: 'secret.txt', isDirectory: false, size: 5 }
+      ]))
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['hidden.7z']),
+      inspectArchive
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    expect(await screen.findByText('Password-protected archive')).toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('Enter password'), 'wrong')
+    await user.click(screen.getByRole('button', { name: 'Extract' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+
+    // The field keeps the rejected value, as it does on the extract path.
+    await user.clear(screen.getByPlaceholderText('Enter password'))
+    await user.type(screen.getByPlaceholderText('Enter password'), 'hunter2')
+    await user.click(screen.getByRole('button', { name: 'Extract' }))
+
+    expect(await screen.findByText('secret.txt')).toBeInTheDocument()
+    expect(inspectArchive).toHaveBeenLastCalledWith('hidden.7z', 'hunter2')
+    expect(api.inspectArchive).toHaveBeenCalledTimes(3)
   })
 })

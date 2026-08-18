@@ -17,6 +17,10 @@ export function isSevenZipVolumePath(archivePath: string): boolean {
   return SEVEN_ZIP_VOLUME_SUFFIX.test(archivePath)
 }
 
+export function isSevenZipArchivePath(archivePath: string): boolean {
+  return archivePath.toLowerCase().endsWith('.7z') || isSevenZipVolumePath(archivePath)
+}
+
 export function isSupportedArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()
   if (SUPPORTED_ARCHIVE_EXTENSIONS.some(extension => normalizedPath.endsWith(extension))) return true

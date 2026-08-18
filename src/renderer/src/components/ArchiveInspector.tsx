@@ -6,6 +6,7 @@ import { formatBytes } from '../i18n/format'
 import type { AppLanguage } from '../i18n/language'
 import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '../utils/archivePaths'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
+import { PasswordPromptModal } from './PasswordPromptModal'
 import './ArchiveInspector.css'
 
 interface ArchiveEntry {
@@ -101,6 +102,10 @@ export const ArchiveInspector: React.FC = () => {
   const [previewResult, setPreviewResult] = useState<ArchivePreviewResult | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewErrorKey, setPreviewErrorKey] = useState<string | null>(null)
+  // Held for the life of one archive: a header-encrypted 7z needs it to list,
+  // and every preview of an encrypted entry needs it again.
+  const [archivePassword, setArchivePassword] = useState<string | undefined>(undefined)
+  const [passwordPrompt, setPasswordPrompt] = useState<{ path: string; incorrect: boolean } | null>(null)
   const previewRequestSequence = useRef(0)
   const activePreviewRequest = useRef<string | null>(null)
 
@@ -120,7 +125,7 @@ export const ArchiveInspector: React.FC = () => {
     if (requestId) void (window as any).electronAPI?.cancelArchivePreview(requestId)
   }, [])
 
-  const runInspection = async (filePath: string) => {
+  const runInspection = async (filePath: string, password?: string) => {
     closePreview()
     setLoading(true)
     setErrorKey(null)
@@ -128,9 +133,16 @@ export const ArchiveInspector: React.FC = () => {
     setCurrentPath('')
     setVisibleEntryCount(ENTRY_PAGE_SIZE)
     try {
-      const response = await (window as any).electronAPI.inspectArchive(filePath)
+      const response = await (window as any).electronAPI.inspectArchive(filePath, password)
       if (response.success) {
         setInspectData(response.result)
+        setArchivePassword(password)
+        setPasswordPrompt(null)
+      } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
+        // The listing itself is encrypted, so there is nothing to show until
+        // a password arrives.
+        setInspectData(null)
+        setPasswordPrompt({ path: filePath, incorrect: response.code === 'WRONG_ZIP_PASSWORD' })
       } else {
         setInspectData(null)
         setErrorKey(response.errorCode ? `errors.${response.errorCode}` : 'inspector.readFailed')
@@ -202,7 +214,7 @@ export const ArchiveInspector: React.FC = () => {
     setPreviewLoading(true)
 
     try {
-      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId)
+      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId, archivePassword)
       if (activePreviewRequest.current !== requestId) return
       if (response.success) {
         setPreviewResult(response.result)
@@ -347,6 +359,14 @@ export const ArchiveInspector: React.FC = () => {
           <h4 className="archive-inspector__empty-title">{t('inspector.noArchive')}</h4>
           <button className="btn-primary" onClick={handleOpenArchive}>{t('inspector.selectArchive')}</button>
         </div>
+      )}
+      {passwordPrompt && (
+        <PasswordPromptModal
+          archiveName={passwordPrompt.path.split(/[/\\]/).pop() || passwordPrompt.path}
+          hasIncorrectPassword={passwordPrompt.incorrect}
+          onConfirm={(password) => void runInspection(passwordPrompt.path, password)}
+          onCancel={() => setPasswordPrompt(null)}
+        />
       )}
       {previewEntry && (
         <ArchivePreviewModal
