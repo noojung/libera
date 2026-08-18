@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       commit_sha: ${{ steps.commit.outputs.commit_sha }}
+
     steps:
       - name: Check out main
         uses: actions/checkout@v7
@@ -64,6 +65,7 @@ jobs:
 
           local_commit="$(git rev-parse HEAD)"
           main_commit="$(git rev-parse origin/main)"
+
           if [[ "$local_commit" != "$main_commit" ]]; then
             echo "The workflow must start from the latest commit on main." >&2
             exit 1
@@ -72,17 +74,28 @@ jobs:
           current_version="$(node <<'NODE'
           const fs = require('node:fs')
 
-          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const packageJson = JSON.parse(
+            fs.readFileSync('package.json', 'utf8')
+          )
+          const packageLock = JSON.parse(
+            fs.readFileSync('package-lock.json', 'utf8')
+          )
+
           const versions = {
             'package.json': packageJson.version,
             'package-lock.json': packageLock.version,
             'package-lock.json root package': packageLock.packages?.['']?.version
           }
+
           const uniqueVersions = new Set(Object.values(versions))
 
-          if (uniqueVersions.size !== 1 || [...uniqueVersions].some(value => typeof value !== 'string')) {
-            console.error(`Package versions are not synchronized: ${JSON.stringify(versions)}`)
+          if (
+            uniqueVersions.size !== 1 ||
+            [...uniqueVersions].some(value => typeof value !== 'string')
+          ) {
+            console.error(
+              `Package versions are not synchronized: ${JSON.stringify(versions)}`
+            )
             process.exit(1)
           }
 
@@ -104,6 +117,7 @@ jobs:
               process.stdout.write('greater')
               process.exit(0)
             }
+
             if (target[index] < current[index]) {
               process.stdout.write('lower')
               process.exit(0)
@@ -116,16 +130,25 @@ jobs:
 
           tag="v${TARGET_VERSION}"
           tag_exists=false
+
           if git show-ref --verify --quiet "refs/tags/$tag"; then
             tag_exists=true
+
             tag_commit="$(git rev-list -n 1 "$tag")"
+
             if [[ "$tag_commit" != "$local_commit" ]]; then
               echo "Tag $tag already points to a different commit." >&2
               exit 1
             fi
 
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+              is_draft="$(
+                gh release view "$tag" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --json isDraft \
+                  --jq '.isDraft'
+              )"
+
               if [[ "$is_draft" != "true" ]]; then
                 echo "Release $tag is already published." >&2
                 exit 1
@@ -138,15 +161,18 @@ jobs:
               echo "Target version $TARGET_VERSION must not be lower than current version $current_version." >&2
               exit 1
               ;;
+
             equal)
               echo "Version files already contain $TARGET_VERSION; continuing a previous release attempt."
               version_changed=false
               ;;
+
             greater)
               if [[ "$tag_exists" == "true" ]]; then
                 echo "Tag $tag already exists before its version commit was created." >&2
                 exit 1
               fi
+
               npm version "$TARGET_VERSION" --no-git-tag-version
               version_changed=true
               ;;
@@ -178,6 +204,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add package.json package-lock.json
 
           if git diff --cached --quiet; then
@@ -185,7 +212,11 @@ jobs:
             exit 1
           fi
 
-          unexpected_files="$(git diff --cached --name-only | grep -Ev '^(package.json|package-lock.json)$' || true)"
+          unexpected_files="$(
+            git diff --cached --name-only |
+              grep -Ev '^(package.json|package-lock.json)$' || true
+          )"
+
           if [[ -n "$unexpected_files" ]]; then
             echo "Unexpected files were staged for the version commit:" >&2
             printf '%s\n' "$unexpected_files" >&2
@@ -196,19 +227,23 @@ jobs:
             "- Update the Libera package version to $VERSION." \
             "- Keep package.json and package-lock.json root metadata synchronized." \
             "- Prepare version metadata for the v$VERSION release workflow.")"
+
           git commit \
             -m "Bump application version to $VERSION" \
             -m "$commit_body"
+
           git push origin HEAD:main
 
       - name: Resolve release commit
         id: commit
         shell: bash
-        run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.name }}
     needs: prepare
+
     strategy:
       matrix:
         include:
@@ -217,19 +252,24 @@ jobs:
             command: npx electron-builder --mac dmg --x64 --publish never
             artifact: installer-mac-x64
             path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-x64.dmg
+
           - name: macOS Apple Silicon
-            runner: macos-latest
+            runner: macos-26
             command: npx electron-builder --mac dmg --arm64 --publish never
             artifact: installer-mac-arm64
             path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-mac-arm64.dmg
+
           - name: Windows x64
             runner: windows-latest
             command: npx electron-builder --win nsis --x64 --publish never
             artifact: installer-windows-x64
             path: release/${{ needs.prepare.outputs.version }}/Libera-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe
+
     runs-on: ${{ matrix.runner }}
+
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
     steps:
       - name: Check out release commit
         uses: actions/checkout@v7
@@ -264,9 +304,13 @@ jobs:
     needs:
       - prepare
       - build
+
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
+      pull-requests: read
+
     steps:
       - name: Check out release commit
         uses: actions/checkout@v7
@@ -293,7 +337,10 @@ jobs:
             "Libera-${VERSION}-windows-x64-setup.exe"
           )
 
-          mapfile -t actual < <(find release-assets -maxdepth 1 -type f -print)
+          mapfile -t actual < <(
+            find release-assets -maxdepth 1 -type f -print
+          )
+
           if [[ "${#actual[@]}" -ne "${#expected[@]}" ]]; then
             echo "Expected ${#expected[@]} release assets, found ${#actual[@]}." >&2
             printf '%s\n' "${actual[@]}" >&2
@@ -316,17 +363,25 @@ jobs:
           set -euo pipefail
 
           git fetch --force --tags origin
+
           if git show-ref --verify --quiet "refs/tags/$TAG"; then
             tag_commit="$(git rev-list -n 1 "$TAG")"
+
             if [[ "$tag_commit" != "$RELEASE_SHA" ]]; then
               echo "Tag $TAG points to $tag_commit instead of $RELEASE_SHA." >&2
               exit 1
             fi
+
             echo "Tag $TAG already points to the release commit; continuing."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag --annotate "$TAG" "$RELEASE_SHA" --message "Release $TAG"
+
+            git tag \
+              --annotate "$TAG" \
+              "$RELEASE_SHA" \
+              --message "Release $TAG"
+
             git push origin "refs/tags/$TAG"
           fi
 
@@ -341,11 +396,20 @@ jobs:
           set -euo pipefail
 
           repository="$GITHUB_REPOSITORY"
+
           notes_file="$RUNNER_TEMP/release-notes.md"
           commit_file="$RUNNER_TEMP/release-commits.md"
-          login_file="$RUNNER_TEMP/commit-logins.tsv"
-          pull_file="$RUNNER_TEMP/commit-pulls.tsv"
-          previous_tag="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+
+          : > "$commit_file"
+
+          previous_tag="$(
+            git describe \
+              --tags \
+              --match 'v[0-9]*.[0-9]*.[0-9]*' \
+              --abbrev=0 \
+              "${TAG}^" \
+              2>/dev/null || true
+          )"
 
           if [[ -n "$previous_tag" ]]; then
             revision_range="${previous_tag}..${RELEASE_SHA}"
@@ -353,48 +417,61 @@ jobs:
             revision_range="$RELEASE_SHA"
           fi
 
-          # One request each for the GitHub logins and the pull requests behind
-          # the commits, rather than a lookup per commit. Whatever is missing
-          # from either map degrades to the git metadata and a commit link.
-          : > "$login_file"
-          if [[ -n "$previous_tag" ]]; then
-            gh api "repos/${repository}/compare/${previous_tag}...${RELEASE_SHA}" \
-              --jq '.commits[] | select(.author.login) | [.sha, .author.login] | @tsv' \
-              > "$login_file" || true
-          fi
-
-          gh api "repos/${repository}/pulls?state=closed&per_page=100" \
-            --jq '.[] | select(.merged_at and .merge_commit_sha) | [.merge_commit_sha, .number] | @tsv' \
-            > "$pull_file" || true
-
-          # The notes are built from commits rather than from the
-          # releases/generate-notes API: that API only lists pull requests, so
-          # on a repository that also pushes straight to main it silently drops
-          # every commit that did not go through one.
           while IFS=$'\t' read -r sha author_name subject; do
-            # Only the version commit this run created, never a hand-written
-            # commit that happens to share the subject.
+            # Exclude only the version commit created by this release run.
             if [[ "$sha" == "$RELEASE_SHA" && "$subject" == "Bump application version to "* ]]; then
               continue
             fi
 
-            author_login="$(awk -v sha="$sha" '$1 == sha { print $2; exit }' "$login_file")"
+            # Resolve the GitHub account associated with the commit author.
+            author_login="$(
+              gh api \
+                "repos/${repository}/commits/${sha}" \
+                --jq '.author.login // empty'
+            )"
+
             if [[ -n "$author_login" ]]; then
               author="@${author_login}"
             else
               author="$author_name"
             fi
 
-            pull_number="$(awk -v sha="$sha" '$1 == sha { print $2; exit }' "$pull_file")"
+            # Ask GitHub which PR, if any, introduced this commit into main.
+            # This works independently of merge, squash, or rebase merge style.
+            pull_number="$(
+              gh api \
+                "repos/${repository}/commits/${sha}/pulls" \
+                --jq '
+                  [
+                    .[]
+                    | select(
+                        .merged_at != null
+                        and .base.ref == "main"
+                      )
+                  ]
+                  | sort_by(.merged_at)
+                  | last
+                  | .number // empty
+                '
+            )"
+
             if [[ -n "$pull_number" ]]; then
-              reference="https://github.com/${repository}/pull/${pull_number}"
+              reference="[#${pull_number}](https://github.com/${repository}/pull/${pull_number})"
             else
               reference="[\`${sha:0:7}\`](https://github.com/${repository}/commit/${sha})"
             fi
 
-            printf -- '* %s by %s in %s\n' "$subject" "$author" "$reference" >> "$commit_file"
+            printf -- \
+              '* %s by %s in %s\n' \
+              "$subject" \
+              "$author" \
+              "$reference" \
+              >> "$commit_file"
+
           done < <(
-            git log --reverse --no-merges \
+            git log \
+              --reverse \
+              --no-merges \
               --format='%H%x09%an%x09%s' \
               "$revision_range"
           )
@@ -402,11 +479,13 @@ jobs:
           {
             echo "## What's Changed"
             echo
+
             if [[ -s "$commit_file" ]]; then
               cat "$commit_file"
             else
               echo "No user-facing changes were recorded for this release."
             fi
+
             if [[ -n "$previous_tag" ]]; then
               echo
               echo "**Full Changelog**: https://github.com/${repository}/compare/${previous_tag}...${TAG}"
@@ -427,7 +506,13 @@ jobs:
           repository="$GITHUB_REPOSITORY"
 
           if gh release view "$TAG" --repo "$repository" >/dev/null 2>&1; then
-            is_draft="$(gh release view "$TAG" --repo "$repository" --json isDraft --jq '.isDraft')"
+            is_draft="$(
+              gh release view "$TAG" \
+                --repo "$repository" \
+                --json isDraft \
+                --jq '.isDraft'
+            )"
+
             if [[ "$is_draft" != "true" ]]; then
               echo "Release $TAG is already published; refusing to overwrite it." >&2
               exit 1
@@ -444,6 +529,7 @@ jobs:
           gh release upload "$TAG" release-assets/* \
             --repo "$repository" \
             --clobber
+
           gh release edit "$TAG" \
             --repo "$repository" \
             --notes-file "$NOTES_FILE" \
