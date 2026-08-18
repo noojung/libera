@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
 import * as tar from 'tar'
 import { strToU8, zipSync } from 'fflate'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { compressArchive, type ProgressData } from './compressor'
 import {
   buildExtractionPlan,
@@ -18,12 +20,46 @@ import {
   MAX_TOTAL_EXTRACTED_BYTES
 } from './extractor'
 
+const execFileAsync = promisify(execFile)
 const temporaryDirectories: string[] = []
 
 async function createTemporaryDirectory(): Promise<string> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-extractor-'))
   temporaryDirectories.push(directory)
   return directory
+}
+
+/**
+ * The macOS layout: a 32 byte Finder info block padded to a 4 byte boundary,
+ * then the attribute header, one entry and its value.
+ */
+function buildAppleDoubleSidecar(attributeName: string, value: string): Uint8Array {
+  const valueBytes = Buffer.from(value)
+  const nameLength = Buffer.byteLength(attributeName) + 1
+  const finderInfoOffset = 26 + 12
+  const attrHeaderOffset = finderInfoOffset + 32 + 2
+  const entryOffset = attrHeaderOffset + 36
+  const dataStart = entryOffset + 11 + nameLength + ((4 - ((entryOffset + 11 + nameLength) % 4)) % 4)
+  const total = dataStart + valueBytes.length
+
+  const buffer = Buffer.alloc(total)
+  buffer.writeUInt32BE(0x00051607, 0)
+  buffer.writeUInt32BE(0x00020000, 4)
+  buffer.writeUInt16BE(1, 24)
+  buffer.writeUInt32BE(9, 26)
+  buffer.writeUInt32BE(finderInfoOffset, 30)
+  buffer.writeUInt32BE(total - finderInfoOffset, 34)
+  buffer.write('ATTR', attrHeaderOffset, 'ascii')
+  buffer.writeUInt32BE(total, attrHeaderOffset + 8)
+  buffer.writeUInt32BE(dataStart, attrHeaderOffset + 12)
+  buffer.writeUInt16BE(1, attrHeaderOffset + 34)
+  buffer.writeUInt32BE(dataStart, entryOffset)
+  buffer.writeUInt32BE(valueBytes.length, entryOffset + 4)
+  buffer.writeUInt8(nameLength, entryOffset + 10)
+  buffer.write(attributeName, entryOffset + 11, 'ascii')
+  valueBytes.copy(buffer, dataStart)
+
+  return new Uint8Array(buffer)
 }
 
 async function createZip(archivePath: string, entries: Record<string, string>): Promise<void> {
@@ -102,6 +138,112 @@ describe('extractArchive security checks', () => {
     await tar.c({ cwd: sourceDir, file: archivePath }, ['link.txt'])
 
     await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow('symbolic and hard link entries are not supported')
+  })
+
+  it.skipIf(process.platform === 'win32')('recreates a ZIP symlink entry whose target stays inside the destination', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    const symlinkMode = 0o120777 << 16
+    await fs.writeFile(archivePath, zipSync({
+      'real.txt': strToU8('target content'),
+      'link.txt': [strToU8('real.txt'), { os: 3, attrs: symlinkMode }]
+    }))
+
+    await extractArchive({ archivePath, targetDir })
+
+    const linkPath = path.join(targetDir, 'link.txt')
+    await expect(fs.lstat(linkPath).then(stat => stat.isSymbolicLink())).resolves.toBe(true)
+    await expect(fs.readlink(linkPath)).resolves.toBe('real.txt')
+    await expect(fs.readFile(linkPath, 'utf8')).resolves.toBe('target content')
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a ZIP symlink entry whose target escapes the destination', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    const outsidePath = path.join(directory, 'escape.txt')
+    const symlinkMode = 0o120777 << 16
+    await fs.writeFile(archivePath, zipSync({
+      'link.txt': [strToU8('../escape.txt'), { os: 3, attrs: symlinkMode }]
+    }))
+
+    await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow('symlink target escapes the destination')
+    await expect(fs.access(outsidePath)).rejects.toThrow()
+  })
+
+  it.skipIf(process.platform === 'win32')('restores the executable permission recorded in a ZIP entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'run.sh': [strToU8('#!/bin/sh\necho hi\n'), { os: 3, attrs: 0o100755 << 16 }],
+      'plain.txt': [strToU8('data'), { os: 3, attrs: 0o100644 << 16 }]
+    }))
+
+    await extractArchive({ archivePath, targetDir })
+
+    const modeOf = async (name: string) => (await fs.stat(path.join(targetDir, name))).mode & 0o777
+    await expect(modeOf('run.sh')).resolves.toBe(0o755)
+    await expect(modeOf('plain.txt')).resolves.toBe(0o644)
+  })
+
+  it.skipIf(process.platform === 'win32')('strips setuid and setgid bits from ZIP entry permissions', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'sneaky': [strToU8('payload'), { os: 3, attrs: (0o100000 | 0o6755) << 16 }]
+    }))
+
+    await extractArchive({ archivePath, targetDir })
+
+    const stat = await fs.stat(path.join(targetDir, 'sneaky'))
+    expect(stat.mode & 0o7000).toBe(0)
+    expect(stat.mode & 0o777).toBe(0o755)
+  })
+
+  it.skipIf(process.platform !== 'darwin')('folds an AppleDouble sidecar into the extended attributes of its subject', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'signed.wasm': strToU8('payload'),
+      '._signed.wasm': buildAppleDoubleSidecar('com.apple.cs.CodeSignature', 'signature-bytes')
+    }))
+
+    await extractArchive({ archivePath, targetDir })
+
+    // The sidecar itself must not survive: a stray ._ file breaks the sealed
+    // resources of a signed bundle.
+    await expect(fs.access(path.join(targetDir, '._signed.wasm'))).rejects.toThrow()
+    await expect(fs.readFile(path.join(targetDir, 'signed.wasm'), 'utf8')).resolves.toBe('payload')
+
+    const { stdout } = await execFileAsync('xattr', ['-px', 'com.apple.cs.CodeSignature', path.join(targetDir, 'signed.wasm')])
+    expect(Buffer.from(stdout.replace(/\s/g, ''), 'hex').toString()).toBe('signature-bytes')
+  })
+
+  it.skipIf(process.platform !== 'darwin')('keeps a ._ entry that is not AppleDouble as an ordinary file', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { 'notes.txt': 'real', '._notes.txt': 'not a sidecar' })
+
+    await extractArchive({ archivePath, targetDir })
+
+    await expect(fs.readFile(path.join(targetDir, '._notes.txt'), 'utf8')).resolves.toBe('not a sidecar')
+  })
+
+  it.skipIf(process.platform === 'win32')('leaves the restrictive default mode on entries that record no permissions', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { 'note.txt': 'content' })
+
+    await extractArchive({ archivePath, targetDir })
+
+    const stat = await fs.stat(path.join(targetDir, 'note.txt'))
+    expect(stat.mode & 0o777).toBe(0o600)
   })
 
   it('extracts the descendants of a selected directory from a TAR.GZ archive', async () => {
@@ -321,5 +463,74 @@ describe('extraction limits', () => {
     expect(() => buildExtractionPlan([
       { archivePath: 'file.txt', isDirectory: false, size: 11 }
     ], path.resolve('target'), null, policy)).toThrow(ExtractionError)
+  })
+})
+
+/**
+ * The Windows branches decide what libera does with metadata the platform
+ * cannot represent, so they are exercised everywhere by re-importing the module
+ * under a stubbed platform rather than only on a Windows runner.
+ */
+describe('Windows extraction behaviour', () => {
+  async function importExtractorAsWindows(): Promise<typeof import('./extractor')> {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    vi.resetModules()
+    return import('./extractor')
+  }
+
+  const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', realPlatform)
+    vi.resetModules()
+  })
+
+  it('rejects ZIP symlink entries, which Windows cannot create without a privilege', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'real.txt': strToU8('target content'),
+      'link.txt': [strToU8('real.txt'), { os: 3, attrs: 0o120777 << 16 }]
+    }))
+
+    const { extractArchive: extractOnWindows } = await importExtractorAsWindows()
+
+    await expect(extractOnWindows({ archivePath, targetDir }))
+      .rejects.toThrow('symbolic and hard link entries are not supported')
+  })
+
+  it('leaves unix modes unapplied, so a read-only entry stays deletable for rollback', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'runner.sh': [strToU8('#!/bin/sh\n'), { os: 3, attrs: 0o100755 << 16 }],
+      'readonly.txt': [strToU8('content'), { os: 3, attrs: 0o100444 << 16 }]
+    }))
+
+    const { extractArchive: extractOnWindows } = await importExtractorAsWindows()
+    await extractOnWindows({ archivePath, targetDir })
+
+    // Both keep the mode they were created with instead of the archive's.
+    const modeOf = async (name: string) => (await fs.stat(path.join(targetDir, name))).mode & 0o777
+    await expect(modeOf('runner.sh')).resolves.toBe(0o600)
+    await expect(modeOf('readonly.txt')).resolves.toBe(0o600)
+    await expect(fs.unlink(path.join(targetDir, 'readonly.txt'))).resolves.toBeUndefined()
+  })
+
+  it('keeps AppleDouble sidecars as ordinary files, matching every Windows unzip tool', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zipSync({
+      'signed.wasm': strToU8('payload'),
+      '._signed.wasm': buildAppleDoubleSidecar('com.apple.cs.CodeSignature', 'signature-bytes')
+    }))
+
+    const { extractArchive: extractOnWindows } = await importExtractorAsWindows()
+    await extractOnWindows({ archivePath, targetDir })
+
+    await expect(fs.access(path.join(targetDir, '._signed.wasm'))).resolves.toBeUndefined()
   })
 })

@@ -3,12 +3,26 @@ import type { FileHandle } from 'fs/promises'
 import path from 'path'
 import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
-import { ERR_ENCRYPTED, ERR_INVALID_PASSWORD, type Entry, type FileEntry } from '@zip.js/zip.js'
+import {
+  ERR_ENCRYPTED,
+  ERR_INVALID_PASSWORD,
+  TextWriter,
+  Uint8ArrayWriter,
+  type Entry,
+  type FileEntry
+} from '@zip.js/zip.js'
 import * as tar from 'tar'
 import zlib from 'zlib'
 import type { ProgressCallback } from './compressor'
 import { openZipArchive } from './zipFileReader'
 import { isNumberedVolumePath, terminalVolumePath } from './splitZipVolumes'
+import {
+  applyAppleDouble,
+  appleDoubleSubjectPath,
+  MAX_APPLE_DOUBLE_BYTES,
+  parseAppleDouble,
+  type AppleDoubleMetadata
+} from './appleDouble'
 
 export interface ExtractionOptions {
   archivePath: string
@@ -49,6 +63,9 @@ interface PlannedEntry {
   size: number
   shouldExtract: boolean
   source?: unknown
+  isLink?: boolean
+  linkTarget?: string
+  mode?: number
 }
 
 interface ExtractionPlan {
@@ -61,6 +78,8 @@ interface ArchivePlanEntry {
   isDirectory: boolean
   size: number
   isLink?: boolean
+  linkTarget?: string
+  mode?: number
   source?: unknown
 }
 
@@ -284,6 +303,29 @@ function resolveOutputPath(targetRoot: string, entryPath: string): string {
   return outputPath
 }
 
+/**
+ * A symlink entry stores its target as free-form text, so it needs its own
+ * escape check: an absolute target reaches outside the destination outright,
+ * and a relative one is resolved against the link's own directory (not
+ * targetRoot, matching how the OS resolves it) before being range-checked.
+ */
+function assertSafeSymlinkTarget(targetRoot: string, outputPath: string, linkTarget: string): void {
+  if (!linkTarget || linkTarget.includes('\0')) {
+    throw securityError(`symlink has an empty or invalid target: ${outputPath}`)
+  }
+
+  const normalizedTarget = linkTarget.replace(/\\/g, '/')
+  if (normalizedTarget.startsWith('/') || /^[a-zA-Z]:($|\/)/.test(normalizedTarget)) {
+    throw securityError(`symlink target is an absolute path: ${linkTarget}`)
+  }
+
+  const resolvedTarget = path.resolve(path.dirname(outputPath), ...normalizedTarget.split('/'))
+  const relativePath = path.relative(targetRoot, resolvedTarget)
+  if (relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+    throw securityError(`symlink target escapes the destination: ${linkTarget}`)
+  }
+}
+
 async function lstatIfExists(filePath: string): Promise<fs.Stats | null> {
   try {
     return await fsPromises.lstat(filePath)
@@ -436,12 +478,16 @@ export function buildExtractionPlan(
   let selectedTotalBytes = 0
   const outputPaths = new Map<string, PlannedEntry>()
   const plannedEntries = entries.map(entry => {
-    if (entry.isLink) throw securityError(`symbolic and hard link entries are not supported: ${entry.archivePath}`)
     if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
       throw securityError(`entry has an invalid size: ${entry.archivePath}`)
     }
 
     const shouldExtract = matchesSelectedEntry(entry.archivePath, selectedEntries)
+    // Unselected link entries are never read or written, so only entries
+    // actually slated for extraction need a resolved, validated target.
+    if (entry.isLink && shouldExtract && !entry.linkTarget) {
+      throw securityError(`symbolic and hard link entries are not supported: ${entry.archivePath}`)
+    }
     if (shouldExtract && entry.size > policy.maxFileBytes) {
       throw securityError(`entry exceeds the ${formatBinaryBytes(policy.maxFileBytes)} file size limit: ${entry.archivePath}`, 'FILE_TOO_LARGE')
     }
@@ -453,13 +499,19 @@ export function buildExtractionPlan(
     }
 
     const normalizedPath = normalizeEntryPath(entry.archivePath)
+    const outputPath = resolveOutputPath(targetRoot, normalizedPath)
+    if (entry.isLink && shouldExtract) assertSafeSymlinkTarget(targetRoot, outputPath, entry.linkTarget!)
+
     const plannedEntry: PlannedEntry = {
       archivePath: entry.archivePath,
-      outputPath: resolveOutputPath(targetRoot, normalizedPath),
+      outputPath,
       isDirectory: entry.isDirectory,
       size: entry.size,
       shouldExtract,
-      source: entry.source
+      source: entry.source,
+      isLink: entry.isLink,
+      linkTarget: entry.linkTarget,
+      mode: entry.mode
     }
     const outputKey = process.platform === 'win32' ? plannedEntry.outputPath.toLowerCase() : plannedEntry.outputPath
     if (outputPaths.has(outputKey)) throw securityError(`archive contains duplicate output paths: ${entry.archivePath}`)
@@ -492,9 +544,38 @@ async function validateSelectedDestinations(targetRoot: string, entries: Planned
   }
 }
 
+// Only macOS has anywhere to put the metadata a sidecar carries; elsewhere the
+// sidecars stay ordinary files, which is what every other unzip tool does.
+const mergesAppleDouble = process.platform === 'darwin'
+
+// Windows creates symbolic links only for a process that is elevated or in
+// developer mode. Leaving link entries rejected there keeps the clear "not
+// supported" message instead of failing part way through with a privilege
+// error that the user cannot act on.
+const restoresSymbolicLinks = process.platform !== 'win32'
+
+// Windows collapses a whole unix mode onto a single read-only flag, so
+// restoring one buys nothing and costs a lot: an entry recorded as 0o444 would
+// become an undeletable file that extraction rollback then leaves behind.
+const restoresUnixMode = process.platform !== 'win32'
+
+function zipUnixMode(entry: Entry): number {
+  return entry.unixMode ?? ((entry.externalFileAttributes >>> 16) & 0xffff)
+}
+
 function isZipSymbolicLink(entry: Entry): boolean {
-  const unixMode = entry.unixMode ?? ((entry.externalFileAttributes >>> 16) & 0xffff)
-  return (unixMode & 0o170000) === 0o120000
+  return (zipUnixMode(entry) & 0o170000) === 0o120000
+}
+
+/**
+ * The permission bits an entry should end up with, with setuid/setgid/sticky
+ * stripped so no archive can grant them. Entries written by non-Unix tools
+ * carry no mode at all and keep the restrictive mode they are created with,
+ * which is why a zero result means "leave it alone" rather than "mode 0".
+ */
+function archivePermissions(unixMode: number): number | undefined {
+  const permissions = unixMode & 0o777
+  return permissions === 0 ? undefined : permissions
 }
 
 async function defaultAvailableBytes(targetRoot: string): Promise<bigint> {
@@ -536,6 +617,15 @@ async function createOwnedWebWriter(
   }
 }
 
+async function createOwnedSymlink(
+  outputPath: string,
+  linkTarget: string,
+  transaction: ExtractionTransaction
+): Promise<void> {
+  await fsPromises.symlink(linkTarget, outputPath)
+  transaction.recordFile(outputPath)
+}
+
 async function openOwnedNodeWriteStream(
   outputPath: string,
   transaction: ExtractionTransaction
@@ -563,18 +653,52 @@ async function extractZipArchive(
       throw securityError(`archive contains more than ${policy.maxEntries.toLocaleString()} entries`, 'TOO_MANY_ENTRIES')
     }
     const selectedPaths = selectedEntries ? new Set(selectedEntries) : null
-    const plan = buildExtractionPlan(
-      zip.entries.map(entry => ({
+    const archiveEntries: ArchivePlanEntry[] = []
+    const entryNames = new Set(zip.entries.map(entry => entry.filename))
+    // Sidecars are folded onto their subject rather than written out, keyed by
+    // the archive path of the file they describe.
+    const sidecars = new Map<string, AppleDoubleMetadata>()
+
+    for (const entry of zip.entries) {
+      if (mergesAppleDouble) {
+        const subjectPath = appleDoubleSubjectPath(entry.filename)
+        const foldsIntoSubject = subjectPath !== null &&
+          !entry.directory &&
+          entryNames.has(subjectPath) &&
+          matchesSelectedEntry(subjectPath, selectedPaths) &&
+          Number(entry.uncompressedSize) <= MAX_APPLE_DOUBLE_BYTES
+        if (foldsIntoSubject) {
+          const raw = await (entry as FileEntry).getData(new Uint8ArrayWriter(), { password })
+          const metadata = parseAppleDouble(Buffer.from(raw))
+          // Bytes that are not AppleDouble belong to a file that merely looks
+          // like a sidecar, and fall through to normal extraction.
+          if (metadata) {
+            sidecars.set(subjectPath!, metadata)
+            continue
+          }
+        }
+      }
+
+      const isLink = isZipSymbolicLink(entry)
+      // Only entries slated for extraction get their target read, so an
+      // unselected, undecryptable symlink can't block the rest of the archive.
+      // Leaving the target unread on Windows is what falls back to rejecting
+      // the entry, since the plan treats a link without a target as unsupported.
+      const linkTarget = isLink && restoresSymbolicLinks && !entry.directory &&
+        matchesSelectedEntry(entry.filename, selectedPaths)
+        ? await (entry as FileEntry).getData(new TextWriter(), { password })
+        : undefined
+      archiveEntries.push({
         archivePath: entry.filename,
         isDirectory: entry.directory,
         size: entry.directory ? 0 : Number(entry.uncompressedSize),
-        isLink: isZipSymbolicLink(entry),
+        isLink,
+        linkTarget,
+        mode: restoresUnixMode ? archivePermissions(zipUnixMode(entry)) : undefined,
         source: entry
-      })),
-      targetRoot,
-      selectedPaths,
-      policy
-    )
+      })
+    }
+    const plan = buildExtractionPlan(archiveEntries, targetRoot, selectedPaths, policy)
     if (plan.selectedTotalBytes > diskBudget) {
       throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
     }
@@ -590,6 +714,14 @@ async function extractZipArchive(
       }
 
       await ensureSafeParentDirectories(targetRoot, entry.outputPath, transaction)
+
+      if (entry.isLink) {
+        await createOwnedSymlink(entry.outputPath, entry.linkTarget!, transaction)
+        meter.consume(entry.size, 0, entry.archivePath)
+        extractedCount++
+        continue
+      }
+
       let fileBytes = 0
       const output = await createOwnedWebWriter(entry.outputPath, transaction, byteLength => {
         fileBytes = meter.consume(byteLength, fileBytes, entry.archivePath)
@@ -606,6 +738,13 @@ async function extractZipArchive(
       } finally {
         await output.close()
       }
+      // Metadata goes on while the file is still owner writable, since a
+      // read-only mode would block the resource fork write.
+      const sidecar = sidecars.get(entry.archivePath)
+      if (sidecar) await applyAppleDouble(entry.outputPath, sidecar)
+      // Widened only now that the contents are complete, so a half written file
+      // is never executable and never readable by anyone but the owner.
+      if (entry.mode !== undefined) await fsPromises.chmod(entry.outputPath, entry.mode)
       extractedCount++
     }
 
