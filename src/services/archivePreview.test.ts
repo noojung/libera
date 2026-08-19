@@ -92,6 +92,7 @@ afterEach(async () => {
 describe('previewArchiveEntry', () => {
   it.each([
     ['ZIP', 'sample.zip', false],
+    ['JAR', 'sample.jar', false],
     ['TAR', 'sample.tar', false],
     ['TGZ', 'sample.tgz', true],
     ['TAR.GZ', 'sample.tar.gz', true],
@@ -101,7 +102,7 @@ describe('previewArchiveEntry', () => {
     const archivePath = path.join(directory, archiveName)
     const contents = `hello from ${format}`
 
-    if (format === 'ZIP') {
+    if (format === 'ZIP' || format === 'JAR') {
       await writeZip(archivePath, [{ name: 'sample.txt', contents }])
     } else if (format === 'GZ') {
       await fs.writeFile(archivePath, zlib.gzipSync(contents))

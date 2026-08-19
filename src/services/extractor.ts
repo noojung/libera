@@ -15,7 +15,7 @@ import zlib from 'zlib'
 import type { ProgressCallback } from './compressor'
 import { openZipArchive } from './zipFileReader'
 import { isNumberedVolumePath } from './splitZipVolumes'
-import { canonicalArchivePath } from './archiveVolumes'
+import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZipVolumes'
 import { extractSevenZipArchive } from './sevenZipExtractor'
 import {
@@ -70,7 +70,7 @@ export interface ExtractionOptions {
   password?: string
 }
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()
@@ -413,7 +413,7 @@ export async function extractArchive(
 
     const ext = path.extname(archivePath).toLowerCase()
     const fullExt = archivePath.toLowerCase()
-    if (ext === '.zip') {
+    if (isZipFormatExtension(ext)) {
       return await extractZipArchive(
         archivePath, targetRoot, selectedEntries, password, startTime, policy,
         diskBudget, transaction, context.signal, onProgress

@@ -4,7 +4,7 @@ import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
-import { canonicalArchivePath } from './archiveVolumes'
+import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { listSevenZipEntries } from './sevenZipList'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZipVolumes'
 
@@ -107,7 +107,7 @@ export async function inspectArchive(
   if (!stat.isFile()) throw new Error('Archive inspection requires a file')
   let totalCompressedSize = stat.size
 
-  if (ext === '.zip') {
+  if (isZipFormatExtension(ext)) {
     const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES)
     try {
       // A split set's size is the whole set, not just the volume opened.
@@ -132,7 +132,7 @@ export async function inspectArchive(
 
       return {
         archivePath,
-        format: 'ZIP',
+        format: ext === '.jar' ? 'JAR' : 'ZIP',
         volumeCount: zip.volumePaths.length,
         passwordProtected: zip.entries.some(entry => entry.encrypted),
         totalFiles: entries.filter(entry => !entry.isDirectory).length,

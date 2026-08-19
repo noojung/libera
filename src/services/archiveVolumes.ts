@@ -10,3 +10,11 @@ import { firstVolumePath, isSevenZipVolumePath } from './sevenZipVolumes'
 export function canonicalArchivePath(archivePath: string): string {
   return isSevenZipVolumePath(archivePath) ? firstVolumePath(archivePath) : terminalVolumePath(archivePath)
 }
+
+/**
+ * Extensions read by the ZIP reader. A JAR is a ZIP with a manifest, so it is
+ * listed, previewed, and extracted through exactly the same path.
+ */
+export function isZipFormatExtension(extension: string): boolean {
+  return extension === '.zip' || extension === '.jar'
+}

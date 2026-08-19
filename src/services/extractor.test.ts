@@ -79,6 +79,7 @@ describe('extractArchive security checks', () => {
     expect(isSupportedArchivePath('/tmp/archive.TAR.GZ')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.7z')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.7z.001')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/library.jar')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.rar')).toBe(false)
   })
 
@@ -91,6 +92,24 @@ describe('extractArchive security checks', () => {
     await extractArchive({ archivePath, targetDir })
 
     await expect(fs.readFile(path.join(targetDir, 'docs', 'readme.txt'), 'utf8')).resolves.toBe('safe content')
+  })
+
+  it('extracts a JAR through the ZIP reader', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'library.jar')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, {
+      'META-INF/MANIFEST.MF': 'Manifest-Version: 1.0\n',
+      'com/example/App.class': 'class bytes'
+    })
+
+    const result = await extractArchive({ archivePath, targetDir })
+
+    expect(result.extractedCount).toBeGreaterThanOrEqual(2)
+    await expect(fs.readFile(path.join(targetDir, 'META-INF', 'MANIFEST.MF'), 'utf8'))
+      .resolves.toBe('Manifest-Version: 1.0\n')
+    await expect(fs.readFile(path.join(targetDir, 'com', 'example', 'App.class'), 'utf8'))
+      .resolves.toBe('class bytes')
   })
 
   it('does not overwrite an existing destination file', async () => {

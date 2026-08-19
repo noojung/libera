@@ -7,7 +7,7 @@ import * as tar from 'tar'
 import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
-import { canonicalArchivePath } from './archiveVolumes'
+import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath } from './sevenZipVolumes'
 import { listSevenZipEntries } from './sevenZipList'
 import { classifySevenZipExit, SevenZipError, spawnSevenZip } from './sevenZip'
@@ -613,7 +613,7 @@ export async function previewArchiveEntry(
   const ext = path.extname(archivePath).toLowerCase()
   const fullExt = archivePath.toLowerCase()
   let preview: CollectedArchiveEntry
-  if (ext === '.zip') {
+  if (isZipFormatExtension(ext)) {
     preview = await readZipEntry(archivePath, entryIndex, context.signal)
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
     preview = await readTarEntry(archivePath, entryIndex, context.signal)

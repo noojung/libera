@@ -28,15 +28,15 @@ export const resources = {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
         dropArchives: 'Drop archive files here! 🐾',
         filesAndFoldersHint: 'Select multiple files, folders, or archives to extract',
-        archivesHint: 'ZIP, 7Z, TAR, TAR.GZ, and GZ files only',
+        archivesHint: 'ZIP, JAR, 7Z, TAR, TAR.GZ, and GZ files only',
         browseFiles: 'Browse files',
         browseFolders: 'Browse folders',
         selectedItems_one: '{{count}} selected item',
         selectedItems_other: '{{count}} selected items',
         clearAll: 'Clear all',
         removeItem: 'Remove {{name}}',
-        unsupportedArchive: 'Only ZIP, 7Z, TAR, TAR.GZ, and GZ archive files can be added.',
-        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, 7Z, TAR, TAR.GZ, or GZ files.'
+        unsupportedArchive: 'Only ZIP, JAR, 7Z, TAR, TAR.GZ, and GZ archive files can be added.',
+        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, JAR, 7Z, TAR, TAR.GZ, or GZ files.'
       },
       compression: {
         title: 'Compression options ⚙️',
@@ -261,14 +261,14 @@ export const resources = {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
         dropArchives: '압축 파일을 여기에 놓아주세요! 🐾',
         filesAndFoldersHint: '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능',
-        archivesHint: 'ZIP, 7Z, TAR, TAR.GZ, GZ 파일만 선택 가능',
+        archivesHint: 'ZIP, JAR, 7Z, TAR, TAR.GZ, GZ 파일만 선택 가능',
         browseFiles: '파일 찾아보기',
         browseFolders: '폴더 찾아보기',
         selectedItems: '선택한 항목 ({{count}}개)',
         clearAll: '전체 비우기',
         removeItem: '{{name}} 제거',
-        unsupportedArchive: 'ZIP, 7Z, TAR, TAR.GZ, GZ 압축 파일만 추가할 수 있습니다.',
-        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, 7Z, TAR, TAR.GZ, GZ 파일을 선택해 주세요.'
+        unsupportedArchive: 'ZIP, JAR, 7Z, TAR, TAR.GZ, GZ 압축 파일만 추가할 수 있습니다.',
+        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, JAR, 7Z, TAR, TAR.GZ, GZ 파일을 선택해 주세요.'
       },
       compression: {
         title: '압축 옵션 설정 ⚙️',
