@@ -35,16 +35,25 @@ import {
 // whose headers understate a size: the stream then ends short or runs long,
 // and both are refused below.
 
+const STREAM_HIGH_WATER_MARK = 8 * 1024 * 1024
+
 /** Pulls exactly the requested byte counts out of a stream, in order. */
-class StreamSplitter {
-  private buffer: Buffer = Buffer.alloc(0)
+export class StreamSplitter {
+  private readonly chunks: Buffer[] = []
+  private queuedBytes = 0
+  private paused = false
   private ended = false
   private waiting: (() => void) | null = null
   private failure: Error | null = null
 
-  constructor(source: NodeJS.ReadableStream) {
+  constructor(private readonly source: NodeJS.ReadableStream) {
     source.on('data', (chunk: Buffer) => {
-      this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
+      this.chunks.push(chunk)
+      this.queuedBytes += chunk.length
+      if (!this.paused && this.queuedBytes >= STREAM_HIGH_WATER_MARK) {
+        this.paused = true
+        source.pause()
+      }
       this.wake()
     })
     source.on('end', () => {
@@ -65,7 +74,7 @@ class StreamSplitter {
   }
 
   private async fill(): Promise<void> {
-    if (this.ended || this.buffer.length > 0) return
+    if (this.ended || this.queuedBytes > 0) return
     await new Promise<void>(resolve => {
       this.waiting = resolve
     })
@@ -75,16 +84,24 @@ class StreamSplitter {
   async *take(byteCount: number): AsyncGenerator<Buffer> {
     let remaining = byteCount
     while (remaining > 0) {
-      if (this.buffer.length === 0) {
+      if (this.queuedBytes === 0) {
         await this.fill()
         if (this.failure) throw this.failure
-        if (this.buffer.length === 0 && this.ended) return
+        if (this.queuedBytes === 0 && this.ended) return
       }
 
-      const take = Math.min(remaining, this.buffer.length)
-      const chunk = this.buffer.subarray(0, take)
-      this.buffer = this.buffer.subarray(take)
+      const head = this.chunks[0]
+      const take = Math.min(remaining, head.length)
+      const chunk = take === head.length ? this.chunks.shift()! : head.subarray(0, take)
+      if (take !== head.length) this.chunks[0] = head.subarray(take)
+      this.queuedBytes -= take
       remaining -= take
+
+      if (this.paused && this.queuedBytes < STREAM_HIGH_WATER_MARK) {
+        this.paused = false
+        this.source.resume()
+      }
+
       yield chunk
     }
   }
@@ -99,14 +116,16 @@ class StreamSplitter {
   async isExhausted(): Promise<boolean> {
     await this.fill()
     if (this.failure) throw this.failure
-    return this.buffer.length === 0 && this.ended
+    return this.queuedBytes === 0 && this.ended
   }
 }
+
+const CHILD_EXIT_GRACE_MS = 5_000
 
 interface SevenZipStream {
   splitter: StreamSplitter
   finish: () => Promise<void>
-  kill: () => void
+  kill: () => Promise<void>
 }
 
 /**
@@ -130,22 +149,35 @@ async function openContentStream(
     stderr += text
   })
 
-  const kill = () => {
-    if (child.exitCode === null && child.signalCode === null) child.kill()
-  }
-  const onAbort = () => kill()
-  signal?.addEventListener('abort', onAbort, { once: true })
-
   const exited = new Promise<number>((resolve, reject) => {
     child.on('error', reject)
     child.on('close', code => resolve(code ?? 0))
   })
+  const settled = exited.catch(() => undefined)
+
+  const detach = () => signal?.removeEventListener('abort', onAbort)
+
+  const kill = async () => {
+    detach()
+    if (child.exitCode === null && child.signalCode === null) {
+      child.stdout.destroy()
+      child.kill()
+    }
+    await Promise.race([
+      settled,
+      new Promise<void>(resolve => setTimeout(resolve, CHILD_EXIT_GRACE_MS).unref())
+    ])
+  }
+  const onAbort = () => {
+    void kill()
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
 
   return {
     splitter: new StreamSplitter(child.stdout),
     kill,
     finish: async () => {
-      signal?.removeEventListener('abort', onAbort)
+      detach()
       const exitCode = await exited
       const failure = classifySevenZipExit(exitCode, stderr, password !== undefined)
       if (failure) throw failure
@@ -177,7 +209,7 @@ async function readLinkTargets(
     }
     await stream.finish()
   } finally {
-    stream.kill()
+    await stream.kill()
   }
 
   return targets
@@ -278,7 +310,7 @@ export async function extractSevenZipArchive(
       }
       await stream.finish()
     } finally {
-      stream.kill()
+      await stream.kill()
     }
   }
 
@@ -302,7 +334,7 @@ async function writeFileEntry(
 
   try {
     for await (const chunk of splitter.take(entry.size)) {
-      await writer.write(new Uint8Array(chunk))
+      await writer.write(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
     }
     await writer.close()
   } catch (error) {

@@ -1,7 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, crashReporter, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
-import { promises as fsPromises } from 'fs'
-import { compressArchive, CompressionError, CompressionOptions, calculateTotalSize } from '../services/compressor'
+import fs, { promises as fsPromises } from 'fs'
+import {
+  compressArchive,
+  CompressionError,
+  CompressionOptions,
+  calculateTotalSize,
+  type ProgressCallback,
+  type ProgressData
+} from '../services/compressor'
 import {
   extractArchive,
   ExtractionError,
@@ -20,6 +27,85 @@ const activeExtractionControllers = new Map<string, AbortController>()
 const activePreviewControllers = new Map<string, AbortController>()
 
 type Operation = 'compression' | 'extraction' | 'inspection' | 'preview'
+
+const PROGRESS_INTERVAL_MS = 100
+
+interface ProgressForwarder {
+  forward: ProgressCallback
+  cancel: () => void
+}
+
+function createProgressForwarder(jobId: string): ProgressForwarder {
+  let lastSentAt = 0
+  let pending: ProgressData | null = null
+  let timer: NodeJS.Timeout | null = null
+
+  const send = (data: ProgressData) => {
+    pending = null
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    lastSentAt = Date.now()
+    if (!mainWindow || mainWindow.webContents.isDestroyed()) return
+    mainWindow.webContents.send('archive:progress', { jobId, ...data })
+  }
+
+  return {
+    forward: (data: ProgressData) => {
+      if (data.phase !== 'processing') {
+        send(data)
+        return
+      }
+
+      const waited = Date.now() - lastSentAt
+      if (waited >= PROGRESS_INTERVAL_MS) {
+        send(data)
+        return
+      }
+
+      pending = data
+      if (!timer) {
+        timer = setTimeout(() => {
+          timer = null
+          if (pending) send(pending)
+        }, PROGRESS_INTERVAL_MS - waited)
+      }
+    },
+    cancel: () => {
+      pending = null
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    }
+  }
+}
+
+function logFatal(kind: string, error: unknown): void {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  const line = `[${new Date().toISOString()}] ${kind}: ${detail}\n`
+  try {
+    const directory = path.join(app.getPath('userData'), 'logs')
+    fs.mkdirSync(directory, { recursive: true })
+    fs.appendFileSync(path.join(directory, 'main.log'), line)
+  } catch {
+    /* empty */
+  }
+  process.stderr.write(line)
+}
+
+crashReporter.start({ uploadToServer: false })
+
+process.on('uncaughtException', (error) => {
+  logFatal('uncaughtException', error)
+  dialog.showErrorBox('Libera', error instanceof Error ? error.message : String(error))
+  app.exit(1)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logFatal('unhandledRejection', reason)
+})
 
 /**
  * The machine readable half of a password failure. The renderer prompts on
@@ -144,6 +230,10 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logFatal('render-process-gone', `${details.reason} (exitCode ${details.exitCode})`)
+  })
+
   mainWindow.on('closed', () => {
     for (const controller of activeCompressionControllers.values()) controller.abort()
     activeCompressionControllers.clear()
@@ -236,14 +326,14 @@ ipcMain.handle('dialog:selectExtractFolder', async (_, title?: string) => {
 ipcMain.handle('archive:compress', async (_, options: CompressionOptions, jobId: string) => {
   const controller = new AbortController()
   activeCompressionControllers.set(jobId, controller)
+  const progress = createProgressForwarder(jobId)
   try {
-    const result = await compressArchive(options, (progress) => {
-      mainWindow?.webContents.send('archive:progress', { jobId, ...progress })
-    }, { signal: controller.signal })
+    const result = await compressArchive(options, progress.forward, { signal: controller.signal })
     return { success: true, result }
   } catch (err: any) {
     return { success: false, error: err.message || 'Compression failed', errorCode: classifyError(err, 'compression') }
   } finally {
+    progress.cancel()
     if (activeCompressionControllers.get(jobId) === controller) activeCompressionControllers.delete(jobId)
   }
 })
@@ -251,10 +341,9 @@ ipcMain.handle('archive:compress', async (_, options: CompressionOptions, jobId:
 ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: string) => {
   const controller = new AbortController()
   activeExtractionControllers.set(jobId, controller)
+  const progress = createProgressForwarder(jobId)
   try {
-    const result = await extractArchive(options, (progress) => {
-      mainWindow?.webContents.send('archive:progress', { jobId, ...progress })
-    }, { signal: controller.signal })
+    const result = await extractArchive(options, progress.forward, { signal: controller.signal })
     return { success: true, result }
   } catch (err: any) {
     return {
@@ -264,6 +353,7 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
       code: passwordFailureCode(err)
     }
   } finally {
+    progress.cancel()
     if (activeExtractionControllers.get(jobId) === controller) activeExtractionControllers.delete(jobId)
   }
 })
