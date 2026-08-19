@@ -1,6 +1,7 @@
 // Builds the third-party license list the app's About screen reads. Run
-// automatically before dev/build (see package.json) so it can never drift
-// from package.json; also checked by a test that regenerates it and diffs.
+// automatically before dev/build/test (see package.json) so it can never drift
+// from package.json; CI regenerates it and fails on any diff, so the generated
+// file has to be committed alongside the dependency change that moves it.
 const fs = require('fs')
 const path = require('path')
 
