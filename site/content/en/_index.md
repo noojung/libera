@@ -77,7 +77,7 @@ how_to:
         - Pick a destination and start.
     - number: "02"
       title: Extract
-      description: Safely extract ZIP, 7Z, TAR, TAR.GZ, or GZ files.
+      description: Safely extract ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, or GZ files.
       steps:
         - Add one or more archives.
         - Choose a destination and subfolder option.
@@ -104,6 +104,10 @@ formats:
       detail: compress · extract · inspect
     - name: GZ
       detail: single-file compression · extraction · preview
+    - name: JAR
+      detail: extraction · preview
+    - name: WAR
+      detail: extraction · preview
 download:
   kicker: Start for free
   title: Meet Libera today.

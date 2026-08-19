@@ -77,7 +77,7 @@ how_to:
         - 저장 위치를 정하고 시작합니다.
     - number: "02"
       title: 압축 풀기
-      description: ZIP, 7Z, TAR, TAR.GZ 또는 GZ 파일을 안전하게 풉니다.
+      description: ZIP, JAR, WAR, 7Z, TAR, TAR.GZ 또는 GZ 파일을 안전하게 풉니다.
       steps:
         - 압축 파일을 하나 이상 추가합니다.
         - 저장 폴더와 하위 폴더 옵션을 고릅니다.
@@ -104,6 +104,10 @@ formats:
       detail: 압축 · 해제 · 탐색
     - name: GZ
       detail: 단일 파일 압축 · 해제 · 미리보기
+    - name: JAR
+      detail: 해제 · 미리보기
+    - name: WAR
+      detail: 해제 · 미리보기
 download:
   kicker: 무료로 시작하세요
   title: 지금 Libera를 만나보세요.
