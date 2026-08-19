@@ -119,6 +119,10 @@
       </div>
       {{- end }}
     </div>
+    <aside class="security-note">
+      <span aria-hidden="true">🔐</span>
+      <p><strong>{{ .security_title }}</strong>{{ .security_description }}</p>
+    </aside>
   </section>
   {{- end }}
 
@@ -139,10 +143,6 @@
       {{- end }}
       <p class="download-note">{{ .note }}</p>
     </div>
-    <aside class="security-note">
-      <span aria-hidden="true">🔐</span>
-      <p><strong>{{ .security_title }}</strong>{{ .security_description }}</p>
-    </aside>
   </section>
   {{- end }}
 

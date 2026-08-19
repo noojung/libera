@@ -108,6 +108,8 @@ formats:
       detail: extract · preview
     - name: WAR
       detail: extract · preview
+  security_title: About ZIP passwords
+  security_description: ZIP encryption uses ZipCrypto for compatibility. Do not rely on it as strong confidentiality for sensitive files.
 download:
   kicker: Start for free
   title: Meet Libera today.
@@ -121,8 +123,6 @@ download:
       name: Windows
       detail: 64-bit x64
   note: The installers are not currently signed with a public code-signing certificate, so macOS Gatekeeper or Windows SmartScreen may show a warning.
-  security_title: About ZIP passwords
-  security_description: ZIP encryption uses ZipCrypto for compatibility. Do not rely on it as strong confidentiality for sensitive files.
 closing:
   label: Project links
   message: Made for lighter, safer file handling.

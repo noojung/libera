@@ -108,6 +108,8 @@ formats:
       detail: 해제 · 미리보기
     - name: WAR
       detail: 해제 · 미리보기
+  security_title: ZIP 비밀번호 안내
+  security_description: ZIP 암호화는 호환성을 위한 ZipCrypto 방식입니다. 민감한 파일의 강한 기밀 보호 수단으로 사용하지 마세요.
 download:
   kicker: 무료로 시작하세요
   title: 지금 Libera를 만나보세요.
@@ -121,8 +123,6 @@ download:
       name: Windows
       detail: 64비트 x64
   note: 현재 설치 파일은 공인 코드 서명이 없어 macOS Gatekeeper 또는 Windows SmartScreen 경고가 표시될 수 있습니다.
-  security_title: ZIP 비밀번호 안내
-  security_description: ZIP 암호화는 호환성을 위한 ZipCrypto 방식입니다. 민감한 파일의 강한 기밀 보호 수단으로 사용하지 마세요.
 closing:
   label: 프로젝트 링크
   message: 가볍고 안전한 파일 작업을 위해 만들었습니다.
