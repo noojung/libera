@@ -20,6 +20,7 @@ import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/splitZipVolumes'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
 import { SevenZipError } from '../services/sevenZip'
+import appInfo from '../renderer/src/generated/appInfo.json'
 
 let mainWindow: BrowserWindow | null = null
 const activeCompressionControllers = new Map<string, AbortController>()
@@ -246,6 +247,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // The system About panel would otherwise show electron-builder's default
+  // copyright line, which names the package author rather than the project.
+  // Both this and the in-app about dialog read the same generated metadata.
+  app.setAboutPanelOptions({
+    applicationName: 'Libera',
+    applicationVersion: appInfo.version,
+    copyright: `© ${appInfo.copyrightYear} ${appInfo.copyrightHolder}`
+  })
+
   createWindow()
 
   app.on('activate', () => {

@@ -47,6 +47,7 @@
   "build": {
     "appId": "com.libera.app",
     "productName": "Libera",
+    "copyright": "© 2026 Libera",
     "afterPack": "scripts/afterPack.cjs",
     "directories": {
       "output": "release/${version}"

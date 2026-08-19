@@ -16,6 +16,16 @@ describe('generateAppInfo', () => {
     expect(info.copyrightHolder).toBeTruthy()
   })
 
+  it('keeps the packaged copyright in step with LICENSE', () => {
+    const info = generate()
+    // electron-builder writes build.copyright into the bundle metadata, while
+    // the About panel and the about dialog read the generated file, so the two
+    // have to agree on one line.
+    const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+
+    expect(packageJson.build.copyright).toBe(`© ${info.copyrightYear} ${info.copyrightHolder}`)
+  })
+
   it('matches the file the app actually ships, so a version bump cannot go unnoticed', () => {
     const committed = fs.readFileSync(outputPath, 'utf8')
     const fresh = `${JSON.stringify(generate(), null, 2)}\n`
