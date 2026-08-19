@@ -46,6 +46,9 @@ features:
     - icon: 📋
       title: Keep jobs under control
       description: Follow progress and the current file, cancel extraction or previews, and open the result folder when a job finishes.
+    - icon: 🌗
+      title: Light or dark, your call
+      description: Switch between the light and dark themes, or let Libera follow whatever your operating system is set to.
   showcase_label: Libera's main screens
   showcase:
     - image: images/libera-app-compress.png

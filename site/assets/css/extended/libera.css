@@ -386,6 +386,9 @@ body.list {
 
 .card-icon {
   display: inline-flex;
+  /* Feature cards lay the icon out as a flex item, where the default shrink
+     would squash the circle into an ellipse. */
+  flex: none;
   width: 50px;
   height: 50px;
   align-items: center;

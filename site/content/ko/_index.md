@@ -46,6 +46,9 @@ features:
     - icon: 📋
       title: 작업을 차분하게 관리
       description: 진행률과 현재 파일을 확인하고, 압축 해제나 미리보기를 취소하고, 완료된 결과 폴더를 바로 열 수 있습니다.
+    - icon: 🌗
+      title: 밝게도, 어둡게도
+      description: 라이트와 다크 테마를 바꿔 쓰거나, 시스템 설정을 그대로 따르도록 맡길 수 있습니다.
   showcase_label: Libera 주요 화면
   showcase:
     - image: images/libera-app-compress.png

@@ -37,6 +37,7 @@ playwright-report/
 .vscode/
 .idea/*
 !.idea/icon.svg
+.claude/
 *.swp
 *.swo
 
