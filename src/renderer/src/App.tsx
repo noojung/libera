@@ -266,6 +266,9 @@ export const App: React.FC = () => {
     }
 
     setJobs(prev => [newJob, ...prev])
+    // The queue owns the job from here on, so the panel starts empty again -
+    // the same handoff the extraction panel makes.
+    setSelectedItems([])
     setMode('queue')
 
     if ((window as any).electronAPI) {

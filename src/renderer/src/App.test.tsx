@@ -125,6 +125,10 @@ describe('App orchestration', () => {
     await waitFor(() => expect(api.compressArchive).toHaveBeenCalledOnce())
     const jobId = compressArchive.mock.calls[0][1]
     expect(compressArchive.mock.calls[0][0].inputPaths).toEqual(['C:\\input.txt'])
+    // The queue owns the running job, so returning to the panel starts over.
+    await user.click(screen.getByRole('button', { name: 'Mode compress' }))
+    expect(screen.getByTestId('compress-count')).toHaveTextContent('0')
+    await user.click(screen.getByRole('button', { name: 'Mode queue' }))
     act(() => progress({ jobId, processedBytes: 42, totalBytes: 100, percent: 42, phase: 'compressing' }))
     expect(screen.getByTestId(`job-${jobId}`)).toHaveTextContent(':running:42:')
 
