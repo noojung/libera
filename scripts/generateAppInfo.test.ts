@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
-const { generate, outputPath } = require('./generateAppInfo.cjs')
+import { generate, outputPath } from './generateAppInfo.cjs'
 
 describe('generateAppInfo', () => {
   it('reads version and links from package.json and copyright from LICENSE', () => {
