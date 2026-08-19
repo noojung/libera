@@ -1,6 +1,6 @@
 {
   "name": "libera",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Libera - Cross-platform compression utility desktop app built with Electron, TypeScript, and React",
   "author": "Hyunwoo Jung",
   "homepage": "https://noojung.github.io/libera/",
