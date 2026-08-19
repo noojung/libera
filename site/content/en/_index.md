@@ -32,7 +32,7 @@ philosophy:
 features:
   kicker: What Libera can do
   title: Everything you need in one place
-  description: Create, extract, and inspect archives in one calm, straightforward flow.
+  description: Create, extract, and preview archives in one calm, straightforward flow.
   items:
     - icon: 📦
       title: Compress your way
@@ -95,19 +95,19 @@ formats:
   description: Libera focuses on the archive formats people use most often.
   items:
     - name: ZIP
-      detail: compress · extract · inspect · compatibility password
+      detail: compress · extract · preview · password
     - name: 7Z
-      detail: compress · extract · inspect
+      detail: compress · extract · preview
     - name: TAR
-      detail: compress · extract · inspect
+      detail: compress · extract · preview
     - name: TAR.GZ
-      detail: compress · extract · inspect
+      detail: compress · extract · preview
     - name: GZ
-      detail: single-file compression · extraction · preview
+      detail: compress · extract · preview
     - name: JAR
-      detail: extraction · preview
+      detail: extract · preview
     - name: WAR
-      detail: extraction · preview
+      detail: extract · preview
 download:
   kicker: Start for free
   title: Meet Libera today.

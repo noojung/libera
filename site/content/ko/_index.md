@@ -95,15 +95,15 @@ formats:
   description: 일반적으로 사용하는 압축 형식을 간결하게 지원합니다.
   items:
     - name: ZIP
-      detail: 압축 · 해제 · 탐색 · 호환용 비밀번호
+      detail: 압축 · 해제 · 미리보기 · 비밀번호
     - name: 7Z
-      detail: 압축 · 해제 · 탐색
+      detail: 압축 · 해제 · 미리보기
     - name: TAR
-      detail: 압축 · 해제 · 탐색
+      detail: 압축 · 해제 · 미리보기
     - name: TAR.GZ
-      detail: 압축 · 해제 · 탐색
+      detail: 압축 · 해제 · 미리보기
     - name: GZ
-      detail: 단일 파일 압축 · 해제 · 미리보기
+      detail: 압축 · 해제 · 미리보기
     - name: JAR
       detail: 해제 · 미리보기
     - name: WAR
