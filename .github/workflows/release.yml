@@ -205,7 +205,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add package.json package-lock.json
+          # The About screen reads the version from a generated file, so it has
+          # to be regenerated and committed alongside package.json.
+          npm run generate:metadata
+
+          git add package.json package-lock.json src/renderer/src/generated
 
           if git diff --cached --quiet; then
             echo "The version command did not update package.json or package-lock.json." >&2
@@ -214,7 +218,7 @@ jobs:
 
           unexpected_files="$(
             git diff --cached --name-only |
-              grep -Ev '^(package.json|package-lock.json)$' || true
+              grep -Ev '^(package.json|package-lock.json|src/renderer/src/generated/.*\.json)$' || true
           )"
 
           if [[ -n "$unexpected_files" ]]; then
