@@ -52,4 +52,35 @@ describe('TitleBar', () => {
     rerender(<TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Minimize window' })).not.toBeInTheDocument()
   })
+
+  it('defaults to system theme and cycles through light, dark, and system modes on click', async () => {
+    localStorage.clear()
+    document.documentElement.removeAttribute('data-theme')
+    installElectronApi()
+
+    const { user } = renderWithI18n(
+      <TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={vi.fn()} />
+    )
+
+    const themeButton = screen.getByRole('button', { name: 'Switch theme' })
+    expect(themeButton).toHaveAttribute('title', 'System theme (Auto)')
+
+    // 1st click: system -> light
+    await user.click(themeButton)
+    expect(themeButton).toHaveAttribute('title', 'Light mode')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expect(localStorage.getItem('libera_theme')).toBe('light')
+
+    // 2nd click: light -> dark
+    await user.click(themeButton)
+    expect(themeButton).toHaveAttribute('title', 'Dark mode')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expect(localStorage.getItem('libera_theme')).toBe('dark')
+
+    // 3rd click: dark -> system
+    await user.click(themeButton)
+    expect(themeButton).toHaveAttribute('title', 'System theme (Auto)')
+    expect(localStorage.getItem('libera_theme')).toBe('system')
+  })
 })
+

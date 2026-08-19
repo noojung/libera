@@ -9,7 +9,7 @@
   flex: 1;
   padding: 20px;
   overflow: hidden;
-  background: #F8FAFC;
+  background: var(--bg-dark);
 }
 
 .app-workspace {

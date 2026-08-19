@@ -6,7 +6,7 @@
   padding: 24px;
   align-items: center;
   justify-content: center;
-  background: rgba(54, 45, 39, 0.42);
+  background: var(--modal-backdrop);
 }
 
 .licenses-modal__dialog {
@@ -40,21 +40,21 @@
   height: 40px;
   flex: 0 0 auto;
   place-items: center;
-  border: 2px solid #4A403A;
+  border: 2px solid var(--border-doodle);
   border-radius: 50%;
-  background: #F0F9EC;
-  color: #52B788;
+  background: var(--bg-pill);
+  color: var(--status-success);
 }
 
 .licenses-modal__title {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 20px;
 }
 
 .licenses-modal__description {
   margin-top: 2px;
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -64,15 +64,16 @@
   height: 34px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1.5px solid #4A403A;
+  border: 1.5px solid var(--border-doodle);
   border-radius: 10px;
-  background: #FFFFFF;
-  color: #362D27;
+  background: var(--bg-card);
+  color: var(--text-main);
   cursor: pointer;
+  box-shadow: 1.5px 1.5px 0 var(--border-shadow);
 }
 
 .licenses-modal__close:hover {
-  background: #FFF3E4;
+  background: var(--bg-pill);
 }
 
 .licenses-modal__body {
@@ -80,9 +81,9 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  border: 1px solid #E8DFD5;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: #FCFAF7;
+  background: var(--bg-surface-subtle);
 }
 
 .licenses-modal__list {
@@ -90,7 +91,7 @@
   overflow-y: auto;
   flex: 0 0 220px;
   flex-direction: column;
-  border-right: 1px solid #E8DFD5;
+  border-right: 1px solid var(--border-subtle);
 }
 
 .licenses-modal__package {
@@ -99,28 +100,28 @@
   flex-direction: column;
   gap: 2px;
   border: none;
-  border-bottom: 1px solid #EFE9E1;
+  border-bottom: 1px solid var(--border-subtle);
   background: transparent;
   cursor: pointer;
   text-align: left;
 }
 
 .licenses-modal__package:hover {
-  background: #FFF3E4;
+  background: var(--bg-pill);
 }
 
 .licenses-modal__package.is-active {
-  background: #FFE8D1;
+  background: var(--bg-secondary-hover);
 }
 
 .licenses-modal__package-name {
-  color: #362D27;
+  color: var(--text-main);
   font-size: 13px;
   font-weight: 600;
 }
 
 .licenses-modal__package-meta {
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -135,7 +136,7 @@
   width: 100%;
   padding: 18px;
   overflow: auto;
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
@@ -149,6 +150,6 @@
   padding: 24px;
   align-items: center;
   justify-content: center;
-  color: #6E6158;
+  color: var(--text-muted);
   text-align: center;
 }

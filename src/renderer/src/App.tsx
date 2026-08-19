@@ -26,6 +26,7 @@ import {
 import './styles/theme.css'
 import './App.css'
 import { useTranslation } from 'react-i18next'
+import { initTheme } from './utils/theme'
 
 export const App: React.FC = () => {
   const { t } = useTranslation()
@@ -87,6 +88,8 @@ export const App: React.FC = () => {
   }
 
   useEffect(() => {
+    const { cleanup: cleanupTheme } = initTheme()
+
     if ((window as any).electronAPI) {
       const unsubscribe = (window as any).electronAPI.onProgress((data: any) => {
         setJobs(prevJobs =>
@@ -106,10 +109,13 @@ export const App: React.FC = () => {
         )
       })
       return () => {
+        cleanupTheme()
         if (unsubscribe) unsubscribe()
       }
     }
-    return undefined
+    return () => {
+      cleanupTheme()
+    }
   }, [])
 
   const handleAddFiles = async (paths: string[]) => {

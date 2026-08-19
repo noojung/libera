@@ -24,22 +24,22 @@
   height: 44px;
   align-items: center;
   justify-content: center;
-  border: 2px solid #4A403A;
+  border: 2px solid var(--border-doodle);
   border-radius: 50%;
-  background: #FFF3E4;
-  color: #FF8E72;
-  box-shadow: 2px 2px 0 #4A403A;
+  background: var(--bg-pill);
+  color: var(--accent-peach);
+  box-shadow: 2px 2px 0 var(--border-shadow);
 }
 
 .archive-inspector__title {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 20px;
   font-weight: 700;
 }
 
 .archive-inspector__subtitle {
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -51,7 +51,7 @@
 }
 
 .archive-inspector__state--loading {
-  color: #FF8E72;
+  color: var(--accent-peach);
   font-family: var(--font-cute);
   font-size: 18px;
   font-weight: 700;
@@ -64,7 +64,7 @@
 }
 
 .archive-inspector__state--error {
-  color: #E76F51;
+  color: var(--status-danger);
   font-size: 15px;
   font-weight: 600;
 }
@@ -88,7 +88,7 @@
 }
 
 .archive-inspector__stat-label {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-cute);
   font-size: 14px;
   font-weight: 700;
@@ -96,14 +96,14 @@
 
 .archive-inspector__stat-value {
   margin-top: 2px;
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 22px;
   font-weight: 700;
 }
 
 .archive-inspector__stat-value--accent {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .archive-inspector__stat-value--size {
@@ -113,7 +113,7 @@
 }
 
 .archive-inspector__stat-value--success {
-  color: #52B788;
+  color: var(--status-success);
 }
 
 .archive-inspector__browser {
@@ -130,7 +130,7 @@
   margin-bottom: 12px;
   align-items: center;
   gap: 8px;
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -138,7 +138,7 @@
 .archive-inspector__breadcrumb {
   border: none;
   background: transparent;
-  color: #362D27;
+  color: var(--text-main);
   cursor: pointer;
 }
 
@@ -154,13 +154,13 @@
 }
 
 .archive-inspector__breadcrumb.is-active {
-  color: #FF8E72;
+  color: var(--accent-peach);
   font-weight: 700;
 }
 
 .archive-inspector__breadcrumb-separator,
 .archive-inspector__entry-chevron {
-  color: #A3968C;
+  color: var(--text-dim);
 }
 
 .archive-inspector__toolbar {
@@ -177,7 +177,7 @@
 }
 
 .archive-inspector__search-icon {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .input-text.archive-inspector__search-input {
@@ -187,7 +187,7 @@
 }
 
 .archive-inspector__entry-count {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-cute);
   font-size: 14px;
   font-weight: 700;
@@ -201,8 +201,8 @@
 
 .archive-inspector__table-header {
   padding-bottom: 8px;
-  border-bottom: 2px solid #4A403A;
-  color: #362D27;
+  border-bottom: 2px solid var(--border-doodle);
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 15px;
   font-weight: 700;
@@ -226,9 +226,9 @@
   padding: 10px 0;
   align-items: center;
   border: none;
-  border-bottom: 1px dashed #E8DFD5;
+  border-bottom: 1px dashed var(--border-subtle);
   background: transparent;
-  color: #362D27;
+  color: var(--text-main);
   font-size: 13px;
   text-align: left;
   cursor: default;
@@ -241,7 +241,7 @@
 
 .archive-inspector__entry.is-navigable:hover,
 .archive-inspector__entry.is-previewable:hover {
-  background: #FFF9F3;
+  background: var(--bg-card-hover);
 }
 
 .archive-inspector__entry-main {
@@ -252,11 +252,11 @@
 }
 
 .archive-inspector__entry-icon--folder {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .archive-inspector__entry-icon--file {
-  color: #5A9EED;
+  color: var(--accent-blue);
 }
 
 .archive-inspector__entry-name {
@@ -267,22 +267,22 @@
 }
 
 .archive-inspector__entry-size {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 
 .archive-inspector__entry-compressed-size {
-  color: #A3968C;
+  color: var(--text-dim);
   font-family: var(--font-mono);
 }
 
 .archive-inspector__entry-ratio {
-  color: #6E6158;
+  color: var(--text-muted);
   font-weight: 600;
 }
 
 .archive-inspector__entry-ratio.is-positive {
-  color: #52B788;
+  color: var(--status-success);
 }
 
 .archive-inspector__load-more {
@@ -292,7 +292,7 @@
 
 .archive-inspector__empty {
   padding: 28px;
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 13px;
   text-align: center;
 }
@@ -302,11 +302,11 @@
 }
 
 .archive-inspector__empty-icon {
-  color: #D9CEC1;
+  color: var(--text-dim);
 }
 
 .archive-inspector__empty-title {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-cute);
   font-size: 18px;
 }

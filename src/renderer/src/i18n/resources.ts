@@ -17,7 +17,12 @@ export const resources = {
         minimize: 'Minimize window',
         maximize: 'Maximize or restore window',
         close: 'Close window',
-        about: 'App info'
+        about: 'App info',
+        themeSelector: 'Theme',
+        themeToggle: 'Switch theme',
+        themeLight: 'Light mode',
+        themeDark: 'Dark mode',
+        themeSystem: 'System theme (Auto)'
       },
       dropZone: {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
@@ -245,7 +250,12 @@ export const resources = {
         minimize: '창 최소화',
         maximize: '창 최대화 또는 복원',
         close: '창 닫기',
-        about: '앱 정보'
+        about: '앱 정보',
+        themeSelector: '테마',
+        themeToggle: '테마 변경',
+        themeLight: '라이트 모드',
+        themeDark: '다크 모드',
+        themeSystem: '시스템 테마 (자동)'
       },
       dropZone: {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',

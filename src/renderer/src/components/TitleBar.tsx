@@ -1,10 +1,15 @@
-import React from 'react'
-import { Archive, Info, Layers, ListTodo, Minus, Search, Square, X } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Archive, Contrast, Info, Layers, ListTodo, Minus, Moon, Search, Square, Sun, X } from 'lucide-react'
 import { AppMode } from '../types'
 import logoImg from '../assets/logo.png'
 import { useTranslation } from 'react-i18next'
 import { applyLanguage } from '../i18n'
 import type { AppLanguage } from '../i18n/language'
+import {
+  getStoredThemePreference,
+  applyTheme,
+  type ThemePreference
+} from '../utils/theme'
 
 interface TitleBarProps {
   currentMode: AppMode
@@ -25,10 +30,49 @@ const tabs = [
 export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, activeQueueCount, onShowAbout }) => {
   const { t, i18n } = useTranslation()
   const currentLanguage: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => getStoredThemePreference())
   const electronAPI = (window as any).electronAPI
   const platform = electronAPI?.platform as DesktopPlatform | undefined
   const isWindows = platform === 'windows'
   const platformClass = platform ? `titlebar--${platform}` : 'titlebar--browser'
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setThemePreference(getStoredThemePreference())
+    }
+
+    window.addEventListener?.('storage', handleStorage)
+
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      const handleMediaChange = () => {
+        if (getStoredThemePreference() === 'system') {
+          applyTheme('system')
+        }
+      }
+      mediaQuery.addEventListener?.('change', handleMediaChange)
+      return () => {
+        mediaQuery.removeEventListener?.('change', handleMediaChange)
+        window.removeEventListener?.('storage', handleStorage)
+      }
+    }
+
+    return () => {
+      window.removeEventListener?.('storage', handleStorage)
+    }
+  }, [])
+
+  const handleCycleTheme = () => {
+    const nextPreference: ThemePreference =
+      themePreference === 'system'
+        ? 'light'
+        : themePreference === 'light'
+          ? 'dark'
+          : 'system'
+
+    applyTheme(nextPreference)
+    setThemePreference(nextPreference)
+  }
 
   const handleMinimize = () => electronAPI?.minimizeWindow()
   const handleMaximize = () => electronAPI?.maximizeWindow()
@@ -66,6 +110,27 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
       </nav>
 
       <div className={`titlebar__actions${isWindows ? ' titlebar__actions--windows' : ''}`}>
+        <button
+          type="button"
+          className="titlebar__theme-button"
+          aria-label={t('titleBar.themeToggle')}
+          title={
+            themePreference === 'system'
+              ? t('titleBar.themeSystem')
+              : themePreference === 'light'
+                ? t('titleBar.themeLight')
+                : t('titleBar.themeDark')
+          }
+          onClick={handleCycleTheme}
+        >
+          {themePreference === 'system' ? (
+            <Contrast size={16} aria-hidden="true" />
+          ) : themePreference === 'light' ? (
+            <Sun size={16} aria-hidden="true" />
+          ) : (
+            <Moon size={16} aria-hidden="true" />
+          )}
+        </button>
         <button
           type="button"
           className="titlebar__info-button"

@@ -13,14 +13,14 @@
 }
 
 .queue-manager__title {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 20px;
   font-weight: 700;
 }
 
 .queue-manager__subtitle {
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -39,7 +39,7 @@
   justify-content: center;
   flex-direction: column;
   gap: 10px;
-  color: #A3968C;
+  color: var(--text-dim);
   font-family: var(--font-cute);
   font-size: 18px;
 }
@@ -52,23 +52,23 @@
 }
 
 .glass-panel.queue-manager__job--completed {
-  border-left: 6px solid #52B788;
+  border-left: 6px solid var(--status-success);
 }
 
 .glass-panel.queue-manager__job--error {
-  border-left: 6px solid #E76F51;
+  border-left: 6px solid var(--status-danger);
 }
 
 .glass-panel.queue-manager__job--cancelled {
-  border-left: 6px solid #A3968C;
+  border-left: 6px solid var(--text-dim);
 }
 
 .glass-panel.queue-manager__job--pending {
-  border-left: 6px solid #5A9EED;
+  border-left: 6px solid var(--accent-blue);
 }
 
 .glass-panel.queue-manager__job--running {
-  border-left: 6px solid #FF8E72;
+  border-left: 6px solid var(--accent-peach);
 }
 
 .queue-manager__job-header {
@@ -84,22 +84,22 @@
 }
 
 .queue-manager__job-icon--compress {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .queue-manager__job-icon--extract {
-  color: #5A9EED;
+  color: var(--accent-blue);
 }
 
 .queue-manager__job-name {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 17px;
   font-weight: 700;
 }
 
 .queue-manager__job-type {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-cute);
   font-size: 14px;
 }
@@ -122,23 +122,23 @@
 }
 
 .queue-manager__status--running {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .queue-manager__status--pending {
-  color: #5A9EED;
+  color: var(--accent-blue);
 }
 
 .queue-manager__status--completed {
-  color: #52B788;
+  color: var(--status-success);
 }
 
 .queue-manager__status--error {
-  color: #E76F51;
+  color: var(--status-danger);
 }
 
 .queue-manager__status--cancelled {
-  color: #A3968C;
+  color: var(--text-dim);
 }
 
 .queue-manager__spinner {
@@ -155,9 +155,9 @@
   width: 100%;
   height: 10px;
   overflow: hidden;
-  border: 1.5px solid #4A403A;
+  border: 1.5px solid var(--border-doodle);
   border-radius: 999px;
-  background: #FFF3E4;
+  background: var(--bg-pill);
 }
 
 .queue-progress__bar {
@@ -195,26 +195,26 @@
 .queue-manager__progress-details {
   display: flex;
   justify-content: space-between;
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
 }
 
 .queue-manager__error {
-  color: #E76F51;
+  color: var(--status-danger);
   font-size: 12px;
 }
 
 .queue-manager__completed-details {
   display: flex;
   gap: 16px;
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .queue-manager__saved {
-  color: #52B788;
+  color: var(--status-success);
   font-family: var(--font-cute);
   font-size: 14px;
   font-weight: 700;

@@ -18,18 +18,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 18px;
   font-weight: 700;
 }
 
 .extraction-panel__title-icon {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .extraction-panel__summary {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -37,7 +37,7 @@
 .extraction-panel__label {
   display: block;
   margin-bottom: 6px;
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 15px;
   font-weight: 700;
@@ -57,28 +57,28 @@
   padding: 14px;
   align-items: center;
   gap: 10px;
-  border: 1.5px solid #4A403A;
+  border: 1.5px solid var(--border-doodle);
   border-radius: 12px;
-  background: #FAF7F2;
+  background: var(--bg-surface-subtle);
   cursor: pointer;
 }
 
 .extraction-panel__checkbox {
   width: 18px;
   height: 18px;
-  accent-color: #FF8E72;
+  accent-color: var(--accent-peach);
   cursor: pointer;
 }
 
 .extraction-panel__option-title {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 15px;
   font-weight: 700;
 }
 
 .extraction-panel__option-description {
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 12px;
 }
 

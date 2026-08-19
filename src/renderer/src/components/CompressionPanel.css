@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 18px;
   font-weight: 700;
@@ -28,17 +28,17 @@
 
 .compression-panel__title-icon,
 .compression-panel__level-value {
-  color: #FF8E72;
+  color: var(--accent-peach);
 }
 
 .compression-panel__summary {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .compression-panel__label {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 15px;
   font-weight: 700;
@@ -65,10 +65,10 @@
 .compression-panel__format-button,
 .compression-panel__split-button {
   padding: 10px;
-  border: 1.5px solid #4A403A;
+  border: 1.5px solid var(--border-doodle);
   border-radius: 12px;
-  background: #FFFFFF;
-  color: #362D27;
+  background: var(--bg-card);
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 16px;
   font-weight: 700;
@@ -79,10 +79,10 @@
 
 .compression-panel__format-button.is-active,
 .compression-panel__split-button.is-active {
-  border: 2px solid #FF8E72;
-  background: #FFF3E4;
-  color: #FF8E72;
-  box-shadow: 2px 2px 0 #4A403A;
+  border: 2px solid var(--accent-peach);
+  background: var(--bg-pill);
+  color: var(--accent-peach);
+  box-shadow: 2px 2px 0 var(--border-shadow);
 }
 
 .compression-panel__level-header {
@@ -99,12 +99,12 @@
 
 .compression-panel__range {
   width: 100%;
-  accent-color: #FF8E72;
+  accent-color: var(--accent-peach);
   cursor: pointer;
 }
 
 .compression-panel__optional {
-  color: #6E6158;
+  color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 400;
@@ -118,12 +118,12 @@
 
 .compression-panel__message {
   margin-top: 6px;
-  color: #6E6158;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .compression-panel__message--error {
-  color: #E76F51;
+  color: var(--status-danger);
 }
 
 .compression-panel__split-option {
@@ -131,21 +131,21 @@
   padding: 14px;
   align-items: center;
   gap: 10px;
-  border: 1.5px solid #4A403A;
+  border: 1.5px solid var(--border-doodle);
   border-radius: 12px;
-  background: #FAF7F2;
+  background: var(--bg-surface-subtle);
   cursor: pointer;
 }
 
 .compression-panel__checkbox {
   width: 18px;
   height: 18px;
-  accent-color: #FF8E72;
+  accent-color: var(--accent-peach);
   cursor: pointer;
 }
 
 .compression-panel__option-title {
-  color: #362D27;
+  color: var(--text-main);
   font-family: var(--font-cute);
   font-size: 15px;
   font-weight: 700;
@@ -157,9 +157,9 @@
   padding: 14px;
   flex-direction: column;
   gap: 10px;
-  border: 2px dashed #E0D2C4;
+  border: 2px dashed var(--border-subtle);
   border-radius: var(--radius-lg);
-  background: #FFFDFA;
+  background: var(--bg-surface-subtle);
   animation: compression-panel-unfold 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
