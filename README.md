@@ -111,9 +111,9 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 | Feature | Formats | Constraints |
 | --- | --- | --- |
-| Compression | ZIP, 7Z, TAR, TGZ, GZ | GZ supports a single file only |
-| Extraction | ZIP, 7Z, TAR, TGZ, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, 7Z, TAR, TGZ, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
+| Compression | ZIP, 7Z, TAR, TAR.GZ, GZ | GZ supports a single file only |
+| Extraction | ZIP, 7Z, TAR, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
+| Inspection | ZIP, 7Z, TAR, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
 | Passwords | ZIP (create), ZIP and 7Z (open) | ZIP uses ZipCrypto for compatibility and does not provide strong confidentiality. Encrypted 7Z archives can be opened with a password, but Libera does not create them |
 | Split volumes | ZIP, 7Z | ZIP writes `.z01 … .zip` and is read from the last volume; 7Z writes `.7z.001 …` and is read from the first |
 

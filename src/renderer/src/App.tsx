@@ -19,6 +19,8 @@ import {
   canonicalArchivePath,
   EXTRACT_DIALOG_EXTENSIONS,
   SEVEN_ZIP_VOLUME_SUFFIX,
+  archiveBaseName,
+  formatFromArchiveName,
   type ArchiveFormat,
 } from './utils/archivePaths'
 import './styles/theme.css'
@@ -307,7 +309,7 @@ export const App: React.FC = () => {
 
     const newJobs: ActiveJob[] = extractItems.map((item, idx) => {
       const jobId = `job-${Date.now()}-${idx}`
-      const archiveName = item.name.replace(/\.[^/.]+$/, '')
+      const archiveName = archiveBaseName(item.name)
       const sep = options.targetDir.includes('\\') ? '\\' : '/'
       const outputPath = options.createSubfolder
         ? `${options.targetDir}${sep}${archiveName}`
@@ -318,7 +320,7 @@ export const App: React.FC = () => {
         type: 'extract',
         sourceName: item.name,
         itemCount: 1,
-        format: item.name.split('.').pop() || 'zip',
+        format: formatFromArchiveName(item.name),
         outputPath,
         status: 'pending',
         phase: 'extracting',

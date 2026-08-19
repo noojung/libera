@@ -206,13 +206,13 @@ ipcMain.handle('dialog:selectFiles', async (_, options?: { allowDirectories?: bo
   return result.filePaths
 })
 
-ipcMain.handle('dialog:selectSaveLocation', async (_, defaultName: string, format: string, labels?: { archiveFilter?: string; allFiles?: string }) => {
+ipcMain.handle('dialog:selectSaveLocation', async (_, defaultName: string, extension: string, labels?: { archiveFilter?: string; allFiles?: string }) => {
   if (!mainWindow) return null
 
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath: defaultName,
     filters: [
-      { name: labels?.archiveFilter || `${format.toUpperCase()} archive`, extensions: [format] },
+      { name: labels?.archiveFilter || `${extension.toUpperCase()} archive`, extensions: [extension] },
       { name: labels?.allFiles || 'All files', extensions: ['*'] }
     ]
   })

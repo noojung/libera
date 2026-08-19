@@ -21,7 +21,7 @@ export interface ElectronAPI {
   maximizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
   selectFiles: (options?: SelectFilesOptions) => Promise<string[]>
-  selectSaveLocation: (defaultName: string, format: string, labels?: SaveDialogLabels) => Promise<string | null>
+  selectSaveLocation: (defaultName: string, extension: string, labels?: SaveDialogLabels) => Promise<string | null>
   selectExtractFolder: (title?: string) => Promise<string | null>
   compressArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string }>
   extractArchive: (options: any, jobId: string) => Promise<{ success: boolean; result?: any; error?: string; errorCode?: string; code?: string }>
@@ -43,7 +43,7 @@ const api: ElectronAPI = {
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   selectFiles: (options) => ipcRenderer.invoke('dialog:selectFiles', options),
-  selectSaveLocation: (defaultName, format, labels) => ipcRenderer.invoke('dialog:selectSaveLocation', defaultName, format, labels),
+  selectSaveLocation: (defaultName, extension, labels) => ipcRenderer.invoke('dialog:selectSaveLocation', defaultName, extension, labels),
   selectExtractFolder: (title) => ipcRenderer.invoke('dialog:selectExtractFolder', title),
   compressArchive: (options, jobId) => ipcRenderer.invoke('archive:compress', options, jobId),
   extractArchive: (options, jobId) => ipcRenderer.invoke('archive:extract', options, jobId),

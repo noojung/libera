@@ -3,6 +3,7 @@ import { FolderOpen, CheckCircle, AlertCircle, Loader2, Archive, Download, Clock
 import { ActiveJob } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes, formatDuration } from '../i18n/format'
+import { formatLabel } from '../utils/archivePaths'
 import type { AppLanguage } from '../i18n/language'
 import './QueueManager.css'
 
@@ -75,7 +76,7 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                       {getJobName(job)}
                     </h4>
                     <span className="queue-manager__job-type">
-                      {t(job.type === 'compress' ? 'queue.typeCompress' : 'queue.typeExtract')} • {job.format.toUpperCase()}
+                      {t(job.type === 'compress' ? 'queue.typeCompress' : 'queue.typeExtract')} • {formatLabel(job.format)}
                     </span>
                   </div>
                 </div>

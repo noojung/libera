@@ -74,3 +74,59 @@ export function supportsPassword(format: ArchiveFormat): boolean {
 export function supportsSplit(format: ArchiveFormat): boolean {
   return format === 'zip' || format === '7z'
 }
+
+/** The extension written for each format. TGZ archives are named `.tar.gz`. */
+const FORMAT_EXTENSIONS: Record<ArchiveFormat, string> = {
+  zip: '.zip',
+  tar: '.tar',
+  gz: '.gz',
+  tgz: '.tar.gz',
+  '7z': '.7z'
+}
+
+/** Extensions the save dialog may leave behind, rewritten to the canonical one. */
+const FORMAT_EXTENSION_ALIASES: Record<ArchiveFormat, readonly string[]> = {
+  zip: [],
+  tar: [],
+  gz: [],
+  tgz: ['.tgz', '.tar', '.gz'],
+  '7z': []
+}
+
+export function archiveExtension(format: ArchiveFormat): string {
+  return FORMAT_EXTENSIONS[format]
+}
+
+/** The single extension the save dialog filters on; `.tar.gz` filters as `gz`. */
+export function saveDialogExtension(format: ArchiveFormat): string {
+  return FORMAT_EXTENSIONS[format].split('.').pop() as string
+}
+
+/** How a format is named in the UI, so `tgz` reads as TAR.GZ. */
+export function formatLabel(format: string): string {
+  return (format === 'tgz' ? 'tar.gz' : format).toUpperCase()
+}
+
+/** Forces `filePath` to carry the format's extension, replacing a known alias. */
+export function withArchiveExtension(filePath: string, format: ArchiveFormat): string {
+  const canonical = FORMAT_EXTENSIONS[format]
+  const normalizedPath = filePath.toLowerCase()
+  if (normalizedPath.endsWith(canonical)) return filePath
+  for (const alias of FORMAT_EXTENSION_ALIASES[format]) {
+    if (normalizedPath.endsWith(alias)) return `${filePath.slice(0, -alias.length)}${canonical}`
+  }
+  return `${filePath}${canonical}`
+}
+
+/** The format an archive picked for extraction is listed under. */
+export function formatFromArchiveName(archiveName: string): string {
+  const normalizedName = archiveName.toLowerCase()
+  if (normalizedName.endsWith('.tar.gz') || normalizedName.endsWith('.tgz')) return 'tgz'
+  return normalizedName.split('.').pop() || 'zip'
+}
+
+/** An archive's name without its extension, `.tar.gz` counting as one. */
+export function archiveBaseName(archiveName: string): string {
+  if (archiveName.toLowerCase().endsWith('.tar.gz')) return archiveName.slice(0, -'.tar.gz'.length)
+  return archiveName.replace(/\.[^/.]+$/, '')
+}

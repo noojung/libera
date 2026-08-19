@@ -88,4 +88,25 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Split into volumes')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
   })
+
+  it('names TGZ archives .tar.gz, including a save path that came back as .tgz', async () => {
+    const api = installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output'),
+      selectSaveLocation: vi.fn().mockResolvedValue('D:\\backup.tgz')
+    })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+
+    await user.click(screen.getByRole('button', { name: '.TAR.GZ' }))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'tgz',
+      outputPath: 'C:\\output\\archive.tar.gz'
+    }))
+
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => expect(api.selectSaveLocation).toHaveBeenCalledWith('archive.tar.gz', 'gz', expect.any(Object)))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+    expect(onStart).toHaveBeenLastCalledWith(expect.objectContaining({ outputPath: 'D:\\backup.tar.gz' }))
+  })
 })

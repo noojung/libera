@@ -3,7 +3,16 @@ import { Sliders, Archive } from 'lucide-react'
 import { SelectedItem } from '../types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '../i18n/format'
-import { COMPRESSION_FORMATS, supportsPassword, supportsSplit, type ArchiveFormat } from '../utils/archivePaths'
+import {
+  COMPRESSION_FORMATS,
+  archiveExtension,
+  formatLabel,
+  saveDialogExtension,
+  supportsPassword,
+  supportsSplit,
+  withArchiveExtension,
+  type ArchiveFormat
+} from '../utils/archivePaths'
 import type { AppLanguage } from '../i18n/language'
 import './CompressionPanel.css'
 
@@ -56,13 +65,14 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
   const handleSelectSavePath = async () => {
     if ((window as any).electronAPI) {
-      const defaultName = `${customName}.${format}`
-      const chosenPath = await (window as any).electronAPI.selectSaveLocation(defaultName, format, {
-        archiveFilter: t('dialogs.archiveFilter', { format: format.toUpperCase() }),
+      const defaultName = `${customName}${archiveExtension(format)}`
+      const chosenPath = await (window as any).electronAPI.selectSaveLocation(defaultName, saveDialogExtension(format), {
+        archiveFilter: t('dialogs.archiveFilter', { format: formatLabel(format) }),
         allFiles: t('dialogs.allFiles')
       })
       if (chosenPath) {
-        setOutputPath(chosenPath)
+        // The dialog can hand back an alias extension, or none at all.
+        setOutputPath(withArchiveExtension(chosenPath, format))
       }
     }
   }
@@ -91,7 +101,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       return
     }
     const sep = defaultDir.includes('\\') ? '\\' : '/'
-    const fallbackPath = defaultDir ? `${defaultDir}${sep}${customName}.${format}` : `${customName}.${format}`
+    const defaultName = `${customName}${archiveExtension(format)}`
+    const fallbackPath = defaultDir ? `${defaultDir}${sep}${defaultName}` : defaultName
     const finalOutput = outputPath || fallbackPath
     onStartCompress({
       format,
@@ -127,7 +138,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               onClick={() => setFormat(fmt)}
               className={`compression-panel__format-button${format === fmt ? ' is-active' : ''}`}
             >
-              .{fmt.toUpperCase()}
+              .{formatLabel(fmt)}
             </button>
           ))}
         </div>

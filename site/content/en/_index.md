@@ -36,7 +36,7 @@ features:
   items:
     - icon: 📦
       title: Compress your way
-      description: Create ZIP, 7Z, TAR, TGZ, and GZ archives, and tune the compression level to balance speed and file size.
+      description: Create ZIP, 7Z, TAR, TAR.GZ, and GZ archives, and tune the compression level to balance speed and file size.
     - icon: 📂
       title: Extract safely
       description: Extract several archives at once and optionally give each one its own folder. Safety checks are always on.
@@ -74,7 +74,7 @@ how_to:
         - Pick a destination and start.
     - number: "02"
       title: Extract
-      description: Safely extract ZIP, 7Z, TAR, TGZ, TAR.GZ, or GZ files.
+      description: Safely extract ZIP, 7Z, TAR, TAR.GZ, or GZ files.
       steps:
         - Add one or more archives.
         - Choose a destination and subfolder option.
@@ -97,7 +97,7 @@ formats:
       detail: compress · extract · inspect
     - name: TAR
       detail: compress · extract · inspect
-    - name: TGZ / TAR.GZ
+    - name: TAR.GZ
       detail: compress · extract · inspect
     - name: GZ
       detail: single-file compression · extraction · preview
