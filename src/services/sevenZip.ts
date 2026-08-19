@@ -85,6 +85,8 @@ export function isWrongSevenZipPasswordText(text: string): boolean {
   return WRONG_PASSWORD_PATTERNS.some(pattern => pattern.test(text))
 }
 
+const PASSWORD_PROMPT_PATTERN = /enter password/i
+
 /**
  * Maps a finished process onto an error, or null when it succeeded. Exit 1 is
  * 7-Zip's "warning" status (an unreadable input file, say) and is deliberately
@@ -101,9 +103,14 @@ export function classifySevenZipExit(
   stdout: string = ''
 ): SevenZipError | null {
   if (exitCode === 0 || exitCode === 1) return null
-  if (exitCode === 255) return new SevenZipError('SEVEN_ZIP_CANCELLED', '7-Zip was stopped', exitCode)
 
   const combinedOutput = `${stdout}\n${stderr}`
+  if (exitCode === 255) {
+    return !suppliedPassword && PASSWORD_PROMPT_PATTERN.test(combinedOutput)
+      ? new SevenZipError('SEVEN_ZIP_PASSWORD_REQUIRED', 'The archive needs a password', exitCode)
+      : new SevenZipError('SEVEN_ZIP_CANCELLED', '7-Zip was stopped', exitCode)
+  }
+
   if (isWrongSevenZipPasswordText(combinedOutput)) {
     return suppliedPassword
       ? new SevenZipError('SEVEN_ZIP_WRONG_PASSWORD', 'Wrong archive password', exitCode)
@@ -131,7 +138,8 @@ export function classifySevenZipExit(
  */
 export function buildSevenZipArguments(args: string[], password: string | undefined): string[] {
   const asksForPasswordOnStdin = password !== undefined && args[0] === 'a'
-  return asksForPasswordOnStdin ? ['-y', '-p', ...args] : ['-y', ...args]
+  const base = ['-y', '-sccUTF-8']
+  return asksForPasswordOnStdin ? [...base, '-p', ...args] : [...base, ...args]
 }
 
 /** `a` asks for the password and then a confirmation; reads ask once. */

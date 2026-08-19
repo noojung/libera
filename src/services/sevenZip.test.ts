@@ -100,16 +100,16 @@ describe('isWrongSevenZipPasswordText', () => {
 
 describe('buildSevenZipArguments', () => {
   it('never puts the password on the command line, where the process list would expose it', () => {
-    expect(buildSevenZipArguments(['l', 'enc.7z'], 'hunter2')).toEqual(['-y', 'l', 'enc.7z'])
-    expect(buildSevenZipArguments(['a', 'out.7z', 'src'], 'hunter2')).toEqual(['-y', '-p', 'a', 'out.7z', 'src'])
+    expect(buildSevenZipArguments(['l', 'enc.7z'], 'hunter2')).toEqual(['-y', '-sccUTF-8', 'l', 'enc.7z'])
+    expect(buildSevenZipArguments(['a', 'out.7z', 'src'], 'hunter2')).toEqual(['-y', '-sccUTF-8', '-p', 'a', 'out.7z', 'src'])
     expect(buildSevenZipArguments(['a', 'out.7z', 'src'], 'hunter2').join(' ')).not.toContain('hunter2')
   })
 
   it('adds an empty -p only for `a`, which otherwise never prompts', () => {
     // Read commands are the opposite: supplying -p reads as "empty password"
     // and suppresses the prompt we need.
-    expect(buildSevenZipArguments(['a', 'out.7z'], undefined)).toEqual(['-y', 'a', 'out.7z'])
-    expect(buildSevenZipArguments(['x', 'enc.7z'], undefined)).toEqual(['-y', 'x', 'enc.7z'])
+    expect(buildSevenZipArguments(['a', 'out.7z'], undefined)).toEqual(['-y', '-sccUTF-8', 'a', 'out.7z'])
+    expect(buildSevenZipArguments(['x', 'enc.7z'], undefined)).toEqual(['-y', '-sccUTF-8', 'x', 'enc.7z'])
   })
 })
 
