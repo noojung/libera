@@ -70,7 +70,7 @@ export interface ExtractionOptions {
   password?: string
 }
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()

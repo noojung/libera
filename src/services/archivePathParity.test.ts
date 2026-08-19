@@ -20,6 +20,8 @@ describe('renderer archive path helper', () => {
       'C:\\archives\\ARCHIVE.ZIP',
       '/tmp/library.jar',
       '/tmp/LIBRARY.JAR',
+      '/tmp/webapp.war',
+      '/tmp/WEBAPP.WAR',
       'C:\\archives\\ARCHIVE.Z02',
       '/tmp/archive.tar',
       '/tmp/archive.tar.gz',

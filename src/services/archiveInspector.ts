@@ -4,7 +4,7 @@ import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
-import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
+import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './archiveVolumes'
 import { listSevenZipEntries } from './sevenZipList'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZipVolumes'
 
@@ -132,7 +132,7 @@ export async function inspectArchive(
 
       return {
         archivePath,
-        format: ext === '.jar' ? 'JAR' : 'ZIP',
+        format: zipFormatLabel(ext),
         volumeCount: zip.volumePaths.length,
         passwordProtected: zip.entries.some(entry => entry.encrypted),
         totalFiles: entries.filter(entry => !entry.isDirectory).length,

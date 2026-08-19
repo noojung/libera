@@ -80,6 +80,7 @@ describe('extractArchive security checks', () => {
     expect(isSupportedArchivePath('/tmp/archive.7z')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.7z.001')).toBe(true)
     expect(isSupportedArchivePath('/tmp/library.jar')).toBe(true)
+    expect(isSupportedArchivePath('/tmp/webapp.war')).toBe(true)
     expect(isSupportedArchivePath('/tmp/archive.rar')).toBe(false)
   })
 
@@ -94,9 +95,9 @@ describe('extractArchive security checks', () => {
     await expect(fs.readFile(path.join(targetDir, 'docs', 'readme.txt'), 'utf8')).resolves.toBe('safe content')
   })
 
-  it('extracts a JAR through the ZIP reader', async () => {
+  it.each(['library.jar', 'webapp.war'])('extracts %s through the ZIP reader', async archiveName => {
     const directory = await createTemporaryDirectory()
-    const archivePath = path.join(directory, 'library.jar')
+    const archivePath = path.join(directory, archiveName)
     const targetDir = path.join(directory, 'output')
     await createZip(archivePath, {
       'META-INF/MANIFEST.MF': 'Manifest-Version: 1.0\n',

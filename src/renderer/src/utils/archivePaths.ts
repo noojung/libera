@@ -3,7 +3,7 @@
 // bundled into the renderer, so the rules are restated here and pinned by a
 // test that compares the two.
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
 
 export const NUMBERED_VOLUME_SUFFIX = /\.z\d{2,}$/i
 
@@ -30,8 +30,11 @@ export function isSupportedArchivePath(archivePath: string): boolean {
 
 export function isZipArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()
-  // A JAR is a ZIP with a manifest, so it is read through the same reader.
-  return normalizedPath.endsWith('.zip') || normalizedPath.endsWith('.jar') || isNumberedVolumePath(archivePath)
+  // A JAR and a WAR are ZIP containers, so they use the same reader.
+  return normalizedPath.endsWith('.zip') ||
+    normalizedPath.endsWith('.jar') ||
+    normalizedPath.endsWith('.war') ||
+    isNumberedVolumePath(archivePath)
 }
 
 /** Rewrites any volume of a split set to the terminal `.zip` that holds its directory. */
@@ -60,7 +63,7 @@ export function canonicalArchivePath(archivePath: string): string {
 }
 
 /** Extensions offered in the extract file dialog, first volume included. */
-export const EXTRACT_DIALOG_EXTENSIONS = ['zip', 'jar', 'z01', 'tar', 'tgz', 'gz', '7z', '001']
+export const EXTRACT_DIALOG_EXTENSIONS = ['zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'gz', '7z', '001']
 
 // The compression formats the panel offers, mirroring compressor.ts's own
 // union and capability helpers for the same reason as the path rules above.

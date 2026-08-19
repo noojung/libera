@@ -51,11 +51,14 @@ describe('inspectArchive', () => {
     }))
   })
 
-  it('reports a JAR as its own format while reading it as a ZIP', async () => {
+  it.each([
+    ['library.jar', 'JAR'],
+    ['webapp.war', 'WAR']
+  ] as const)('reports %s as its own format while reading it as a ZIP', async (archiveName, expectedFormat) => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
-    const zipPath = path.join(directory, 'library.zip')
-    const archivePath = path.join(directory, 'library.jar')
+    const zipPath = path.join(directory, 'archive.zip')
+    const archivePath = path.join(directory, archiveName)
     await fs.mkdir(path.join(sourceDir, 'META-INF'), { recursive: true })
     await fs.writeFile(path.join(sourceDir, 'META-INF', 'MANIFEST.MF'), 'Manifest-Version: 1.0\n')
     await compressArchive({ inputPaths: [sourceDir], outputPath: zipPath, format: 'zip' })
@@ -63,7 +66,7 @@ describe('inspectArchive', () => {
 
     const result = await inspectArchive(archivePath)
 
-    expect(result.format).toBe('JAR')
+    expect(result.format).toBe(expectedFormat)
     expect(result.passwordProtected).toBe(false)
     expect(result.entries).toContainEqual(expect.objectContaining({
       path: 'source/META-INF/MANIFEST.MF',

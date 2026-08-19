@@ -93,6 +93,7 @@ describe('previewArchiveEntry', () => {
   it.each([
     ['ZIP', 'sample.zip', false],
     ['JAR', 'sample.jar', false],
+    ['WAR', 'sample.war', false],
     ['TAR', 'sample.tar', false],
     ['TGZ', 'sample.tgz', true],
     ['TAR.GZ', 'sample.tar.gz', true],
@@ -102,7 +103,7 @@ describe('previewArchiveEntry', () => {
     const archivePath = path.join(directory, archiveName)
     const contents = `hello from ${format}`
 
-    if (format === 'ZIP' || format === 'JAR') {
+    if (format === 'ZIP' || format === 'JAR' || format === 'WAR') {
       await writeZip(archivePath, [{ name: 'sample.txt', contents }])
     } else if (format === 'GZ') {
       await fs.writeFile(archivePath, zlib.gzipSync(contents))

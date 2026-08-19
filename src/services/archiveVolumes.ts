@@ -12,9 +12,17 @@ export function canonicalArchivePath(archivePath: string): string {
 }
 
 /**
- * Extensions read by the ZIP reader. A JAR is a ZIP with a manifest, so it is
- * listed, previewed, and extracted through exactly the same path.
+ * Extensions read by the ZIP reader. A JAR and a WAR are both ZIP containers
+ * with a prescribed layout, so they are listed, previewed, and extracted
+ * through exactly the same path.
  */
 export function isZipFormatExtension(extension: string): boolean {
-  return extension === '.zip' || extension === '.jar'
+  return extension === '.zip' || extension === '.jar' || extension === '.war'
+}
+
+/** How a ZIP-family archive is labelled, so a JAR does not just read as ZIP. */
+export function zipFormatLabel(extension: string): string {
+  if (extension === '.jar') return 'JAR'
+  if (extension === '.war') return 'WAR'
+  return 'ZIP'
 }
