@@ -157,6 +157,7 @@
     "vite": "^6.1.0",
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^1.0.0",
+    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "4.1.10"
   },
   "overrides": {

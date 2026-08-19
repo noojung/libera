@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { FolderOutput, Download } from 'lucide-react'
-import { SelectedItem } from '../types'
+import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
-import { formatBytes } from '../i18n/format'
-import type { AppLanguage } from '../i18n/language'
+import { formatBytes } from '@/i18n/format'
+import type { AppLanguage } from '@/i18n/language'
 import './ExtractionPanel.css'
 
 interface ExtractionPanelProps {

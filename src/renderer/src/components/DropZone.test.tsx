@@ -2,8 +2,8 @@ import React from 'react'
 import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DropZone } from './DropZone'
-import { renderWithI18n } from '../test/render'
-import { installElectronApi } from '../test/electronApi'
+import { renderWithI18n } from '@/test/render'
+import { installElectronApi } from '@/test/electronApi'
 
 const callbacks = () => ({
   onAddFiles: vi.fn(),

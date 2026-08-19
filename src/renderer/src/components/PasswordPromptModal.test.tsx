@@ -2,7 +2,7 @@ import React from 'react'
 import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { PasswordPromptModal } from './PasswordPromptModal'
-import { renderWithI18n } from '../test/render'
+import { renderWithI18n } from '@/test/render'
 
 describe('PasswordPromptModal', () => {
   it('requires a password and submits the entered value', async () => {

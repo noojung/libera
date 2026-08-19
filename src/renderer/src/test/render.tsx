@@ -3,8 +3,8 @@ import { render, type RenderOptions } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18next, { type i18n } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import { resources } from '../i18n/resources'
-import type { AppLanguage } from '../i18n/language'
+import { resources } from '@/i18n/resources'
+import type { AppLanguage } from '@/i18n/language'
 
 export function createTestI18n(language: AppLanguage = 'en'): i18n {
   const instance = i18next.createInstance()

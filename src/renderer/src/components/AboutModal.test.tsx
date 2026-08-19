@@ -2,9 +2,9 @@ import React from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AboutModal } from './AboutModal'
-import { renderWithI18n } from '../test/render'
-import { installElectronApi } from '../test/electronApi'
-import appInfo from '../generated/appInfo.json'
+import { renderWithI18n } from '@/test/render'
+import { installElectronApi } from '@/test/electronApi'
+import appInfo from '@/generated/appInfo.json'
 
 describe('AboutModal', () => {
   it('shows the app name, version and copyright', () => {

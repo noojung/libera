@@ -2,8 +2,8 @@ import React from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { QueueManager } from './QueueManager'
-import { renderWithI18n } from '../test/render'
-import type { ActiveJob } from '../types'
+import { renderWithI18n } from '@/test/render'
+import type { ActiveJob } from '@/types'
 
 function job(overrides: Partial<ActiveJob>): ActiveJob {
   return {

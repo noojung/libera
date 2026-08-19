@@ -2,8 +2,8 @@ import React from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArchiveInspector } from './ArchiveInspector'
-import { renderWithI18n } from '../test/render'
-import { installElectronApi } from '../test/electronApi'
+import { renderWithI18n } from '@/test/render'
+import { installElectronApi } from '@/test/electronApi'
 
 const createObjectUrl = vi.fn(() => 'blob:archive-preview')
 const revokeObjectUrl = vi.fn()

@@ -2,11 +2,11 @@ import React from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TitleBar } from './TitleBar'
-import { renderWithI18n } from '../test/render'
-import { installElectronApi } from '../test/electronApi'
-import { applyLanguage } from '../i18n'
+import { renderWithI18n } from '@/test/render'
+import { installElectronApi } from '@/test/electronApi'
+import { applyLanguage } from '@/i18n'
 
-vi.mock('../i18n', () => ({ applyLanguage: vi.fn() }))
+vi.mock('@/i18n', () => ({ applyLanguage: vi.fn() }))
 
 describe('TitleBar', () => {
   it('switches tabs, displays active jobs, and keeps English first', async () => {

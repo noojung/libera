@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react'
 import { ChevronRight, ExternalLink, Github, PackageOpen, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import appInfo from '../generated/appInfo.json'
-import logoImg from '../assets/logo.png'
+import appInfo from '@/generated/appInfo.json'
+import logoImg from '@/assets/logo.png'
 import './AboutModal.css'
 
 interface AboutModalProps {

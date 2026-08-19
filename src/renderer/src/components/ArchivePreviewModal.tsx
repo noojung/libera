@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { FileText, Image as ImageIcon, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ArchivePreviewMediaType, ArchivePreviewResult } from '../../../services/archivePreview'
-import { formatBytes } from '../i18n/format'
-import type { AppLanguage } from '../i18n/language'
+import type { ArchivePreviewMediaType, ArchivePreviewResult } from '@services/archivePreview'
+import { formatBytes } from '@/i18n/format'
+import type { AppLanguage } from '@/i18n/language'
 import './ArchivePreviewModal.css'
 
 interface ArchivePreviewModalProps {

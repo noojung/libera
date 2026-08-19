@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
+import tsconfigPaths from 'vite-tsconfig-paths'
 import path from 'path'
 
 export default defineConfig({
@@ -36,15 +37,11 @@ export default defineConfig({
         }
       }
     ]),
-    renderer()
+    renderer(),
+    // `root` below points at src/renderer, so the plugin is told where the
+    // tsconfig that owns the path aliases actually lives.
+    tsconfigPaths({ root: __dirname })
   ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src/renderer/src'),
-      '@main': path.resolve(__dirname, 'src/main'),
-      '@services': path.resolve(__dirname, 'src/services')
-    }
-  },
   root: 'src/renderer',
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),

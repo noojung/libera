@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { PackageOpen, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import thirdPartyLicenses from '../generated/thirdPartyLicenses.json'
+import thirdPartyLicenses from '@/generated/thirdPartyLicenses.json'
 import './LicensesModal.css'
 
 interface LicensesModalProps {

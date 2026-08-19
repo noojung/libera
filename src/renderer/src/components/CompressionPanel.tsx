@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Sliders, Archive } from 'lucide-react'
-import { SelectedItem } from '../types'
+import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
-import { formatBytes } from '../i18n/format'
+import { formatBytes } from '@/i18n/format'
 import {
   COMPRESSION_FORMATS,
   archiveExtension,
@@ -12,8 +12,8 @@ import {
   supportsSplit,
   withArchiveExtension,
   type ArchiveFormat
-} from '../utils/archivePaths'
-import type { AppLanguage } from '../i18n/language'
+} from '@/utils/archivePaths'
+import type { AppLanguage } from '@/i18n/language'
 import './CompressionPanel.css'
 
 interface CompressionPanelProps {

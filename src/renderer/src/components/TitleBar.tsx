@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { Archive, Contrast, Info, Layers, ListTodo, Minus, Moon, Search, Square, Sun, X } from 'lucide-react'
-import { AppMode } from '../types'
-import logoImg from '../assets/logo.png'
+import { AppMode } from '@/types'
+import logoImg from '@/assets/logo.png'
 import { useTranslation } from 'react-i18next'
-import { applyLanguage } from '../i18n'
-import type { AppLanguage } from '../i18n/language'
+import { applyLanguage } from '@/i18n'
+import type { AppLanguage } from '@/i18n/language'
 import {
   getStoredThemePreference,
   applyTheme,
   type ThemePreference
-} from '../utils/theme'
+} from '@/utils/theme'
 
 interface TitleBarProps {
   currentMode: AppMode

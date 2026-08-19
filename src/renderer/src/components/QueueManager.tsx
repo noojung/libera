@@ -1,10 +1,10 @@
 import React from 'react'
 import { FolderOpen, CheckCircle, AlertCircle, Loader2, Archive, Download, Clock3, XCircle } from 'lucide-react'
-import { ActiveJob } from '../types'
+import { ActiveJob } from '@/types'
 import { useTranslation } from 'react-i18next'
-import { formatBytes, formatDuration } from '../i18n/format'
-import { formatLabel } from '../utils/archivePaths'
-import type { AppLanguage } from '../i18n/language'
+import { formatBytes, formatDuration } from '@/i18n/format'
+import { formatLabel } from '@/utils/archivePaths'
+import type { AppLanguage } from '@/i18n/language'
 import './QueueManager.css'
 
 interface QueueManagerProps {

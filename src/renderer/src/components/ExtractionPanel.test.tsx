@@ -2,8 +2,8 @@ import React from 'react'
 import { screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ExtractionPanel } from './ExtractionPanel'
-import { renderWithI18n } from '../test/render'
-import { installElectronApi } from '../test/electronApi'
+import { renderWithI18n } from '@/test/render'
+import { installElectronApi } from '@/test/electronApi'
 
 const archive = { path: 'C:\\in\\archive.zip', name: 'archive.zip', isDirectory: false, size: 1024 }
 

@@ -2,8 +2,8 @@ import React from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { LicensesModal } from './LicensesModal'
-import { renderWithI18n } from '../test/render'
-import thirdPartyLicenses from '../generated/thirdPartyLicenses.json'
+import { renderWithI18n } from '@/test/render'
+import thirdPartyLicenses from '@/generated/thirdPartyLicenses.json'
 
 describe('LicensesModal', () => {
   it('lists every bundled package and shows the first one selected', () => {
