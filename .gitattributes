@@ -1,0 +1,17 @@
+# Generated metadata embeds the text of files checked in here, so every
+# platform has to see the same bytes. Without this, Windows checkouts
+# convert text to CRLF and the generated JSON no longer matches what was
+# committed from macOS or Linux.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
