@@ -80,9 +80,27 @@ export function supportsSplit(format: ArchiveFormat): boolean {
   return format === 'zip' || format === '7z'
 }
 
+const DEFLATE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
+const SEVEN_ZIP_LEVELS = [0, 1, 3, 5, 7, 9] as const
+
+/** The levels a format's writer actually distinguishes, in slider order. */
+export function compressionLevels(format: ArchiveFormat): readonly number[] {
+  if (format === 'tar') return []
+  return format === '7z' ? SEVEN_ZIP_LEVELS : DEFLATE_LEVELS
+}
+
 /** TAR only concatenates files, so a compression level would do nothing. */
 export function supportsLevel(format: ArchiveFormat): boolean {
-  return format !== 'tar'
+  return compressionLevels(format).length > 0
+}
+
+/** The nearest level a format supports, so switching formats keeps the intent. */
+export function nearestLevel(level: number, format: ArchiveFormat): number {
+  const levels = compressionLevels(format)
+  if (levels.length === 0) return level
+  return levels.reduce((best, candidate) =>
+    Math.abs(candidate - level) < Math.abs(best - level) ? candidate : best
+  )
 }
 
 /** The extension written for each format. TGZ archives are named `.tar.gz`. */

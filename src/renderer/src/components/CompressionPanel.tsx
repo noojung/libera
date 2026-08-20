@@ -8,6 +8,8 @@ import {
   archiveExtension,
   formatLabel,
   saveDialogExtension,
+  compressionLevels,
+  nearestLevel,
   supportsLevel,
   supportsPassword,
   supportsSplit,
@@ -79,10 +81,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   }
 
   const getLevelLabel = (lvl: number) => {
-    if (lvl === 0) return t('compression.levelNone', { level: lvl })
-    if (lvl <= 3) return t('compression.levelFast', { level: lvl })
-    if (lvl <= 6) return t('compression.levelBalanced', { level: lvl })
-    return t('compression.levelMaximum', { level: lvl })
+    const names: Record<number, string> = format === '7z'
+      ? { 0: 'levelStore', 1: 'levelFastest', 3: 'levelFast', 5: 'levelNormal', 7: 'levelMaximum', 9: 'levelUltra' }
+      : { 0: 'levelStore', 1: 'levelFastest', 6: 'levelNormal', 9: 'levelMaximum' }
+    return t(`compression.${names[lvl] ?? 'levelPlain'}`, { level: lvl })
   }
 
   const splitSize = (() => {
@@ -114,6 +116,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     })
   }
 
+  const levels = compressionLevels(format)
   const totalBytes = items.reduce((sum, item) => sum + item.size, 0)
   return (
     <div className="glass-panel compression-panel">
@@ -136,7 +139,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {COMPRESSION_FORMATS.map((fmt) => (
             <button
               key={fmt}
-              onClick={() => setFormat(fmt)}
+              onClick={() => {
+                setFormat(fmt)
+                setLevel(current => nearestLevel(current, fmt))
+              }}
               className={`compression-panel__format-button${format === fmt ? ' is-active' : ''}`}
             >
               .{formatLabel(fmt)}
@@ -159,9 +165,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           <input
             type="range"
             min="0"
-            max="9"
-            value={level}
-            onChange={(e) => setLevel(parseInt(e.target.value))}
+            max={levels.length - 1}
+            value={Math.max(0, levels.indexOf(level))}
+            onChange={(e) => setLevel(levels[parseInt(e.target.value)])}
             className="compression-panel__range"
           />
         </div>

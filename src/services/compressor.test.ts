@@ -5,7 +5,13 @@ import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
 import * as tar from 'tar'
-import { calculateTotalSize, compressArchive, type ProgressData } from './compressor'
+import {
+  calculateTotalSize,
+  compressArchive,
+  compressionLevels,
+  nearestLevel,
+  type ProgressData
+} from './compressor'
 import { inspectArchive } from './archiveInspector'
 import { MIN_SPLIT_SIZE } from './splitZipWriter'
 
@@ -55,6 +61,24 @@ describe('calculateTotalSize', () => {
 
     await expect(calculateTotalSize([firstFile, secondFile, path.join(directory, 'missing.txt')]))
       .resolves.toBe(Buffer.byteLength('onetwo!'))
+  })
+})
+
+describe('compression levels', () => {
+  it('offers every deflate step and only the six 7-Zip -mx steps', () => {
+    expect(compressionLevels('zip')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(compressionLevels('gz')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(compressionLevels('tgz')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(compressionLevels('7z')).toEqual([0, 1, 3, 5, 7, 9])
+    expect(compressionLevels('tar')).toEqual([])
+  })
+
+  it('moves a level to the closest step the new format has', () => {
+    expect(nearestLevel(6, '7z')).toBe(5)
+    expect(nearestLevel(2, '7z')).toBe(1)
+    expect(nearestLevel(4, '7z')).toBe(3)
+    expect(nearestLevel(8, '7z')).toBe(7)
+    expect(nearestLevel(5, 'zip')).toBe(5)
   })
 })
 

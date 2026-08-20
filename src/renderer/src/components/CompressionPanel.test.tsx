@@ -89,6 +89,43 @@ describe('CompressionPanel', () => {
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
   })
 
+  it('names the levels each family uses and snaps 7z to its own scale', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    const slider = () => screen.getByRole('slider')
+    expect(screen.getByText('6 - Normal')).toBeInTheDocument()
+
+    fireEvent.change(slider(), { target: { value: '0' } })
+    expect(screen.getByText('0 - Store')).toBeInTheDocument()
+    fireEvent.change(slider(), { target: { value: '9' } })
+    expect(screen.getByText('9 - Maximum')).toBeInTheDocument()
+    fireEvent.change(slider(), { target: { value: '4' } })
+    expect(screen.getByText('4')).toBeInTheDocument()
+
+    // 7z has six steps, so the slider positions map onto -mx values.
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(slider()).toHaveAttribute('max', '5')
+    fireEvent.change(slider(), { target: { value: '0' } })
+    expect(screen.getByText('0 - Store')).toBeInTheDocument()
+    fireEvent.change(slider(), { target: { value: '3' } })
+    expect(screen.getByText('5 - Normal')).toBeInTheDocument()
+    fireEvent.change(slider(), { target: { value: '5' } })
+    expect(screen.getByText('9 - Ultra')).toBeInTheDocument()
+  })
+
+  it('carries the level to the closest step the new format has', async () => {
+    installElectronApi()
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(screen.getByText('5 - Normal')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ format: '7z', level: 5 }))
+  })
+
   it('hides the compression level for TAR, which cannot compress', async () => {
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
