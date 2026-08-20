@@ -89,6 +89,19 @@ describe('CompressionPanel', () => {
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
   })
 
+  it('hides the compression level for TAR, which cannot compress', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    expect(screen.getByText('Compression level')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.TAR' }))
+    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.TAR.GZ' }))
+    expect(screen.getByText('Compression level')).toBeInTheDocument()
+  })
+
   it('shows the volume names each split format actually produces', async () => {
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)

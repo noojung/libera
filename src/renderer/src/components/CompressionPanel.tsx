@@ -8,6 +8,7 @@ import {
   archiveExtension,
   formatLabel,
   saveDialogExtension,
+  supportsLevel,
   supportsPassword,
   supportsSplit,
   withArchiveExtension,
@@ -145,24 +146,26 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       </div>
 
       {/* Compression Level Slider */}
-      <div className="compression-panel__field">
-        <div className="compression-panel__level-header">
-          <label className="compression-panel__label">
-            {t('compression.level')}
-          </label>
-          <span className="compression-panel__level-value">
-            {getLevelLabel(level)}
-          </span>
+      {supportsLevel(format) && (
+        <div className="compression-panel__field">
+          <div className="compression-panel__level-header">
+            <label className="compression-panel__label">
+              {t('compression.level')}
+            </label>
+            <span className="compression-panel__level-value">
+              {getLevelLabel(level)}
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="9"
+            value={level}
+            onChange={(e) => setLevel(parseInt(e.target.value))}
+            className="compression-panel__range"
+          />
         </div>
-        <input
-          type="range"
-          min="0"
-          max="9"
-          value={level}
-          onChange={(e) => setLevel(parseInt(e.target.value))}
-          className="compression-panel__range"
-        />
-      </div>
+      )}
 
       {supportsPassword(format) && (
         <div className="compression-panel__field">

@@ -44,6 +44,11 @@ export function supportsSplit(format: ArchiveFormat): boolean {
   return format === 'zip' || format === '7z'
 }
 
+/** TAR only concatenates files, so a compression level would do nothing. */
+export function supportsLevel(format: ArchiveFormat): boolean {
+  return format !== 'tar'
+}
+
 export interface ProgressData {
   processedBytes: number
   totalBytes: number | null

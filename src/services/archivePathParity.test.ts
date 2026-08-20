@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SUPPORTED_ARCHIVE_EXTENSIONS, isSupportedArchivePath } from './extractor'
 import { terminalVolumePath } from './splitZipVolumes'
-import { supportsPassword, supportsSplit, type ArchiveFormat } from './compressor'
+import { supportsLevel, supportsPassword, supportsSplit, type ArchiveFormat } from './compressor'
 import * as renderer from '../renderer/src/utils/archivePaths'
 
 // The renderer cannot import the services (they pull in fs/path), so it keeps
@@ -79,6 +79,12 @@ describe('renderer compression format helper', () => {
   it('agrees with the service about which formats can be split', () => {
     for (const format of renderer.COMPRESSION_FORMATS) {
       expect(renderer.supportsSplit(format)).toBe(supportsSplit(format))
+    }
+  })
+
+  it('agrees with the service about which formats take a compression level', () => {
+    for (const format of renderer.COMPRESSION_FORMATS) {
+      expect(renderer.supportsLevel(format)).toBe(supportsLevel(format))
     }
   })
 })

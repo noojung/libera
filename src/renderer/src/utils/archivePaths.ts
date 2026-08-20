@@ -80,6 +80,11 @@ export function supportsSplit(format: ArchiveFormat): boolean {
   return format === 'zip' || format === '7z'
 }
 
+/** TAR only concatenates files, so a compression level would do nothing. */
+export function supportsLevel(format: ArchiveFormat): boolean {
+  return format !== 'tar'
+}
+
 /** The extension written for each format. TGZ archives are named `.tar.gz`. */
 const FORMAT_EXTENSIONS: Record<ArchiveFormat, string> = {
   zip: '.zip',
