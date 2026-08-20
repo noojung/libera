@@ -191,7 +191,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               checked={splitEnabled}
               onChange={(e) => setSplitEnabled(e.target.checked)}
             />
-            <span className="compression-panel__option-title">{t('compression.splitEnable')}</span>
+            <span>
+              <span className="compression-panel__option-title">{t('compression.splitEnable')}</span>
+              <span className="compression-panel__option-description">
+                {t(format === '7z' ? 'compression.splitExample7z' : 'compression.splitExampleZip')}
+              </span>
+            </span>
           </label>
 
           {splitEnabled && (

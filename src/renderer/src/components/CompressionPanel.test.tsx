@@ -27,7 +27,7 @@ describe('CompressionPanel', () => {
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
-    await user.click(screen.getByRole('checkbox', { name: 'Split into volumes' }))
+    await user.click(screen.getByRole('checkbox', { name: /Split into volumes/ }))
     await user.click(screen.getByRole('button', { name: '700 MB (CD)' }))
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
 
@@ -38,7 +38,7 @@ describe('CompressionPanel', () => {
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
-    await user.click(screen.getByRole('checkbox', { name: 'Split into volumes' }))
+    await user.click(screen.getByRole('checkbox', { name: /Split into volumes/ }))
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     await user.clear(screen.getByPlaceholderText('Size'))
     await user.type(screen.getByPlaceholderText('Size'), '0')
@@ -87,6 +87,14 @@ describe('CompressionPanel', () => {
 
     expect(screen.getByText('Split into volumes')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
+  })
+
+  it('shows the volume names each split format actually produces', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+    expect(screen.getByText(/archive\.z01, archive\.z02 … archive\.zip/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(screen.getByText(/archive\.7z\.001, archive\.7z\.002/)).toBeInTheDocument()
   })
 
   it('names TGZ archives .tar.gz, including a save path that came back as .tgz', async () => {

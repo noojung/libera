@@ -151,6 +151,12 @@
   font-weight: 700;
 }
 
+.compression-panel__option-description {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .compression-panel__split-card {
   display: flex;
   margin-top: 12px;
