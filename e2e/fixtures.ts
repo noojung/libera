@@ -1,4 +1,5 @@
 import { test as base, _electron, type ElectronApplication, type Page } from '@playwright/test'
+import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
@@ -30,6 +31,18 @@ export async function seedFiles(directory: string, names: string[], bytes: numbe
   for (const name of names) {
     await fs.writeFile(path.join(directory, name), crypto.randomBytes(bytes))
   }
+}
+
+export async function writeZipArchive(
+  archivePath: string,
+  entries: Record<string, string>
+): Promise<void> {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false })
+  for (const [name, contents] of Object.entries(entries)) {
+    await writer.add(name, new TextReader(contents))
+  }
+  await fs.mkdir(path.dirname(archivePath), { recursive: true })
+  await fs.writeFile(archivePath, await writer.close())
 }
 
 interface Fixtures {
