@@ -143,7 +143,7 @@ describe('pure JavaScript 7z container', () => {
     await fs.writeFile(archivePath, sink.data())
 
     const { stdout } = await runSevenZip(['l', '-slt', '--', archivePath], undefined)
-    expect(stdout.normalize('NFC')).toContain('Path = bundle/안내.txt')
+    expect(stdout.normalize('NFC')).toContain(`Path = ${path.join('bundle', '안내.txt')}`)
     await expect(runSevenZip(['t', '--', archivePath], undefined)).resolves.toMatchObject({ exitCode: 0 })
   }, 60_000)
 
