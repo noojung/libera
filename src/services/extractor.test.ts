@@ -600,6 +600,22 @@ describe('7z extraction', () => {
     return sourceDir
   }
 
+  it('extracts an archive written by the pure JavaScript backend', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await seedSource(directory)
+    const archivePath = path.join(directory, 'javascript.7z')
+    const targetDir = path.join(directory, 'out')
+    await compressArchive({ inputPaths: [sourceDir], outputPath: archivePath, format: '7z', level: 5 })
+
+    await extractArchive({ archivePath, targetDir })
+
+    await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('alpha')
+    await expect(fs.readFile(path.join(targetDir, 'src', 'sub', 'b.txt'), 'utf8')).resolves.toBe('bravo bravo')
+    if (process.platform !== 'win32') {
+      expect((await fs.stat(path.join(targetDir, 'src', 'run.sh'))).mode & 0o777).toBe(0o755)
+    }
+  })
+
   it('restores contents, the executable bit and empty files', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = await seedSource(directory)

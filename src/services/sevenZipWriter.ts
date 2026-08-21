@@ -2,6 +2,8 @@ import { promises as fsPromises } from 'fs'
 import path from 'path'
 import type { ProgressCallback } from './compressor'
 import { runSevenZip, SevenZipError } from './sevenZip'
+import { Libera7zError } from '../lib/libera7z'
+import { canFallbackFromLibera7z, writeLibera7z } from './libera7zNode'
 import {
   MAX_SEVEN_ZIP_VOLUMES,
   removeStaleSevenZipVolumes,
@@ -67,6 +69,50 @@ export async function writeSevenZipArchive(
   // `7za a` appends to an archive it finds, so anything a previous run left
   // behind has to go first or the two runs merge into an unreadable set.
   await removeStaleSevenZipVolumes(outputPath)
+
+  // The dependency-free writer owns the ordinary non-split path. Inputs it
+  // deliberately does not model yet (notably symbolic links) fall through to
+  // the compatibility executable without changing the UI contract.
+  if (splitSize === undefined) {
+    let currentFile: string | undefined
+    try {
+      await writeLibera7z({
+        inputPaths,
+        outputPath,
+        level: Number(sevenZipLevelArgument(level).slice('-mx='.length)),
+        signal: context.signal,
+        onProgress: (processedBytes, file) => {
+          currentFile = file ?? currentFile
+          const processed = Number(processedBytes)
+          onProgress?.({
+            processedBytes: processed,
+            totalBytes,
+            percent: totalBytes === 0 ? 99 : Math.min(99, Math.round((processed / totalBytes) * 100)),
+            phase: 'processing',
+            currentFile
+          })
+        }
+      })
+      onProgress?.({
+        processedBytes: totalBytes,
+        totalBytes,
+        percent: 100,
+        phase: 'complete',
+        currentFile
+      })
+      return { outputPath }
+    } catch (error) {
+      if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+        await removePartialOutput(outputPath)
+        throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z creation was cancelled')
+      }
+      if (!canFallbackFromLibera7z(error)) {
+        await removePartialOutput(outputPath)
+        throw error
+      }
+      await removePartialOutput(outputPath)
+    }
+  }
 
   const args = [
     'a',

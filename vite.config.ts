@@ -35,6 +35,18 @@ export default defineConfig({
             }
           }
         }
+      },
+      {
+        entry: path.resolve(__dirname, 'src/main/libera7zCodecWorker.ts'),
+        vite: {
+          build: {
+            outDir: path.resolve(__dirname, 'dist/worker'),
+            emptyOutDir: true,
+            rollupOptions: {
+              external: ['worker_threads']
+            }
+          }
+        }
       }
     ]),
     renderer(),

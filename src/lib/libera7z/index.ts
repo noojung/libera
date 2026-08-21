@@ -1,0 +1,5 @@
+export * from './errors'
+export * from './format'
+export * from './io'
+export { crc32, Crc32 } from './crc32'
+export { dictionaryPropertyForSize, dictionarySizeFromProperty } from './lzma2'

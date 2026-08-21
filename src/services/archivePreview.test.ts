@@ -357,6 +357,19 @@ describe('previewArchiveEntry', () => {
 })
 
 describe('7z preview', () => {
+  it('previews an archive written by the pure JavaScript backend', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'plain.txt')
+    const archivePath = path.join(directory, 'javascript.7z')
+    await fs.writeFile(sourcePath, 'preview through the JavaScript reader')
+    await compressArchive({ inputPaths: [sourcePath], outputPath: archivePath, format: '7z', level: 5 })
+
+    const listing = await inspectArchive(archivePath)
+    const preview = await previewArchiveEntry(archivePath, listing.entries[0].id)
+
+    expect(preview).toMatchObject({ kind: 'text', text: 'preview through the JavaScript reader' })
+  })
+
   it('returns an entry byte for byte, so 7-Zip chatter cannot contaminate it', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'src')

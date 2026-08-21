@@ -1,6 +1,6 @@
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
-import { Writable } from 'stream'
+import { Readable, Writable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { ERR_ENCRYPTED, type FileEntry } from '@zip.js/zip.js'
 import * as tar from 'tar'
@@ -8,9 +8,11 @@ import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
-import { isSevenZipArchivePath } from './sevenZipVolumes'
+import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZipVolumes'
 import { listSevenZipEntries } from './sevenZipList'
 import { classifySevenZipExit, SevenZipError, spawnSevenZip } from './sevenZip'
+import { Libera7zError } from '../lib/libera7z'
+import { canFallbackFromLibera7z, openLibera7zFile } from './libera7zNode'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -533,6 +535,49 @@ async function readSevenZipEntry(
   password: string | undefined,
   signal?: AbortSignal
 ): Promise<CollectedArchiveEntry> {
+  if (!isSevenZipVolumePath(archivePath)) {
+    let archive
+    try {
+      archive = await openLibera7zFile(archivePath, { signal, maxEntries: MAX_ARCHIVE_ENTRIES })
+    } catch (error) {
+      if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+        throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+      }
+      if (!canFallbackFromLibera7z(error)) throw error
+    }
+    if (archive) {
+      try {
+        const entry = archive.entries[entryIndex]
+        if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
+        if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
+        if (archive.entries.filter(other => other.path === entry.path).length > 1) {
+          throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
+        }
+        const collector = new PreviewCollector()
+        try {
+          await pipeline(
+            Readable.fromWeb(archive.openEntry(entryIndex, { signal }) as import('stream/web').ReadableStream),
+            collector
+          )
+        } catch (error) {
+          if (!collector.truncated) {
+            if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+              throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+            }
+            if (isAbortError(error) || signal?.aborted) {
+              throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+            }
+            throw error
+          }
+        }
+        const totalBytes = Number(entry.size)
+        return collectedEntry(collector, Number.isSafeInteger(totalBytes) ? totalBytes : null)
+      } finally {
+        await archive.close()
+      }
+    }
+  }
+
   // A header-encrypted archive fails here rather than at the read below, so
   // the password errors have to be translated in both places.
   const listing = await listSevenZipEntries(archivePath, { password, signal, maxEntries: MAX_ARCHIVE_ENTRIES })

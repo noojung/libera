@@ -2,6 +2,9 @@ import { promises as fsPromises } from 'fs'
 import type { ProgressCallback } from './compressor'
 import { classifySevenZipExit, spawnSevenZip } from './sevenZip'
 import { listSevenZipEntries, type SevenZipEntry } from './sevenZipList'
+import { Libera7zError, type SevenZipArchive } from '../lib/libera7z'
+import { canFallbackFromLibera7z, openLibera7zFile } from './libera7zNode'
+import { isSevenZipVolumePath } from './sevenZipVolumes'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -128,6 +131,85 @@ interface SevenZipStream {
   kill: () => Promise<void>
 }
 
+async function extractWithJavaScript(
+  archive: SevenZipArchive,
+  archivePath: string,
+  targetRoot: string,
+  selectedEntries: string[] | undefined,
+  startTime: number,
+  policy: ExtractionPolicy,
+  diskBudget: number,
+  transaction: ExtractionTransaction,
+  signal?: AbortSignal,
+  onProgress?: ProgressCallback
+): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+  const selectedPaths = selectedEntries ? new Set(selectedEntries) : null
+  const plan = buildExtractionPlan(
+    archive.entries.map(entry => {
+      const size = Number(entry.size)
+      if (!Number.isSafeInteger(size)) throw securityError(`entry size exceeds JavaScript's safe range: ${entry.path}`)
+      return {
+        archivePath: entry.path,
+        isDirectory: entry.isDirectory,
+        size: entry.isDirectory ? 0 : size,
+        isLink: false,
+        mode: restoresUnixMode ? entry.mode : undefined,
+        source: entry.id
+      }
+    }),
+    targetRoot,
+    selectedPaths,
+    policy
+  )
+  if (plan.selectedTotalBytes > diskBudget) {
+    throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
+  }
+  await validateSelectedDestinations(targetRoot, plan.entries)
+
+  const selected = plan.entries.filter(entry => entry.shouldExtract)
+  const topLevelNames = new Set(selected.map(entry => topLevelSegment(entry.archivePath)))
+  for (const entry of selected) {
+    if (entry.isDirectory) await ensureSafeDirectory(targetRoot, entry.outputPath, transaction)
+    else await ensureSafeParentDirectories(targetRoot, entry.outputPath, transaction)
+  }
+
+  const meter = new ExtractionMeter(policy, diskBudget, plan.selectedTotalBytes, onProgress)
+  let extractedCount = 0
+  for (const entry of selected) {
+    throwIfAborted(signal)
+    if (entry.isDirectory) continue
+    let fileBytes = 0
+    const output = await createOwnedWebWriter(entry.outputPath, transaction, byteLength => {
+      fileBytes = meter.consume(byteLength, fileBytes, entry.archivePath)
+    })
+    const writer = output.writable.getWriter()
+    const reader = archive.openEntry(entry.source as number, { signal }).getReader()
+    try {
+      while (true) {
+        const item = await reader.read()
+        if (item.done) break
+        await writer.write(item.value)
+      }
+      await writer.close()
+    } catch (error) {
+      await writer.abort().catch(() => undefined)
+      await reader.cancel().catch(() => undefined)
+      throw error
+    } finally {
+      await output.close()
+    }
+    if (fileBytes !== entry.size) {
+      throw securityError(`archive declares ${entry.size} bytes but supplied ${fileBytes}: ${entry.archivePath}`)
+    }
+    const mode = entry.mode !== undefined ? archivePermissions(entry.mode) : undefined
+    if (mode !== undefined) await fsPromises.chmod(entry.outputPath, mode)
+    extractedCount += 1
+  }
+  meter.complete()
+  await propagateQuarantine(archivePath, targetRoot, topLevelNames)
+  return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime }
+}
+
 /**
  * Starts `x -so`. Nothing is written to disk by 7-Zip itself; `-bso0 -bse0`
  * keep its own chatter off the stream so stdout is pure entry content.
@@ -227,6 +309,34 @@ export async function extractSevenZipArchive(
   signal?: AbortSignal,
   onProgress?: ProgressCallback
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+  if (!isSevenZipVolumePath(archivePath)) {
+    let archive: SevenZipArchive | undefined
+    try {
+      archive = await openLibera7zFile(archivePath, { signal, maxEntries: policy.maxEntries })
+    } catch (error) {
+      if (error instanceof Libera7zError && error.code === 'CANCELLED') throwIfAborted(signal)
+      if (!canFallbackFromLibera7z(error)) throw error
+    }
+    if (archive) {
+      try {
+        return await extractWithJavaScript(
+          archive,
+          archivePath,
+          targetRoot,
+          selectedEntries,
+          startTime,
+          policy,
+          diskBudget,
+          transaction,
+          signal,
+          onProgress
+        )
+      } finally {
+        await archive.close()
+      }
+    }
+  }
+
   const listing = await listSevenZipEntries(archivePath, {
     password,
     signal,

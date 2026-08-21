@@ -119,12 +119,15 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 ## Third-party Components
 
-Libera bundles the standalone 7-Zip executable (`7za`) to read and write 7Z
-archives, invoking it as a separate program rather than linking it. 7-Zip is
-copyright © 1999-2020 Igor Pavlov and is licensed under the GNU LGPL v2.1 or
-later; its source is available from <https://www.7-zip.org/>. The full license
-text ships with the application and lives at
-`resources/licenses/7-Zip-LICENSE.txt`.
+Libera7z is Libera's dependency-free TypeScript implementation for ordinary
+non-solid, non-encrypted 7Z archives, including the 7z container and Copy/LZMA2
+codecs. The bundled
+standalone 7-Zip executable (`7za`) remains as a compatibility backend for
+solid, encrypted, filtered, symbolic-link and split-volume archives. It is
+invoked as a separate program rather than linked. 7-Zip is copyright ©
+1999-2020 Igor Pavlov and is licensed under the GNU LGPL v2.1 or later; its
+source is available from <https://www.7-zip.org/>. The full license text ships
+with the application and lives at `resources/licenses/7-Zip-LICENSE.txt`.
 
 ## Safe Extraction Policy
 
@@ -137,11 +140,11 @@ The following checks are applied before and during extraction:
 - Verifies that extraction leaves at least 5% of the destination filesystem, or 1 GiB, free.
 - Streams extracted data and removes files created by a failed or cancelled extraction.
 
-7Z archives are read through a single `7za x -so` stream rather than letting
-7-Zip write to the destination, so the checks above apply to 7Z exactly as they
-do to the other formats. Because each entry is read to the byte count its
-header declares, an archive that understates a size desynchronises the stream
-and is refused.
+7Z entries are streamed through the TypeScript reader when its coder graph is
+supported. Compatibility archives are read through a single `7za x -so` stream
+rather than letting 7-Zip write to the destination. Both routes keep filesystem
+writes inside the same validation and transaction layer, and reject content
+that disagrees with the sizes or CRCs declared by the archive.
 
 GZ stores its uncompressed size modulo 4 GiB, so the inspector reports the
 expanded size and compression ratio as unknown until extraction completes.
