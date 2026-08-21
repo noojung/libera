@@ -73,8 +73,8 @@ export async function readExactly(
   return bytes
 }
 
-export function readableFromGenerator(generator: AsyncGenerator<Uint8Array>): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
+export function readableFromGenerator<T>(generator: AsyncGenerator<T>): ReadableStream<T> {
+  return new ReadableStream<T>({
     async pull(controller) {
       try {
         const item = await generator.next()

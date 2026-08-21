@@ -174,36 +174,61 @@ async function extractWithJavaScript(
   }
 
   const meter = new ExtractionMeter(policy, diskBudget, plan.selectedTotalBytes, onProgress)
+  const selectedFiles = selected.filter(entry => !entry.isDirectory)
+  const entriesById = new Map(selectedFiles.map(entry => [entry.source as number, entry]))
+  const reader = archive.openEntries([...entriesById.keys()], { signal }).getReader()
   let extractedCount = 0
-  for (const entry of selected) {
-    throwIfAborted(signal)
-    if (entry.isDirectory) continue
-    let fileBytes = 0
-    const output = await createOwnedWebWriter(entry.outputPath, transaction, byteLength => {
-      fileBytes = meter.consume(byteLength, fileBytes, entry.archivePath)
-    })
-    const writer = output.writable.getWriter()
-    const reader = archive.openEntry(entry.source as number, { signal }).getReader()
-    try {
-      while (true) {
-        const item = await reader.read()
-        if (item.done) break
-        await writer.write(item.value)
+  let currentEntry: PlannedEntry | null = null
+  let currentBytes = 0
+  let currentOutput: Awaited<ReturnType<typeof createOwnedWebWriter>> | null = null
+  let currentWriter: WritableStreamDefaultWriter<Uint8Array> | null = null
+  try {
+    while (true) {
+      throwIfAborted(signal)
+      const item = await reader.read()
+      if (item.done) break
+      const event = item.value
+      if (event.type === 'entry-start') {
+        if (currentEntry) throw securityError('7z entry streams overlap')
+        const entry = entriesById.get(event.entry.id)
+        if (!entry) throw securityError(`7z returned an unselected entry: ${event.entry.path}`)
+        currentEntry = entry
+        currentBytes = 0
+        currentOutput = await createOwnedWebWriter(entry.outputPath, transaction, byteLength => {
+          currentBytes = meter.consume(byteLength, currentBytes, entry.archivePath)
+        })
+        currentWriter = currentOutput.writable.getWriter()
+      } else if (event.type === 'data') {
+        if (!currentEntry || !currentWriter || currentEntry.source !== event.entryId) {
+          throw securityError('7z entry data arrived outside its declared boundary')
+        }
+        await currentWriter.write(event.bytes)
+      } else {
+        if (!currentEntry || !currentWriter || !currentOutput || currentEntry.source !== event.entry.id) {
+          throw securityError('7z entry ended outside its declared boundary')
+        }
+        await currentWriter.close()
+        currentWriter = null
+        await currentOutput.close()
+        currentOutput = null
+        if (currentBytes !== currentEntry.size) {
+          throw securityError(
+            `archive declares ${currentEntry.size} bytes but supplied ${currentBytes}: ${currentEntry.archivePath}`
+          )
+        }
+        const mode = currentEntry.mode !== undefined ? archivePermissions(currentEntry.mode) : undefined
+        if (mode !== undefined) await fsPromises.chmod(currentEntry.outputPath, mode)
+        extractedCount += 1
+        currentEntry = null
       }
-      await writer.close()
-    } catch (error) {
-      await writer.abort().catch(() => undefined)
-      await reader.cancel().catch(() => undefined)
-      throw error
-    } finally {
-      await output.close()
     }
-    if (fileBytes !== entry.size) {
-      throw securityError(`archive declares ${entry.size} bytes but supplied ${fileBytes}: ${entry.archivePath}`)
-    }
-    const mode = entry.mode !== undefined ? archivePermissions(entry.mode) : undefined
-    if (mode !== undefined) await fsPromises.chmod(entry.outputPath, mode)
-    extractedCount += 1
+    if (currentEntry) throw securityError(`7z entry ended early: ${currentEntry.archivePath}`)
+  } catch (error) {
+    await currentWriter?.abort().catch(() => undefined)
+    await reader.cancel().catch(() => undefined)
+    throw error
+  } finally {
+    await currentOutput?.close().catch(() => undefined)
   }
   meter.complete()
   await propagateQuarantine(archivePath, targetRoot, topLevelNames)

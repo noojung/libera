@@ -3,10 +3,11 @@ import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { ByteReader, ByteWriter } from './binary'
-import { create7z, open7z, type SevenZipEntryInput } from './format'
+import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
 import { Libera7zError } from './errors'
 import { MemorySink, MemorySource } from './io'
-import { decodeLzma2, dictionaryPropertyForSize, encodeLzma2 } from './lzma2'
+import { LzmaDecoder } from './lzma'
+import { decodeLzma2, dictionaryPropertyForSize, dictionarySizeFromProperty, encodeLzma2 } from './lzma2'
 import { runSevenZip } from '../../services/sevenZip'
 import { openLibera7zFile } from '../../services/libera7zNode'
 
@@ -160,6 +161,72 @@ describe('pure JavaScript 7z container', () => {
     try {
       const entry = archive.entries.find(item => item.path === 'repeated.txt')!
       expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it('streams selected files from one solid LZMA2 folder with one decoder session', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-solid-'))
+    temporaryDirectories.push(directory)
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const contents = new Map([
+      ['a.txt', Buffer.from('alpha '.repeat(400_000))],
+      ['b.txt', Buffer.from('bravo '.repeat(20_000))],
+      ['c.txt', Buffer.from('charlie '.repeat(20_000))]
+    ])
+    await Promise.all([...contents].map(([name, bytes]) => fs.writeFile(path.join(sourceDir, name), bytes)))
+    const archivePath = path.join(directory, 'solid.7z')
+    await runSevenZip(['a', '-m0=lzma2', '-ms=on', '-mhc=off', '--', archivePath, sourceDir], undefined)
+    const { stdout } = await runSevenZip(['l', '-slt', '--', archivePath], undefined)
+    expect(stdout).toContain('Solid = +')
+    expect(stdout).toContain('Blocks = 1')
+
+    let decoderSessions = 0
+    const archive = await openLibera7zFile(archivePath, {
+      lzma2DecoderFactory: async property => {
+        decoderSessions += 1
+        const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
+        return {
+          resetDictionary: async () => decoder.resetDictionary(),
+          setProperties: async value => decoder.setProperties(value),
+          resetState: async () => decoder.resetState(),
+          writeUncompressed: async bytes => decoder.writeUncompressed(bytes),
+          decodeChunk: async (bytes, size, signal) => decoder.decodeChunk(bytes, size, signal),
+          close: async () => undefined
+        } satisfies Lzma2DecoderSession
+      }
+    })
+    try {
+      const files = archive.entries.filter(entry => contents.has(path.basename(entry.path)))
+      expect(files).toHaveLength(3)
+      const selected = [files[0], files[2]]
+      const collected = new Map<number, Uint8Array[]>()
+      const reader = archive.openEntries(selected.map(entry => entry.id)).getReader()
+      while (true) {
+        const item = await reader.read()
+        if (item.done) break
+        if (item.value.type === 'entry-start') collected.set(item.value.entry.id, [])
+        else if (item.value.type === 'data') collected.get(item.value.entryId)!.push(item.value.bytes)
+      }
+
+      for (const entry of selected) {
+        const actual = Buffer.concat(collected.get(entry.id)!.map(bytes => Buffer.from(bytes)))
+        expect(actual).toEqual(contents.get(path.basename(entry.path)))
+      }
+      expect(decoderSessions).toBe(1)
+
+      const controller = new AbortController()
+      const cancelled = archive.openEntries([files[0].id], { signal: controller.signal }).getReader()
+      await expect(cancelled.read()).resolves.toMatchObject({ value: { type: 'entry-start' } })
+      await expect(cancelled.read()).resolves.toMatchObject({ value: { type: 'data' } })
+      controller.abort()
+      await expect((async () => {
+        while (!(await cancelled.read()).done) {
+          // A chunk already queued by ReadableStream may arrive before cancellation is observed.
+        }
+      })()).rejects.toMatchObject({ code: 'CANCELLED' })
     } finally {
       await archive.close()
     }

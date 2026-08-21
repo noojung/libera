@@ -120,11 +120,11 @@ Pages automatically when changes under `site/` are pushed to `main`.
 ## Third-party Components
 
 Libera7z is Libera's dependency-free TypeScript implementation for ordinary
-non-solid, non-encrypted 7Z archives, including the 7z container and Copy/LZMA2
-codecs. The bundled
+non-encrypted 7Z archives, including solid and non-solid 7z containers and
+Copy/LZMA2 codecs. The bundled
 standalone 7-Zip executable (`7za`) remains as a compatibility backend for
-solid, encrypted, filtered, symbolic-link and split-volume archives. It is
-invoked as a separate program rather than linked. 7-Zip is copyright ©
+encrypted, filtered, symbolic-link and split-volume archives. It is invoked as
+a separate program rather than linked. 7-Zip is copyright ©
 1999-2020 Igor Pavlov and is licensed under the GNU LGPL v2.1 or later; its
 source is available from <https://www.7-zip.org/>. The full license text ships
 with the application and lives at `resources/licenses/7-Zip-LICENSE.txt`.

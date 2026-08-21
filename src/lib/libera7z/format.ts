@@ -90,7 +90,14 @@ interface ParsedFolder {
   unpackSize: bigint
   crc?: number
   packIndex: number
-  numSubstreams: number
+  packedOffset?: bigint
+  packedSize?: bigint
+  substreams?: ParsedSubstream[]
+}
+
+interface ParsedSubstream {
+  size: bigint
+  crc?: number
 }
 
 interface ParsedStreams {
@@ -107,7 +114,7 @@ interface ParsedFile {
   mode?: number
   crc?: number
   folder?: ParsedFolder
-  packedOffset?: bigint
+  substreamIndex?: number
   packedSize?: bigint
 }
 
@@ -131,6 +138,11 @@ export interface OpenSevenZipOptions {
 export interface OpenEntryOptions {
   signal?: AbortSignal
 }
+
+export type SevenZipEntryEvent =
+  | { type: 'entry-start'; entry: SevenZipEntry }
+  | { type: 'data'; entryId: number; bytes: Uint8Array }
+  | { type: 'entry-end'; entry: SevenZipEntry }
 
 export interface Lzma2DecoderSession {
   resetDictionary(): Promise<void>
@@ -417,7 +429,7 @@ function parseFolder(reader: ByteReader, packIndex: number): ParsedFolder {
   if (methodId !== COPY_METHOD && methodId !== LZMA2_METHOD) {
     throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${methodId.toString(16)}`)
   }
-  return { methodId, properties, unpackSize: 0n, packIndex, numSubstreams: 1 }
+  return { methodId, properties, unpackSize: 0n, packIndex }
 }
 
 function parsePackInfo(reader: ByteReader): { packPosition: bigint; packSizes: bigint[] } {
@@ -458,25 +470,59 @@ function parseUnpackInfo(reader: ByteReader, packStreamCount: number): ParsedFol
 }
 
 function parseSubstreamsInfo(reader: ByteReader, folders: ParsedFolder[]): void {
+  const counts = Array<number>(folders.length).fill(1)
   let id = reader.byte()
   if (id === NID.NumUnpackStream) {
-    for (const folder of folders) folder.numSubstreams = reader.safeNumber('7z folder substream count')
+    for (let index = 0; index < folders.length; index += 1) {
+      counts[index] = reader.safeNumber('7z folder substream count')
+    }
     id = reader.byte()
   }
-  if (folders.some(folder => folder.numSubstreams !== 1)) {
-    throw unsupportedFeature('Solid or multi-substream 7z folders are unsupported')
-  }
+
+  const substreams = counts.map(count => Array.from({ length: count }, (): ParsedSubstream => ({ size: 0n })))
   if (id === NID.Size) {
-    // One substream per folder inherits the folder size, so no explicit size is legal here.
-    throw invalidArchive('Unexpected substream sizes for one-stream folders')
+    for (let folderIndex = 0; folderIndex < folders.length; folderIndex += 1) {
+      let assigned = 0n
+      for (let streamIndex = 0; streamIndex + 1 < counts[folderIndex]; streamIndex += 1) {
+        const size = reader.variableUint64()
+        assigned += size
+        if (assigned > folders[folderIndex].unpackSize) {
+          throw invalidArchive('7z substream sizes exceed their folder size')
+        }
+        substreams[folderIndex][streamIndex].size = size
+      }
+    }
+    id = reader.byte()
+  } else if (counts.some(count => count > 1)) {
+    throw invalidArchive('Solid 7z folder has no substream sizes')
+  }
+
+  for (let folderIndex = 0; folderIndex < folders.length; folderIndex += 1) {
+    const streams = substreams[folderIndex]
+    if (streams.length === 0) continue
+    const assigned = streams.slice(0, -1).reduce((total, stream) => total + stream.size, 0n)
+    if (assigned > folders[folderIndex].unpackSize) {
+      throw invalidArchive('7z substream sizes exceed their folder size')
+    }
+    streams[streams.length - 1].size = folders[folderIndex].unpackSize - assigned
+  }
+
+  const digestTargets: ParsedSubstream[] = []
+  for (let folderIndex = 0; folderIndex < folders.length; folderIndex += 1) {
+    const streams = substreams[folderIndex]
+    if (streams.length === 1 && folders[folderIndex].crc !== undefined) {
+      streams[0].crc = folders[folderIndex].crc
+    } else {
+      digestTargets.push(...streams)
+    }
   }
   if (id === NID.CRC) {
-    const withoutFolderCrc = folders.filter(folder => folder.crc === undefined)
-    const digests = readDigests(reader, withoutFolderCrc.length)
-    withoutFolderCrc.forEach((folder, index) => { folder.crc = digests[index] })
+    const digests = readDigests(reader, digestTargets.length)
+    digestTargets.forEach((stream, index) => { stream.crc = digests[index] })
     id = reader.byte()
   }
   if (id !== NID.End) throw unsupportedFeature(`Unsupported SubStreamsInfo property: 0x${id.toString(16)}`)
+  folders.forEach((folder, index) => { folder.substreams = substreams[index] })
 }
 
 function parseStreamsInfo(reader: ByteReader): ParsedStreams {
@@ -499,6 +545,13 @@ function parseStreamsInfo(reader: ByteReader): ParsedStreams {
     }
   }
   if (packSizes.length !== folders.length) throw invalidArchive('7z stream and folder counts do not match')
+  let packedOffset = 32n + packPosition
+  folders.forEach((folder, index) => {
+    folder.packedOffset = packedOffset
+    folder.packedSize = packSizes[index]
+    folder.substreams ??= [{ size: folder.unpackSize, crc: folder.crc }]
+    packedOffset += packSizes[index]
+  })
   return { packPosition, packSizes, folders }
 }
 
@@ -567,20 +620,15 @@ function parseFilesInfo(reader: ByteReader, streams: ParsedStreams): ParsedFile[
   if (!names) throw invalidArchive('7z archive has no file-name table')
 
   let emptyIndex = 0
-  let folderIndex = 0
-  let packedOffset = 32n + streams.packPosition
-  const folderOffsets = streams.folders.map((folder, index) => {
-    const value = packedOffset
-    packedOffset += streams.packSizes[index]
-    return value
-  })
-
-  return names.map((path, index) => {
+  const streamReferences = streams.folders.flatMap(folder =>
+    folder.substreams!.map((substream, substreamIndex) => ({ folder, substream, substreamIndex })))
+  let streamIndex = 0
+  const files = names.map((path, index) => {
     let isDirectory = false
     let size = 0n
     let crc: number | undefined
     let folder: ParsedFolder | undefined
-    let filePackedOffset: bigint | undefined
+    let substreamIndex: number | undefined
     let packedSize: bigint | undefined
     if (emptyStreams[index]) {
       const isEmptyFile = emptyFiles[emptyIndex] === true
@@ -589,13 +637,13 @@ function parseFilesInfo(reader: ByteReader, streams: ParsedStreams): ParsedFile[
       if (isAnti) throw unsupportedFeature('7z anti-file entries are unsupported')
       isDirectory = !isEmptyFile
     } else {
-      folder = streams.folders[folderIndex]
-      if (!folder) throw invalidArchive('7z file table references a missing folder')
-      size = folder.unpackSize
-      crc = folder.crc
-      filePackedOffset = folderOffsets[folderIndex]
-      packedSize = streams.packSizes[folderIndex]
-      folderIndex += 1
+      const reference = streamReferences[streamIndex++]
+      if (!reference) throw invalidArchive('7z file table references a missing substream')
+      folder = reference.folder
+      substreamIndex = reference.substreamIndex
+      size = reference.substream.size
+      crc = reference.substream.crc
+      if (substreamIndex === 0) packedSize = folder.packedSize
     }
     const rawAttributes = attributes[index]
     const unixMode = rawAttributes === undefined ? undefined : (rawAttributes >>> 16) & 0xffff
@@ -612,10 +660,14 @@ function parseFilesInfo(reader: ByteReader, streams: ParsedStreams): ParsedFile[
       mode: unixMode === undefined ? undefined : unixMode & 0o7777,
       crc,
       folder,
-      packedOffset: filePackedOffset,
+      substreamIndex,
       packedSize
     }
   })
+  if (streamIndex !== streamReferences.length) {
+    throw invalidArchive('7z stream table contains more substreams than files')
+  }
+  return files
 }
 
 function parseHeader(bytes: Uint8Array): ParsedFile[] {
@@ -649,7 +701,11 @@ async function decodeEncodedHeader(
   if (reader.byte() !== NID.EncodedHeader) throw invalidArchive('Invalid encoded-header marker')
   const streams = parseStreamsInfo(reader)
   reader.assertFinished('encoded 7z header descriptor')
-  if (streams.folders.length !== 1 || streams.packSizes.length !== 1) {
+  if (
+    streams.folders.length !== 1 ||
+    streams.packSizes.length !== 1 ||
+    streams.folders[0].substreams?.length !== 1
+  ) {
     throw unsupportedFeature('Only one-stream encoded 7z headers are supported')
   }
   const folder = streams.folders[0]
@@ -767,6 +823,114 @@ async function* decodeLzma2FromSource(
   if (total !== expectedSize) throw invalidArchive('LZMA2 output size does not match the 7z header')
 }
 
+async function* decodeFolderFromSource(
+  source: RandomAccessSource,
+  folder: ParsedFolder,
+  signal?: AbortSignal,
+  decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory']
+): AsyncGenerator<Uint8Array> {
+  if (folder.packedOffset === undefined || folder.packedSize === undefined) {
+    throw invalidArchive('7z folder has no packed stream')
+  }
+  const cursor = new PackedCursor(source, folder.packedOffset, folder.packedSize, signal)
+  if (folder.methodId === COPY_METHOD) {
+    let remaining = folder.unpackSize
+    while (remaining > 0n) {
+      throwIfCancelled(signal)
+      const length = Number(remaining > 1024n * 1024n ? 1024n * 1024n : remaining)
+      const bytes = await cursor.read(length)
+      remaining -= BigInt(bytes.length)
+      yield bytes
+    }
+    if (cursor.remaining !== 0n) throw invalidArchive('Copy stream size does not match the 7z folder size')
+    return
+  }
+  if (folder.methodId === LZMA2_METHOD && folder.properties.length === 1) {
+    yield* decodeLzma2FromSource(
+      cursor,
+      folder.properties[0],
+      folder.unpackSize,
+      signal,
+      decoderFactory
+    )
+    return
+  }
+  throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${folder.methodId.toString(16)}`)
+}
+
+class FolderOutputReader {
+  private buffer: Uint8Array | null = null
+  private bufferOffset = 0
+  private ended = false
+  private readonly crc = new Crc32()
+
+  constructor(
+    private readonly iterator: AsyncGenerator<Uint8Array>,
+    private readonly folder: ParsedFolder
+  ) {}
+
+  async read(maxLength: number): Promise<Uint8Array | null> {
+    if (maxLength < 1) throw new RangeError('Folder output read length must be positive')
+    while (!this.buffer || this.bufferOffset === this.buffer.length) {
+      const item = await this.iterator.next()
+      if (item.done) {
+        this.ended = true
+        return null
+      }
+      if (item.value.length === 0) continue
+      this.buffer = item.value
+      this.bufferOffset = 0
+    }
+    const end = Math.min(this.buffer.length, this.bufferOffset + maxLength)
+    const bytes = this.buffer.subarray(this.bufferOffset, end)
+    this.bufferOffset = end
+    this.crc.update(bytes)
+    return bytes
+  }
+
+  async finish(): Promise<void> {
+    if (this.buffer && this.bufferOffset !== this.buffer.length) {
+      throw invalidArchive('7z folder expands beyond its declared substream sizes')
+    }
+    if (!this.ended) {
+      const item = await this.iterator.next()
+      if (!item.done) throw invalidArchive('7z folder expands beyond its declared substream sizes')
+      this.ended = true
+    }
+    if (this.folder.crc !== undefined && this.crc.digest() !== this.folder.crc) {
+      throw new Libera7zError('CRC_MISMATCH', '7z folder CRC does not match')
+    }
+  }
+
+  async close(): Promise<void> {
+    if (!this.ended) await this.iterator.return(undefined).catch(() => undefined)
+    this.ended = true
+  }
+}
+
+async function* readFolderSubstream(
+  reader: FolderOutputReader,
+  substream: ParsedSubstream,
+  description: string,
+  signal?: AbortSignal
+): AsyncGenerator<Uint8Array> {
+  let remaining = substream.size
+  const crc = new Crc32()
+  while (remaining > 0n) {
+    throwIfCancelled(signal)
+    const limit = Number(remaining > 1024n * 1024n ? 1024n * 1024n : remaining)
+    const bytes = await reader.read(limit)
+    if (!bytes) throw invalidArchive(`7z folder ended before ${description}`)
+    remaining -= BigInt(bytes.length)
+    crc.update(bytes)
+    yield bytes
+  }
+  throwIfCancelled(signal)
+  if (substream.crc !== undefined && crc.digest() !== substream.crc) {
+    throw new Libera7zError('CRC_MISMATCH', `CRC mismatch for ${description}`)
+  }
+}
+
 export class SevenZipArchive {
   readonly entries: readonly SevenZipEntry[]
 
@@ -788,45 +952,86 @@ export class SevenZipArchive {
     }))
   }
 
-  openEntry(id: number, options: OpenEntryOptions = {}): ReadableStream<Uint8Array> {
-    const file = this.parsedFiles[id]
-    if (!file) throw new Libera7zError('INVALID_ARCHIVE', `7z entry ${id} does not exist`)
-    if (file.isDirectory) throw new Libera7zError('UNSUPPORTED_FEATURE', 'Directories have no content stream')
-    if (!file.folder || file.packedOffset === undefined || file.packedSize === undefined) {
-      return readableFromGenerator((async function* () {})())
-    }
+  openEntries(ids: readonly number[], options: OpenEntryOptions = {}): ReadableStream<SevenZipEntryEvent> {
+    const files = [...new Set(ids)].map(id => {
+      const file = this.parsedFiles[id]
+      if (!file) throw new Libera7zError('INVALID_ARCHIVE', `7z entry ${id} does not exist`)
+      if (file.isDirectory) throw new Libera7zError('UNSUPPORTED_FEATURE', 'Directories have no content stream')
+      return { id, file, entry: this.entries[id] }
+    }).sort((left, right) => left.id - right.id)
 
     const source = this.source
     const decoderFactory = this.decoderFactory
-    const generator = (async function* () {
-      const crc = new Crc32()
-      const cursor = new PackedCursor(source, file.packedOffset!, file.packedSize!, options.signal)
-      if (file.folder!.methodId === COPY_METHOD) {
-        let remaining = file.size
-        while (remaining > 0n) {
+    const generator = (async function* (): AsyncGenerator<SevenZipEntryEvent> {
+      let activeFolder: ParsedFolder | null = null
+      let output: FolderOutputReader | null = null
+      let nextSubstream = 0
+      try {
+        for (const { id, file, entry } of files) {
           throwIfCancelled(options.signal)
-          const length = Number(remaining > 1024n * 1024n ? 1024n * 1024n : remaining)
-          const bytes = await cursor.read(length)
-          crc.update(bytes)
-          remaining -= BigInt(bytes.length)
-          yield bytes
+          if (!file.folder || file.substreamIndex === undefined) {
+            yield { type: 'entry-start', entry }
+            yield { type: 'entry-end', entry }
+            continue
+          }
+
+          if (file.folder !== activeFolder) {
+            await output?.close()
+            activeFolder = file.folder
+            output = new FolderOutputReader(
+              decodeFolderFromSource(source, file.folder, options.signal, decoderFactory),
+              file.folder
+            )
+            nextSubstream = 0
+          }
+          if (file.substreamIndex < nextSubstream) {
+            throw invalidArchive('7z files do not follow their solid substream order')
+          }
+          const folderOutput = output
+          if (!folderOutput) throw invalidArchive('7z solid folder decoder was not initialized')
+          while (nextSubstream < file.substreamIndex) {
+            const skipped = activeFolder.substreams![nextSubstream]
+            for await (const bytes of readFolderSubstream(
+              folderOutput,
+              skipped,
+              `solid substream ${nextSubstream}`,
+              options.signal
+            )) {
+              // Decoding skipped streams preserves the LZMA dictionary for the selected entry.
+              void bytes
+            }
+            nextSubstream += 1
+          }
+
+          const substream = activeFolder.substreams![nextSubstream]
+          if (!substream) throw invalidArchive('7z file references a missing solid substream')
+          yield { type: 'entry-start', entry }
+          for await (const bytes of readFolderSubstream(folderOutput, substream, file.path, options.signal)) {
+            yield { type: 'data', entryId: id, bytes }
+          }
+          nextSubstream += 1
+          if (nextSubstream === activeFolder.substreams!.length) await folderOutput.finish()
+          yield { type: 'entry-end', entry }
         }
-      } else if (file.folder!.methodId === LZMA2_METHOD && file.folder!.properties.length === 1) {
-        for await (const bytes of decodeLzma2FromSource(
-          cursor,
-          file.folder!.properties[0],
-          file.size,
-          options.signal,
-          decoderFactory
-        )) {
-          crc.update(bytes)
-          yield bytes
-        }
-      } else {
-        throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${file.folder!.methodId.toString(16)}`)
+      } finally {
+        await output?.close()
       }
-      if (file.crc !== undefined && crc.digest() !== file.crc) {
-        throw new Libera7zError('CRC_MISMATCH', `CRC mismatch for ${file.path}`)
+    })()
+    return readableFromGenerator(generator)
+  }
+
+  openEntry(id: number, options: OpenEntryOptions = {}): ReadableStream<Uint8Array> {
+    const events = this.openEntries([id], options)
+    const generator = (async function* (): AsyncGenerator<Uint8Array> {
+      const reader = events.getReader()
+      try {
+        while (true) {
+          const item = await reader.read()
+          if (item.done) return
+          if (item.value.type === 'data') yield item.value.bytes
+        }
+      } finally {
+        await reader.cancel().catch(() => undefined)
       }
     })()
     return readableFromGenerator(generator)
