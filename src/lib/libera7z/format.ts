@@ -224,6 +224,13 @@ function buildNextHeader(entries: readonly SevenZipEntryInput[], streams: readon
     for (const stream of streams) writeFolder(writer, stream)
     writer.byte(NID.CodersUnpackSize)
     for (const stream of streams) writer.variableUint64(stream.unpackedSize)
+    writer.byte(NID.End)
+
+    // libarchive (and therefore macOS Archive Utility) rejects archives whose
+    // single-file stream CRCs are stored as folder CRCs in UnpackInfo. Keep the
+    // folders without digests and describe the same CRCs as substream digests,
+    // matching the layout emitted by 7-Zip itself.
+    writer.byte(NID.SubStreamsInfo)
     writer.byte(NID.CRC).byte(1)
     for (const stream of streams) writer.uint32(stream.crc)
     writer.byte(NID.End)

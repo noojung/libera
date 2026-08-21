@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
+import { promisify } from 'util'
 import { ByteReader, ByteWriter } from './binary'
 import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
 import { Libera7zError } from './errors'
@@ -12,6 +14,7 @@ import { runSevenZip } from '../../services/sevenZip'
 import { openLibera7zFile } from '../../services/libera7zNode'
 
 const temporaryDirectories: string[] = []
+const execFileAsync = promisify(execFile)
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory => fs.rm(directory, { recursive: true, force: true })))
@@ -147,6 +150,24 @@ describe('pure JavaScript 7z container', () => {
     expect(stdout.normalize('NFC')).toContain(`Path = ${path.join('bundle', '안내.txt')}`)
     await expect(runSevenZip(['t', '--', archivePath], undefined)).resolves.toMatchObject({ exitCode: 0 })
   }, 60_000)
+
+  it.skipIf(process.platform !== 'darwin').each(['copy', 'lzma2'] as const)(
+    'writes a %s archive extractable by macOS libarchive',
+    async method => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-macos-'))
+      temporaryDirectories.push(directory)
+      const archivePath = path.join(directory, `${method}.7z`)
+      const extractionPath = path.join(directory, 'extracted')
+      const sink = new MemorySink()
+      await create7z(entries(), sink, { method })
+      await fs.writeFile(archivePath, sink.data())
+      await fs.mkdir(extractionPath)
+
+      await execFileAsync('/usr/bin/bsdtar', ['-xf', archivePath, '-C', extractionPath])
+      await expect(fs.readFile(path.join(extractionPath, 'bundle', '안내.txt'))).resolves.toEqual(Buffer.from(payload))
+    },
+    60_000
+  )
 
   it('decodes match-coded LZMA2 produced by the bundled 7-Zip', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-external-'))
