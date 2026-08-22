@@ -109,13 +109,20 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 ## Supported Formats
 
-| Feature | Formats | Constraints |
-| --- | --- | --- |
-| Compression | ZIP, 7Z, TAR, TAR.GZ, GZ | GZ supports a single file only |
-| Extraction | ZIP, 7Z, TAR, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, 7Z, TAR, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files. Split ZIP and 7Z inspections identify and list every volume in the set |
-| Passwords | ZIP (create), ZIP and 7Z (open) | ZIP uses ZipCrypto for compatibility and does not provide strong confidentiality. Encrypted 7Z archives can be opened with a password, but Libera does not create them |
-| Split volumes | ZIP, 7Z | Select any volume and Libera discovers the complete set in the same folder. ZIP writes `.z01 … .zip` and uses `.zip` as the representative file; 7Z writes `.7z.001 …` and uses `.7z.001`. Volume details are collapsed by default and can be expanded. Every volume must remain together |
+| Format | Supported features | Codec support | Notes |
+| --- | --- | --- | --- |
+| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate<br>Read: Store, Deflate, Deflate64 | Password creation uses ZipCrypto. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
+| 7Z | Compress · Extract · Preview · Open with password · Split volumes | Write: Copy, LZMA2<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Split sets use `.7z.001 …`, with `.7z.001` as the representative file. Password-protected creation is not supported |
+| TAR | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
+| TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
+| GZ | Compress · Extract · Preview | GZIP/Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
+| JAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
+| WAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
+
+Preview includes archive browsing and search, 1 MiB text previews, and PNG,
+JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting
+any volume discovers the complete set in the same folder; every volume must
+remain together. Volume details are collapsed by default and can be expanded.
 
 ## Safe Extraction Policy
 The following checks are applied before and during extraction:
