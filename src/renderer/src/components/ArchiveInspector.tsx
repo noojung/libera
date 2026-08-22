@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, File, Filter, Folder, Home, Search, ShieldAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Search, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { ArchiveEntry, ArchiveInspectionResult } from '@services/archiveInspector'
 import type { ArchivePreviewResult } from '@services/archivePreview'
 import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
@@ -8,17 +9,6 @@ import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '@/utils/archi
 import { ArchivePreviewModal } from './ArchivePreviewModal'
 import { PasswordPromptModal } from './PasswordPromptModal'
 import './ArchiveInspector.css'
-
-interface ArchiveEntry {
-  id: string
-  name: string
-  path: string
-  isDirectory: boolean
-  size: number | null
-  compressedSize?: number
-  ratio?: number | null
-  date?: string
-}
 
 const ENTRY_PAGE_SIZE = 500
 
@@ -92,7 +82,8 @@ export const ArchiveInspector: React.FC = () => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [archivePath, setArchivePath] = useState<string>('')
-  const [inspectData, setInspectData] = useState<{ entries: ArchiveEntry[]; [key: string]: any } | null>(null)
+  const [inspectData, setInspectData] = useState<ArchiveInspectionResult | null>(null)
+  const [volumesExpanded, setVolumesExpanded] = useState(false)
   const [loading, setLoading] = useState<boolean>(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
@@ -132,10 +123,12 @@ export const ArchiveInspector: React.FC = () => {
     setSearchQuery('')
     setCurrentPath('')
     setVisibleEntryCount(ENTRY_PAGE_SIZE)
+    setVolumesExpanded(false)
     try {
       const response = await (window as any).electronAPI.inspectArchive(filePath, password)
       if (response.success) {
         setInspectData(response.result)
+        setArchivePath(response.result.archivePath || filePath)
         setArchivePassword(password)
         setPasswordPrompt(null)
       } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
@@ -256,6 +249,9 @@ export const ArchiveInspector: React.FC = () => {
   }, [currentEntries, isSearching, language, searchQuery, searchableEntries])
   const displayedEntries = allDisplayedEntries.slice(0, visibleEntryCount)
   const breadcrumbs = currentPath ? currentPath.split('/') : []
+  const splitVolumes = inspectData?.volumes && inspectData.volumes.length > 1
+    ? inspectData.volumes
+    : null
 
   const moveToPath = (nextPath: string) => {
     setCurrentPath(nextPath)
@@ -270,10 +266,26 @@ export const ArchiveInspector: React.FC = () => {
           <div className="archive-inspector__header-icon">
             <Search size={22} />
           </div>
-          <div>
-            <h3 className="archive-inspector__title">
-              {t('inspector.title')}
-            </h3>
+          <div className="archive-inspector__heading">
+            <div className="archive-inspector__title-row">
+              <h3 className="archive-inspector__title">
+                {t('inspector.title')}
+              </h3>
+              {splitVolumes && (
+                <button
+                  type="button"
+                  className="archive-inspector__split-badge"
+                  aria-expanded={volumesExpanded}
+                  aria-controls="archive-inspector-volumes"
+                  aria-label={t(volumesExpanded ? 'inspector.hideVolumes' : 'inspector.showVolumes')}
+                  onClick={() => setVolumesExpanded(expanded => !expanded)}
+                >
+                  <Files size={13} />
+                  <span>{t('inspector.splitArchive')} · {t('inspector.volumeCount', { count: splitVolumes.length })}</span>
+                  <ChevronDown className={volumesExpanded ? 'is-expanded' : ''} size={13} />
+                </button>
+              )}
+            </div>
             <p className="archive-inspector__subtitle">
               {archivePath || t('inspector.subtitle')}
             </p>
@@ -293,11 +305,44 @@ export const ArchiveInspector: React.FC = () => {
         </div>
       ) : inspectData ? (
         <div className="archive-inspector__content">
+          {splitVolumes && volumesExpanded && (
+            <section
+              id="archive-inspector-volumes"
+              className="glass-panel archive-inspector__volumes-panel"
+              aria-label={t('inspector.volumes')}
+            >
+              <div className="archive-inspector__volumes-header">
+                <div>
+                  <h4 className="archive-inspector__volumes-title">{t('inspector.volumes')}</h4>
+                  <p className="archive-inspector__volumes-description">
+                    {t('inspector.splitDescription', { count: splitVolumes.length })}
+                  </p>
+                </div>
+                <span className="archive-inspector__volumes-total">
+                  {formatBytes(splitVolumes.reduce((total, volume) => total + volume.size, 0), language)}
+                </span>
+              </div>
+              <div className="archive-inspector__volume-list">
+                {splitVolumes.map(volume => (
+                  <div key={volume.path} className="archive-inspector__volume">
+                    <File className="archive-inspector__volume-icon" size={15} />
+                    <div className="archive-inspector__volume-details">
+                      <div className="archive-inspector__volume-name">{volume.name}</div>
+                      <div className="archive-inspector__volume-path">{volume.path}</div>
+                    </div>
+                    <span className="archive-inspector__volume-size">{formatBytes(volume.size, language)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <div className="archive-inspector__stats">
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.format')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--accent">{inspectData.format}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.totalFiles')}</div><div className="archive-inspector__stat-value">{t('inspector.fileCount', { count: inspectData.totalFiles })}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.extractedSize')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--size">{inspectData.totalUncompressedSize === null ? t('inspector.unknown') : formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.efficiency')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--success">{inspectData.overallRatio === null ? t('inspector.unknown') : t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
+            {splitVolumes && <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.volumes')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--accent">{t('inspector.volumeCount', { count: splitVolumes.length })}</div></div>}
           </div>
 
           <div className="glass-panel archive-inspector__browser">

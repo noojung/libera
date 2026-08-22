@@ -1,5 +1,6 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
+import { crc32 } from '../lib/libera7z/crc32'
 import { normalizeName, SplitVolumeError } from './splitZipVolumes'
 
 // Naming and discovery for split 7z sets. Deliberately separate from
@@ -12,6 +13,8 @@ import { normalizeName, SplitVolumeError } from './splitZipVolumes'
 // so the count is capped where the padding still holds.
 export const MAX_SEVEN_ZIP_VOLUMES = 999
 export const SEVEN_ZIP_VOLUME_SUFFIX = /\.7z\.\d{3,}$/i
+const SEVEN_ZIP_SIGNATURE = Uint8Array.of(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
+const SEVEN_ZIP_SIGNATURE_HEADER_SIZE = 32
 
 export function isSevenZipVolumePath(archivePath: string): boolean {
   return SEVEN_ZIP_VOLUME_SUFFIX.test(archivePath)
@@ -39,6 +42,41 @@ export function sevenZipVolumePath(basePath: string, volumeNumber: number): stri
 export function firstVolumePath(archivePath: string): string {
   if (!isSevenZipVolumePath(archivePath)) return archivePath
   return sevenZipVolumePath(sevenZipVolumeBase(archivePath), 1)
+}
+
+async function readVolumePrefix(volumePaths: readonly string[], length: number): Promise<Uint8Array> {
+  const prefix = Buffer.alloc(length)
+  let written = 0
+  for (const volumePath of volumePaths) {
+    if (written === length) break
+    const handle = await fsPromises.open(volumePath, 'r')
+    try {
+      let volumeOffset = 0
+      while (written < length) {
+        const { bytesRead } = await handle.read(prefix, written, length - written, volumeOffset)
+        if (bytesRead === 0) break
+        written += bytesRead
+        volumeOffset += bytesRead
+      }
+    } finally {
+      await handle.close()
+    }
+  }
+  return new Uint8Array(prefix.buffer, prefix.byteOffset, written).slice()
+}
+
+function hasSevenZipSignature(prefix: Uint8Array): boolean {
+  return prefix.length >= SEVEN_ZIP_SIGNATURE.length &&
+    SEVEN_ZIP_SIGNATURE.every((value, index) => prefix[index] === value)
+}
+
+function declaredSevenZipSize(signatureHeader: Uint8Array): bigint | null {
+  if (signatureHeader.length < SEVEN_ZIP_SIGNATURE_HEADER_SIZE || !hasSevenZipSignature(signatureHeader)) return null
+  const view = new DataView(signatureHeader.buffer, signatureHeader.byteOffset, signatureHeader.byteLength)
+  if (crc32(signatureHeader.subarray(12, 32)) !== view.getUint32(8, true)) return null
+  const nextHeaderOffset = view.getBigUint64(12, true)
+  const nextHeaderSize = view.getBigUint64(20, true)
+  return BigInt(SEVEN_ZIP_SIGNATURE_HEADER_SIZE) + nextHeaderOffset + nextHeaderSize
 }
 
 /**
@@ -93,12 +131,34 @@ export async function discoverSevenZipVolumes(firstPath: string): Promise<string
     volumePaths.push(volume)
   }
 
+  let availableSize = 0n
   for (const volume of volumePaths) {
     const stat = await fsPromises.lstat(volume).catch(() => null)
     if (!stat || !stat.isFile()) {
       const name = path.basename(volume)
       throw new SplitVolumeError('SPLIT_VOLUME_MISSING', name, `Volume is not a readable file: ${name}`)
     }
+    availableSize += BigInt(stat.size)
+  }
+
+  let signatureHeader: Uint8Array
+  try {
+    signatureHeader = await readVolumePrefix(volumePaths, SEVEN_ZIP_SIGNATURE_HEADER_SIZE)
+  } catch {
+    throw new SplitVolumeError('SPLIT_VOLUME_UNREADABLE', firstName, `Cannot read the archive volumes: ${firstName}`)
+  }
+  if (hasSevenZipSignature(signatureHeader) && signatureHeader.length < SEVEN_ZIP_SIGNATURE_HEADER_SIZE) {
+    const missing = path.basename(sevenZipVolumePath(baseName, volumePaths.length + 1))
+    throw new SplitVolumeError('SPLIT_VOLUME_MISSING', missing, `The split 7z header is incomplete; missing volume: ${missing}`)
+  }
+  const declaredSize = declaredSevenZipSize(signatureHeader)
+  if (declaredSize !== null && availableSize < declaredSize) {
+    const missing = path.basename(sevenZipVolumePath(baseName, volumePaths.length + 1))
+    throw new SplitVolumeError(
+      'SPLIT_VOLUME_MISSING',
+      missing,
+      `The split 7z set is missing data at or after volume: ${missing}`
+    )
   }
 
   return volumePaths

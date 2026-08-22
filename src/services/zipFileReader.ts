@@ -7,7 +7,13 @@ import {
   type Entry,
   type ZipReaderConstructorOptions
 } from '@zip.js/zip.js'
-import { discoverSplitVolumes, splitVolumeBase, terminalVolumePath, volumePathForDisk } from './splitZipVolumes'
+import {
+  discoverSplitVolumes,
+  readZipTerminalDiskNumber,
+  splitVolumeBase,
+  terminalVolumePath,
+  volumePathForDisk
+} from './splitZipVolumes'
 
 configure({ useWebWorkers: false })
 
@@ -90,7 +96,8 @@ async function looksLikeSplitArchive(terminalPath: string): Promise<boolean> {
     .catch(() => false)
 
   if (hasFirstVolume) return true
-  return startsWithSpanningSignature(terminalPath)
+  if (await startsWithSpanningSignature(terminalPath)) return true
+  return readZipTerminalDiskNumber(terminalPath).then(diskNumber => (diskNumber ?? 0) > 0, () => false)
 }
 
 /**

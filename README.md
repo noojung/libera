@@ -113,12 +113,11 @@ Pages automatically when changes under `site/` are pushed to `main`.
 | --- | --- | --- |
 | Compression | ZIP, 7Z, TAR, TAR.GZ, GZ | GZ supports a single file only |
 | Extraction | ZIP, 7Z, TAR, TAR.GZ, GZ | Only archive files can be selected; folders are not accepted as input |
-| Inspection | ZIP, 7Z, TAR, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files |
+| Inspection | ZIP, 7Z, TAR, TAR.GZ, GZ | Supports browsing, searching, 1 MiB text previews, and image previews for PNG, JPEG, WebP, and GIF files. Split ZIP and 7Z inspections identify and list every volume in the set |
 | Passwords | ZIP (create), ZIP and 7Z (open) | ZIP uses ZipCrypto for compatibility and does not provide strong confidentiality. Encrypted 7Z archives can be opened with a password, but Libera does not create them |
-| Split volumes | ZIP, 7Z | ZIP writes `.z01 … .zip` and is read from the last volume; 7Z writes `.7z.001 …` and is read from the first |
+| Split volumes | ZIP, 7Z | Select any volume and Libera discovers the complete set in the same folder. ZIP writes `.z01 … .zip` and uses `.zip` as the representative file; 7Z writes `.7z.001 …` and uses `.7z.001`. Volume details are collapsed by default and can be expanded. Every volume must remain together |
 
 ## Safe Extraction Policy
-
 The following checks are applied before and during extraction:
 
 - Rejects absolute paths and paths that escape the destination directory (Zip Slip).

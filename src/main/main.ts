@@ -20,6 +20,11 @@ import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/splitZipVolumes'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
 import { SevenZipError } from '../services/sevenZipError'
+import {
+  resolveExtractionInput,
+  type ResolveExtractionInputsResult
+} from '../services/archiveInputResolver'
+import { canonicalArchivePath } from '../services/archiveVolumes'
 import appInfo from '../renderer/src/generated/appInfo.json'
 
 let mainWindow: BrowserWindow | null = null
@@ -364,6 +369,34 @@ ipcMain.handle('archive:extract', async (_, options: ExtractionOptions, jobId: s
   } finally {
     progress.cancel()
     if (activeExtractionControllers.get(jobId) === controller) activeExtractionControllers.delete(jobId)
+  }
+})
+
+ipcMain.handle('archive:resolveExtractionInputs', async (_, itemPaths: string[]): Promise<ResolveExtractionInputsResult> => {
+  const groupedPaths = new Map<string, string>()
+  for (const itemPath of itemPaths) {
+    const canonicalPath = canonicalArchivePath(itemPath)
+    const key = process.platform === 'win32' ? canonicalPath.toLowerCase() : canonicalPath
+    if (!groupedPaths.has(key)) groupedPaths.set(key, itemPath)
+  }
+
+  const resolved = await Promise.all([...groupedPaths.values()].map(async itemPath => {
+    try {
+      return { item: await resolveExtractionInput(itemPath) }
+    } catch (error) {
+      return {
+        error: {
+          path: itemPath,
+          error: error instanceof Error ? error.message : String(error),
+          errorCode: classifyError(error, 'extraction')
+        }
+      }
+    }
+  }))
+
+  return {
+    items: resolved.flatMap(result => result.item ? [result.item] : []),
+    errors: resolved.flatMap(result => result.error ? [result.error] : [])
   }
 })
 

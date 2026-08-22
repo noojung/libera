@@ -26,6 +26,9 @@ export class SplitVolumeError extends Error {
 
 const isWindows = process.platform === 'win32'
 const NUMBERED_VOLUME_SUFFIX = /\.z\d{2,}$/i
+const END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50
+const END_OF_CENTRAL_DIRECTORY_SIZE = 22
+const MAX_ZIP_COMMENT_SIZE = 0xffff
 
 export function normalizeName(name: string): string {
   return isWindows ? name.toLowerCase() : name
@@ -78,6 +81,30 @@ export function isNumberedVolumePath(archivePath: string): boolean {
   return NUMBERED_VOLUME_SUFFIX.test(archivePath)
 }
 
+/** Reads the zero-based terminal disk number recorded by a ZIP archive. */
+export async function readZipTerminalDiskNumber(terminalPath: string): Promise<number | null> {
+  const handle = await fsPromises.open(terminalPath, 'r')
+  try {
+    const stat = await handle.stat()
+    const tailLength = Math.min(stat.size, END_OF_CENTRAL_DIRECTORY_SIZE + MAX_ZIP_COMMENT_SIZE)
+    if (tailLength < END_OF_CENTRAL_DIRECTORY_SIZE) return null
+
+    const tail = Buffer.allocUnsafe(tailLength)
+    const { bytesRead } = await handle.read(tail, 0, tail.length, stat.size - tailLength)
+    if (bytesRead !== tail.length) return null
+
+    for (let offset = tail.length - END_OF_CENTRAL_DIRECTORY_SIZE; offset >= 0; offset -= 1) {
+      if (tail.readUInt32LE(offset) !== END_OF_CENTRAL_DIRECTORY_SIGNATURE) continue
+      const commentLength = tail.readUInt16LE(offset + 20)
+      if (offset + END_OF_CENTRAL_DIRECTORY_SIZE + commentLength !== tail.length) continue
+      return tail.readUInt16LE(offset + 4)
+    }
+    return null
+  } finally {
+    await handle.close()
+  }
+}
+
 /**
  * Returns every volume of the set in disk order, terminal `.zip` last, which is
  * the order SplitDataReader maps onto its concatenated address space.
@@ -122,18 +149,36 @@ export async function discoverSplitVolumes(terminalPath: string): Promise<string
   if (!terminal) {
     throw new SplitVolumeError('SPLIT_VOLUME_MISSING', terminalName, `Missing the final volume: ${terminalName}`)
   }
-  if (byDisk.size + 1 > MAX_SPLIT_VOLUMES) {
+  let expectedNumberedVolumes: number | null
+  try {
+    expectedNumberedVolumes = await readZipTerminalDiskNumber(terminal)
+  } catch {
+    throw new SplitVolumeError('SPLIT_VOLUME_UNREADABLE', terminalName, `Cannot read the final volume: ${terminalName}`)
+  }
+  if (expectedNumberedVolumes === null) {
+    throw new SplitVolumeError(
+      'SPLIT_VOLUME_MISSING',
+      terminalName,
+      `The final volume is missing or incomplete: ${terminalName}`
+    )
+  }
+  if (expectedNumberedVolumes + 1 > MAX_SPLIT_VOLUMES) {
     throw new SplitVolumeError('SPLIT_VOLUME_MISMATCH', terminalName, `The set holds more than ${MAX_SPLIT_VOLUMES} volumes.`)
   }
 
   const volumePaths: string[] = []
-  for (let diskNumber = 1; diskNumber <= byDisk.size; diskNumber += 1) {
+  for (let diskNumber = 1; diskNumber <= expectedNumberedVolumes; diskNumber += 1) {
     const volume = byDisk.get(diskNumber)
     if (!volume) {
       const missing = path.basename(volumePathForDisk(baseName, diskNumber - 1))
       throw new SplitVolumeError('SPLIT_VOLUME_MISSING', missing, `Missing volume: ${missing}`)
     }
     volumePaths.push(volume)
+  }
+  const unexpectedDisk = [...byDisk.keys()].find(diskNumber => diskNumber > expectedNumberedVolumes)
+  if (unexpectedDisk !== undefined) {
+    const unexpected = path.basename(byDisk.get(unexpectedDisk)!)
+    throw new SplitVolumeError('SPLIT_VOLUME_MISMATCH', unexpected, `Unexpected volume: ${unexpected}`)
   }
   volumePaths.push(terminal)
 

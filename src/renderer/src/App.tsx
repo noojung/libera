@@ -192,24 +192,49 @@ export const App: React.FC = () => {
 
     const invalidItems = newItems.filter(item => item.isDirectory || !isSupportedArchive(item.path))
     const validItems = newItems.filter(item => !item.isDirectory && isSupportedArchive(item.path))
-    setExtractInputErrorKey(invalidItems.length > 0 ? 'dropZone.invalidExtractInput' : null)
+    const candidates = new Map<string, SelectedItem>()
+    for (const item of validItems) {
+      const groupKey = splitVolumeGroupKey(item.path)
+      if (!candidates.has(groupKey)) candidates.set(groupKey, item)
+    }
+
+    let resolvedItems: SelectedItem[]
+    let resolutionErrorKey: string | null = null
+    if ((window as any).electronAPI?.resolveExtractionInputs) {
+      try {
+        const resolution = await (window as any).electronAPI.resolveExtractionInputs(
+          [...candidates.values()].map(item => item.path)
+        )
+        resolvedItems = resolution.items
+        if (resolution.errors.length > 0) resolutionErrorKey = `errors.${resolution.errors[0].errorCode}`
+      } catch {
+        resolvedItems = []
+        resolutionErrorKey = 'errors.genericExtraction'
+      }
+    } else {
+      resolvedItems = [...candidates.values()].map(item => {
+        const canonicalPath = canonicalArchivePath(item.path)
+        return canonicalPath === item.path
+          ? item
+          : { ...item, path: canonicalPath, name: canonicalPath.split(/[/\\]/).pop() || item.name }
+      })
+    }
+
+    setExtractInputErrorKey(
+      resolutionErrorKey ?? (invalidItems.length > 0 ? 'dropZone.invalidExtractInput' : null)
+    )
 
     setExtractItems(prev => {
-      const existingPaths = new Set(prev.map(i => i.path))
       const existingGroups = new Set(prev.map(i => splitVolumeGroupKey(i.path)))
       const added: SelectedItem[] = []
 
-      for (const item of validItems) {
-        // Every volume of a split set resolves to one job on the terminal
-        // volume, so dragging a whole set in does not queue it N times.
+      for (const item of resolvedItems) {
+        // Every volume resolves to the same logical group, so selecting one
+        // volume or dragging the whole set produces exactly one job.
         const groupKey = splitVolumeGroupKey(item.path)
-        if (existingPaths.has(item.path) || existingGroups.has(groupKey)) continue
+        if (existingGroups.has(groupKey)) continue
         existingGroups.add(groupKey)
-
-        const canonicalPath = canonicalArchivePath(item.path)
-        added.push(canonicalPath === item.path
-          ? item
-          : { ...item, path: canonicalPath, name: canonicalPath.split(/[/\\]/).pop() || item.name })
+        added.push(item)
       }
 
       return [...prev, ...added]

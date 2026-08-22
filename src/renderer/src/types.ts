@@ -1,3 +1,5 @@
+import type { ArchiveVolumeInfo } from '@services/archiveInputResolver'
+
 export type AppMode = 'compress' | 'extract' | 'inspect' | 'queue'
 
 export interface SelectedItem {
@@ -5,6 +7,7 @@ export interface SelectedItem {
   name: string
   isDirectory: boolean
   size: number
+  volumes?: ArchiveVolumeInfo[]
 }
 
 export interface ActiveJob {

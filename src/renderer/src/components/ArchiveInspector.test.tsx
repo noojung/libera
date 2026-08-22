@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArchiveInspector } from './ArchiveInspector'
 import { renderWithI18n } from '@/test/render'
@@ -15,13 +15,14 @@ beforeEach(() => {
   revokeObjectUrl.mockClear()
 })
 
-const inspection = (entries: any[]) => ({
+const inspection = (entries: any[], overrides: Record<string, unknown> = {}) => ({
   success: true,
   result: {
     format: 'ZIP',
     totalFiles: entries.filter(entry => !entry.isDirectory).length,
     totalUncompressedSize: null,
     overallRatio: null,
+    ...overrides,
     entries
   }
 })
@@ -167,6 +168,90 @@ describe('ArchiveInspector', () => {
     await user.click(await screen.findByRole('button', { name: /binary\.bin/ }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This file does not appear to contain supported text.')
+  })
+
+  it('identifies a split archive and expands its complete volume list', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['/archives/archive.z02']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([], {
+        archivePath: '/archives/archive.zip',
+        volumeCount: 3,
+        totalCompressedSize: 3584,
+        volumes: [
+          { path: '/archives/archive.z01', name: 'archive.z01', size: 1024 },
+          { path: '/archives/archive.z02', name: 'archive.z02', size: 2048 },
+          { path: '/archives/archive.zip', name: 'archive.zip', size: 512 }
+        ]
+      }))
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    const showVolumes = await screen.findByRole('button', { name: 'Show split archive volumes' })
+    expect(showVolumes).toHaveTextContent('Split archive · 3 volumes')
+    expect(screen.getByText('/archives/archive.zip')).toBeInTheDocument()
+    expect(screen.queryByText('/archives/archive.z02')).not.toBeInTheDocument()
+    expect(screen.getByText('Split volumes')).toBeInTheDocument()
+    expect(screen.queryByText('archive.z01')).not.toBeInTheDocument()
+
+    await user.click(showVolumes)
+    const volumeList = screen.getByRole('region', { name: 'Split volumes' })
+    expect(within(volumeList).getByText('These 3 files are connected as one logical archive.')).toBeInTheDocument()
+    expect(within(volumeList).getByText('archive.z01')).toBeInTheDocument()
+    expect(within(volumeList).getByText('archive.z02')).toBeInTheDocument()
+    expect(within(volumeList).getByText('archive.zip')).toBeInTheDocument()
+    expect(within(volumeList).getByText('/archives/archive.z02')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide split archive volumes' }))
+    expect(screen.queryByRole('region', { name: 'Split volumes' })).not.toBeInTheDocument()
+  })
+
+  it('uses the first 7z volume as the representative preview path', async () => {
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['/archives/archive.7z.003']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'notes.txt', name: 'notes.txt', isDirectory: false, size: 5 }
+      ], {
+        archivePath: '/archives/archive.7z.001',
+        format: '7Z',
+        volumeCount: 3,
+        volumes: [
+          { path: '/archives/archive.7z.001', name: 'archive.7z.001', size: 1024 },
+          { path: '/archives/archive.7z.002', name: 'archive.7z.002', size: 1024 },
+          { path: '/archives/archive.7z.003', name: 'archive.7z.003', size: 512 }
+        ]
+      })),
+      previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'notText' })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    expect(await screen.findByText('/archives/archive.7z.001')).toBeInTheDocument()
+    expect(screen.queryByText('/archives/archive.7z.003')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /notes\.txt/ }))
+    expect(api.previewArchiveEntry).toHaveBeenCalledWith(
+      '/archives/archive.7z.001',
+      'entry-0',
+      expect.stringMatching(/^archive-preview-/),
+      undefined
+    )
+  })
+
+  it('explains when a split volume disappears before an entry preview', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['archive.7z.001']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'notes.txt', name: 'notes.txt', isDirectory: false, size: 5 }
+      ])),
+      previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'splitVolumeMissing' })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A split archive volume is missing or incomplete. Restore the complete volume set and reopen the archive.'
+    )
   })
 
   it('displays image previews and revokes their Blob URLs when closed', async () => {

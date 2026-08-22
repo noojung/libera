@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ArchivePreviewResult } from '../services/archivePreview'
+import type { ResolveExtractionInputsResult } from '../services/archiveInputResolver'
 
 export type DesktopPlatform = 'macos' | 'windows'
 
@@ -33,6 +34,7 @@ export interface ElectronAPI {
   openExternalLink: (url: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
+  resolveExtractionInputs: (itemPaths: string[]) => Promise<ResolveExtractionInputsResult>
   getPathForFile: (file: File) => string
   onProgress: (callback: (data: any) => void) => () => void
 }
@@ -55,6 +57,7 @@ const api: ElectronAPI = {
   openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),
+  resolveExtractionInputs: (itemPaths) => ipcRenderer.invoke('archive:resolveExtractionInputs', itemPaths),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   onProgress: (callback) => {
     const handler = (_: any, data: any) => callback(data)

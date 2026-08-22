@@ -22,6 +22,9 @@ vi.mock('./components/DropZone', () => ({
     return (
       <div>
         <span data-testid={extracting ? 'extract-count' : 'compress-count'}>{items.length}</span>
+        {items.flatMap((item: any) => item.volumes ?? []).map((volume: any) => (
+          <span key={volume.path}>{volume.name}</span>
+        ))}
         {validationError && <span role="alert">{validationError}</span>}
         {extracting ? (
           <>
@@ -179,8 +182,26 @@ describe('App orchestration', () => {
   it('queues one job for a split volume set and extracts it through the final volume', async () => {
     const extractArchive = vi.fn<(options: any, jobId: string) => Promise<any>>()
       .mockResolvedValue({ success: true, result: { durationMs: 5 } })
+    const resolveExtractionInputs = vi.fn(async (itemPaths: string[]) => ({
+      items: itemPaths.map(itemPath => {
+        const base = itemPath.includes('set.') ? 'set' : 'solo'
+        return {
+          path: `C:\\${base}.zip`,
+          name: `${base}.zip`,
+          isDirectory: false as const,
+          size: 300,
+          volumes: [
+            { path: `C:\\${base}.z01`, name: `${base}.z01`, size: 100 },
+            { path: `C:\\${base}.z02`, name: `${base}.z02`, size: 100 },
+            { path: `C:\\${base}.zip`, name: `${base}.zip`, size: 100 }
+          ]
+        }
+      }),
+      errors: []
+    }))
     const api = installElectronApi({
       getItemStat: vi.fn(async paths => statsFor(paths)),
+      resolveExtractionInputs,
       inspectArchive: vi.fn().mockResolvedValue({ success: true, result: { passwordProtected: false } }),
       extractArchive
     })
@@ -190,6 +211,10 @@ describe('App orchestration', () => {
     await user.click(screen.getByRole('button', { name: 'Add a volume set' }))
     await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('1'))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(resolveExtractionInputs).toHaveBeenNthCalledWith(1, ['C:\\set.z01'])
+    expect(screen.getByText('set.z01')).toBeInTheDocument()
+    expect(screen.getByText('set.z02')).toBeInTheDocument()
+    expect(screen.getByText('set.zip')).toBeInTheDocument()
 
     // A lone numbered volume is accepted and canonicalized to its set.
     await user.click(screen.getByRole('button', { name: 'Add a lone volume' }))
@@ -198,6 +223,41 @@ describe('App orchestration', () => {
     await user.click(screen.getByRole('button', { name: 'Submit extraction' }))
     await waitFor(() => expect(api.extractArchive).toHaveBeenCalledTimes(2))
     expect(extractArchive.mock.calls.map(call => call[0].archivePath)).toEqual(['C:\\set.zip', 'C:\\solo.zip'])
+  })
+
+  it('reports a split-volume resolution error without adding the incomplete set', async () => {
+    installElectronApi({
+      getItemStat: vi.fn(async paths => statsFor(paths)),
+      resolveExtractionInputs: vi.fn().mockResolvedValue({
+        items: [],
+        errors: [{ path: 'C:\\solo.z01', error: 'missing', errorCode: 'splitVolumeMissing' }]
+      })
+    })
+    const { user } = renderWithI18n(<App />)
+    await user.click(screen.getByRole('button', { name: 'Mode extract' }))
+    await user.click(screen.getByRole('button', { name: 'Add a lone volume' }))
+
+    await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('0'))
+    expect(screen.getByRole('alert')).toHaveTextContent('A split archive volume is missing or incomplete')
+  })
+
+  it('keeps the split-volume error code when a volume disappears before extraction', async () => {
+    installElectronApi({
+      getItemStat: vi.fn(async paths => statsFor(paths)),
+      inspectArchive: vi.fn().mockResolvedValue({ success: true, result: { passwordProtected: false } }),
+      extractArchive: vi.fn().mockResolvedValue({
+        success: false,
+        error: 'missing volume',
+        errorCode: 'splitVolumeMissing'
+      })
+    })
+    const { user } = renderWithI18n(<App />)
+    await user.click(screen.getByRole('button', { name: 'Mode extract' }))
+    await user.click(screen.getByRole('button', { name: 'Add extraction files' }))
+    await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('1'))
+    await user.click(screen.getByRole('button', { name: 'Submit extraction' }))
+
+    await waitFor(() => expect(screen.getByText(/one.zip:error:0:splitVolumeMissing/)).toBeInTheDocument())
   })
 
   it('retries protected ZIP extraction after a wrong password', async () => {

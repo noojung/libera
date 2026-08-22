@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { UploadCloud, File, Folder, X, FolderPlus, FilePlus } from 'lucide-react'
+import { ChevronDown, UploadCloud, File, Files, Folder, X, FolderPlus, FilePlus } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -33,6 +33,31 @@ export const DropZone: React.FC<DropZoneProps> = ({
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasUnsupportedDrop, setHasUnsupportedDrop] = useState(false)
+  const [expandedVolumeItems, setExpandedVolumeItems] = useState<Set<SelectedItem>>(() => new Set())
+
+  const toggleVolumes = (item: SelectedItem) => {
+    setExpandedVolumeItems(current => {
+      const next = new Set(current)
+      if (next.has(item)) next.delete(item)
+      else next.add(item)
+      return next
+    })
+  }
+
+  const removeItem = (item: SelectedItem, index: number) => {
+    setExpandedVolumeItems(current => {
+      if (!current.has(item)) return current
+      const next = new Set(current)
+      next.delete(item)
+      return next
+    })
+    onRemoveItem(index)
+  }
+
+  const clearItems = () => {
+    setExpandedVolumeItems(new Set())
+    onClearItems()
+  }
 
   const acceptsPath = (filePath: string) => {
     if (!acceptedFileExtensions && !acceptedFilePatterns) return true
@@ -140,7 +165,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
               {t('dropZone.selectedItems', { count: items.length })}
             </span>
             <button
-              onClick={onClearItems}
+              onClick={clearItems}
               className="drop-zone__clear-button"
             >
               {t('dropZone.clearAll')}
@@ -150,37 +175,78 @@ export const DropZone: React.FC<DropZoneProps> = ({
           <div className="drop-zone__items">
             {items.map((item, idx) => (
               <div
-                key={idx}
+                key={item.path}
                 className="drop-zone__item"
               >
-                <div className="drop-zone__item-main">
-                  {item.isDirectory ? (
-                    <Folder className="drop-zone__item-icon drop-zone__item-icon--folder" size={18} />
-                  ) : (
-                    <File className="drop-zone__item-icon drop-zone__item-icon--file" size={18} />
-                  )}
-                  <div className="drop-zone__item-details">
-                    <div className="drop-zone__item-name">
-                      {item.name}
+                <div className="drop-zone__item-summary">
+                  <div className="drop-zone__item-main">
+                    {item.isDirectory ? (
+                      <Folder className="drop-zone__item-icon drop-zone__item-icon--folder" size={18} />
+                    ) : item.volumes ? (
+                      <Files className="drop-zone__item-icon drop-zone__item-icon--file" size={18} />
+                    ) : (
+                      <File className="drop-zone__item-icon drop-zone__item-icon--file" size={18} />
+                    )}
+                    <div className="drop-zone__item-details">
+                      <div className="drop-zone__item-name-row">
+                        <div className="drop-zone__item-name">
+                          {item.name}
+                        </div>
+                        {item.volumes && (
+                          <button
+                            type="button"
+                            className="drop-zone__volume-badge"
+                            aria-expanded={expandedVolumeItems.has(item)}
+                            aria-controls={`drop-zone-volumes-${idx}`}
+                            aria-label={t(expandedVolumeItems.has(item) ? 'dropZone.hideVolumes' : 'dropZone.showVolumes', { name: item.name })}
+                            onClick={() => toggleVolumes(item)}
+                          >
+                            {t('dropZone.splitArchive')} · {t('dropZone.volumeCount', { count: item.volumes.length })}
+                            <ChevronDown className={expandedVolumeItems.has(item) ? 'is-expanded' : ''} size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="drop-zone__item-path">
+                        {item.path}
+                      </div>
                     </div>
-                    <div className="drop-zone__item-path">
-                      {item.path}
-                    </div>
+                  </div>
+
+                  <div className="drop-zone__item-actions">
+                    <span className="drop-zone__item-size">
+                      {formatBytes(item.size, language)}
+                    </span>
+                    <button
+                      onClick={() => removeItem(item, idx)}
+                      aria-label={t('dropZone.removeItem', { name: item.name })}
+                      className="drop-zone__remove-button"
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
                 </div>
 
-                <div className="drop-zone__item-actions">
-                  <span className="drop-zone__item-size">
-                    {formatBytes(item.size, language)}
-                  </span>
-                  <button
-                    onClick={() => onRemoveItem(idx)}
-                    aria-label={t('dropZone.removeItem', { name: item.name })}
-                    className="drop-zone__remove-button"
+                {item.volumes && expandedVolumeItems.has(item) && (
+                  <div
+                    id={`drop-zone-volumes-${idx}`}
+                    role="region"
+                    className="drop-zone__volumes"
+                    aria-label={t('dropZone.volumeList', { name: item.name })}
                   >
-                    <X size={16} />
-                  </button>
-                </div>
+                    {item.volumes.map(volume => (
+                      <div key={volume.path} className="drop-zone__volume">
+                        <File className="drop-zone__volume-icon" size={14} />
+                        <div className="drop-zone__volume-details">
+                          <div className="drop-zone__volume-name">{volume.name}</div>
+                          <div className="drop-zone__volume-path">{volume.path}</div>
+                        </div>
+                        <span className="drop-zone__volume-size">
+                          {formatBytes(volume.size, language)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

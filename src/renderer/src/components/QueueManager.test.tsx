@@ -86,4 +86,18 @@ describe('QueueManager', () => {
     expect(screen.getByText('Cancelled')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('not enough disk space')
   })
+
+  it('explains that a split archive volume is missing or incomplete', () => {
+    renderWithI18n(
+      <QueueManager
+        jobs={[job({ status: 'error', errorCode: 'splitVolumeMissing' })]}
+        onOpenFolder={vi.fn()}
+        onClearCompleted={vi.fn()}
+        onCancelJob={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A split archive volume is missing or incomplete')
+    expect(screen.getByRole('alert')).toHaveTextContent('.7z.001')
+  })
 })

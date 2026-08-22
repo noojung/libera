@@ -140,5 +140,12 @@ describe('against a Libera7z split archive', () => {
     const listing = await listSevenZipEntries(canonicalArchivePath(volumes[volumes.length - 1]))
     expect(listing.volumeCount).toBe(volumes.length)
     expect(listing.entries.map(entry => path.basename(entry.path))).toContain('big.bin')
+
+    const lastVolume = volumes.at(-1)!
+    await fs.unlink(lastVolume)
+    await expect(discoverSevenZipVolumes(volumes[0])).rejects.toMatchObject({
+      name: 'SplitVolumeError',
+      code: 'SPLIT_VOLUME_MISSING'
+    })
   }, 60_000)
 })

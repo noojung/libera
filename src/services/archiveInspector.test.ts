@@ -233,6 +233,16 @@ describe('inspectArchive for 7z', () => {
 
     expect(result.format).toBe('7Z')
     expect(result.volumeCount).toBeGreaterThan(1)
+    expect(result.volumes).toHaveLength(result.volumeCount!)
+    expect(result.volumes?.map(volume => volume.name)).toEqual(
+      Array.from(
+        { length: result.volumeCount! },
+        (_, index) => `set.7z.${String(index + 1).padStart(3, '0')}`
+      )
+    )
+    expect(result.totalCompressedSize).toBe(
+      result.volumes?.reduce((total, volume) => total + volume.size, 0)
+    )
     expect(result.entries.some(entry => entry.path.endsWith('big.bin'))).toBe(true)
   }, 60_000)
 })

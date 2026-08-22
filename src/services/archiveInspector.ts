@@ -5,6 +5,7 @@ import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
 import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './archiveVolumes'
+import type { ArchiveVolumeInfo } from './archiveInputResolver'
 import { listSevenZipEntries } from './sevenZipList'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZipVolumes'
 
@@ -23,6 +24,7 @@ export interface ArchiveInspectionResult {
   archivePath: string
   format: string
   volumeCount?: number
+  volumes?: ArchiveVolumeInfo[]
   passwordProtected: boolean
   totalFiles: number
   totalUncompressedSize: number | null
@@ -134,6 +136,15 @@ export async function inspectArchive(
         archivePath,
         format: zipFormatLabel(ext),
         volumeCount: zip.volumePaths.length,
+        ...(zip.volumePaths.length > 1
+          ? {
+              volumes: zip.volumePaths.map((volumePath, index) => ({
+                path: volumePath,
+                name: path.basename(volumePath) || volumePath,
+                size: zip.volumeSizes[index]
+              }))
+            }
+          : {}),
         passwordProtected: zip.entries.some(entry => entry.encrypted),
         totalFiles: entries.filter(entry => !entry.isDirectory).length,
         totalUncompressedSize,
@@ -173,18 +184,22 @@ export async function inspectArchive(
     })
 
     // A split set's compressed size is the whole set, not the first volume.
+    let volumes: ArchiveVolumeInfo[] | undefined
     if (listing.volumeCount > 1) {
-      const volumes = await discoverSevenZipVolumes(archivePath).catch(() => null)
-      if (volumes) {
-        const sizes = await Promise.all(volumes.map(volume => fsPromises.stat(volume).then(one => one.size, () => 0)))
-        totalCompressedSize = sizes.reduce((total, size) => total + size, 0)
-      }
+      const volumePaths = await discoverSevenZipVolumes(archivePath)
+      volumes = await Promise.all(volumePaths.map(async volumePath => ({
+        path: volumePath,
+        name: path.basename(volumePath) || volumePath,
+        size: (await fsPromises.stat(volumePath)).size
+      })))
+      totalCompressedSize = volumes.reduce((total, volume) => total + volume.size, 0)
     }
 
     return {
       archivePath,
       format: '7Z',
       volumeCount: listing.volumeCount > 1 ? listing.volumeCount : undefined,
+      volumes,
       passwordProtected: listing.anyEncrypted,
       totalFiles: entries.filter(entry => !entry.isDirectory).length,
       totalUncompressedSize,

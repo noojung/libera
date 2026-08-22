@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { ElectronAPI } from '@preload/preload'
+import { canonicalArchivePath } from '@/utils/archivePaths'
 
 export function createElectronApiMock(overrides: Partial<ElectronAPI> = {}) {
   return {
@@ -20,6 +21,18 @@ export function createElectronApiMock(overrides: Partial<ElectronAPI> = {}) {
     openExternalLink: vi.fn().mockResolvedValue(undefined),
     getDefaultOutputDir: vi.fn().mockResolvedValue(''),
     getItemStat: vi.fn().mockResolvedValue([]),
+    resolveExtractionInputs: vi.fn(async (itemPaths: string[]) => ({
+      items: itemPaths.map(itemPath => {
+        const archivePath = canonicalArchivePath(itemPath)
+        return {
+          path: archivePath,
+          name: archivePath.split(/[/\\]/).pop() || archivePath,
+          isDirectory: false as const,
+          size: 100
+        }
+      }),
+      errors: []
+    })),
     getPathForFile: vi.fn((file: File) => file.name),
     onProgress: vi.fn(() => vi.fn()),
     ...overrides

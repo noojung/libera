@@ -113,6 +113,11 @@ describe('reading split ZIP archives', () => {
     for (let disk = 11; disk <= 98; disk += 1) {
       await fs.writeFile(`${base}.z${String(disk).padStart(2, '0')}`, '')
     }
+    const endOfCentralDirectory = Buffer.alloc(22)
+    endOfCentralDirectory.writeUInt32LE(0x06054b50, 0)
+    endOfCentralDirectory.writeUInt16LE(101, 4)
+    endOfCentralDirectory.writeUInt16LE(101, 6)
+    await fs.writeFile(`${base}.zip`, endOfCentralDirectory)
 
     const volumes = await discoverSplitVolumes(`${base}.zip`)
     const names = volumes.map(volume => path.basename(volume))
@@ -128,6 +133,29 @@ describe('reading split ZIP archives', () => {
       name: 'SplitVolumeError',
       code: 'SPLIT_VOLUME_MISSING',
       volume: 'archive.z02'
+    })
+  }, 30000)
+
+  it('detects a missing highest numbered volume from the terminal disk number', async () => {
+    const { outputPath, volumePaths } = await createSplitSet()
+    const missingVolume = volumePaths.at(-2)!
+
+    await fs.unlink(missingVolume)
+    await expect(openZipArchive(outputPath, 1000)).rejects.toMatchObject({
+      name: 'SplitVolumeError',
+      code: 'SPLIT_VOLUME_MISSING',
+      volume: path.basename(missingVolume)
+    })
+  }, 30000)
+
+  it('detects the missing first numbered volume when only the terminal ZIP remains', async () => {
+    const { outputPath, volumePaths } = await createSplitSet()
+    await Promise.all(volumePaths.slice(0, -1).map(volume => fs.unlink(volume)))
+
+    await expect(openZipArchive(outputPath, 1000)).rejects.toMatchObject({
+      name: 'SplitVolumeError',
+      code: 'SPLIT_VOLUME_MISSING',
+      volume: 'archive.z01'
     })
   }, 30000)
 
@@ -221,9 +249,14 @@ describe('reading split ZIP archives', () => {
     expect(inspection.format).toBe('ZIP')
     expect(inspection.totalCompressedSize).toBe(compressedSize)
     expect(inspection.volumeCount).toBe(volumePaths.length)
+    expect(inspection.volumes?.map(volume => volume.path)).toEqual(volumePaths)
+    expect(inspection.volumes?.map(volume => volume.size)).toEqual(
+      await Promise.all(volumePaths.map(volumePath => fs.stat(volumePath).then(stat => stat.size)))
+    )
 
     const viaVolume = await inspectArchive(path.join(directory, 'archive.z02'))
     expect(viaVolume.archivePath).toBe(outputPath)
+    expect(viaVolume.volumes).toEqual(inspection.volumes)
     expect(viaVolume.entries.map(entry => entry.path)).toEqual(inspection.entries.map(entry => entry.path))
   }, 30000)
 
