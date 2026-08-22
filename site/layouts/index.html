@@ -28,7 +28,7 @@
         <img src="{{ "images/libera-logo.png" | relURL }}" alt="">
       </div>
       <figure class="app-shot app-shot--hero">
-        <img src="{{ "images/libera-app-compress.png" | relURL }}" alt="{{ .image_alt }}" width="1050" height="692">
+        {{ partial "app-shot.html" (dict "image" "images/libera-app-compress.png" "alt" .image_alt) }}
       </figure>
       <span class="hero__sticker hero__sticker--safe" aria-hidden="true">SAFE</span>
       <span class="hero__sticker hero__sticker--local" aria-hidden="true">LOCAL</span>
@@ -79,7 +79,7 @@
     <div class="showcase" aria-label="{{ .showcase_label }}">
       {{- range .showcase }}
       <figure class="showcase-card">
-        <img src="{{ .image | relURL }}" alt="{{ .alt }}" width="1050" height="692" loading="lazy">
+        {{ partial "app-shot.html" (dict "image" .image "alt" .alt "loading" "lazy") }}
         <figcaption><strong>{{ .title }}</strong><span>{{ .caption }}</span></figcaption>
       </figure>
       {{- end }}

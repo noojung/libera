@@ -93,6 +93,11 @@ body.list {
   background: #fff;
 }
 
+/* --entry matches the desktop app's --bg-card, the backdrop it gives the logo. */
+[data-theme="dark"] .logo a img {
+  background: var(--entry);
+}
+
 .logo-switches {
   font-family: "Gaegu", cursive;
   font-weight: 700;
@@ -266,11 +271,20 @@ body.list {
   box-shadow: 8px 10px 0 var(--libera-shadow);
 }
 
-.app-shot img,
-.showcase-card img {
+.theme-shot {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* Only one of the two screenshots is painted; the theme decides which. */
+.theme-shot--dark,
+[data-theme="dark"] .theme-shot--light {
+  display: none;
+}
+
+[data-theme="dark"] .theme-shot--dark {
+  display: block;
 }
 
 .app-shot--hero {
@@ -290,6 +304,10 @@ body.list {
   background: #fff3e4;
   box-shadow: 5px 6px 0 var(--libera-shadow);
   transform: rotate(-7deg);
+}
+
+[data-theme="dark"] .mascot-badge {
+  background: var(--entry);
 }
 
 .mascot-badge img {

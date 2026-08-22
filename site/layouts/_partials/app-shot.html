@@ -1,0 +1,6 @@
+{{- /* Renders a screenshot twice — light and dark — so the visible one follows the site theme. */ -}}
+{{- $light := .image -}}
+{{- $dark := replaceRE `(\.[^.]+)$` `-dark$1` $light -}}
+{{- $loading := .loading | default "" -}}
+<img class="theme-shot theme-shot--light" src="{{ $light | relURL }}" alt="{{ .alt }}" width="1050" height="692"{{ with $loading }} loading="{{ . }}"{{ end }}>
+<img class="theme-shot theme-shot--dark" src="{{ $dark | relURL }}" alt="{{ .alt }}" width="1050" height="692" loading="lazy">
