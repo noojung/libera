@@ -18,6 +18,9 @@
   --libera-mint: #6bbe66;
   --libera-paper: #fff9f3;
   --libera-shadow: #4a403a;
+  --libera-cta-start: #ffad99;
+  --libera-cta-end: #ff8585;
+  --libera-cta-text: #362d27;
 }
 
 :root[data-theme="dark"] {
@@ -31,6 +34,9 @@
   --border: #eadfd5;
   --libera-paper: #2c2521;
   --libera-shadow: #120f0d;
+  --libera-cta-start: #a64b42;
+  --libera-cta-end: #853944;
+  --libera-cta-text: #fff7ef;
 }
 
 html {
@@ -201,14 +207,23 @@ body.list {
   box-shadow: 5px 6px 0 var(--libera-shadow);
 }
 
-.button--primary {
-  background: linear-gradient(135deg, #ff9e85, #ff7070);
-  color: #fff;
+.button--primary,
+.button--download {
+  background: linear-gradient(135deg, var(--libera-cta-start), var(--libera-cta-end));
+  color: var(--libera-cta-text);
 }
 
 .button--secondary {
+  gap: 8px;
   background: var(--entry);
   color: var(--primary);
+}
+
+.button__icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  fill: currentColor;
 }
 
 .trust-list {
@@ -577,8 +592,6 @@ body.list {
 
 .button--download {
   margin-top: 30px;
-  background: var(--primary);
-  color: var(--theme);
 }
 
 .download-panel__options {
