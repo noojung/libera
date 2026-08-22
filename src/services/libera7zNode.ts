@@ -341,6 +341,8 @@ export interface WriteLibera7zOptions {
   outputPath: string
   level: number
   splitSize?: number
+  password?: string
+  encryptFileNames?: boolean
   signal?: AbortSignal
   onProgress?: CreateSevenZipOptions['onProgress']
 }
@@ -382,7 +384,9 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
       signal: options.signal,
       onProgress: options.onProgress,
       encodeLzma2Chunk: workerCodec?.encode,
-      lzmaEncoder: encoderOptions
+      lzmaEncoder: encoderOptions,
+      password: options.password,
+      encryptHeader: options.encryptFileNames
     })
     if (sink instanceof NodeVolumeSink) {
       return { outputPath: sink.volumePaths[0], volumePaths: [...sink.volumePaths] }

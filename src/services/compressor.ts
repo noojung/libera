@@ -32,12 +32,18 @@ export interface CompressionOptions {
   format: ArchiveFormat
   level?: number // 0 (fastest/none) to 9 (maximum)
   password?: string
+  encryptFileNames?: boolean // 7Z only, hides the file names as well
   splitSize?: number // maximum bytes per volume, ZIP and 7Z only
 }
 
-/** Only ZIP archives can be created with a password. */
+/** ZIP and 7Z are the formats whose containers define an encryption scheme. */
 export function supportsPassword(format: ArchiveFormat): boolean {
-  return format === 'zip'
+  return format === 'zip' || format === '7z'
+}
+
+/** Only 7Z can encrypt its header, which is what hides the file names. */
+export function supportsHeaderEncryption(format: ArchiveFormat): boolean {
+  return format === '7z'
 }
 
 export function supportsSplit(format: ArchiveFormat): boolean {
@@ -161,7 +167,11 @@ export async function compressArchive(
   const { signal } = context
 
   if (options.password && !supportsPassword(format)) {
-    throw new Error('Password protection is currently available for ZIP archives only.')
+    throw new Error('Password protection is currently available for ZIP and 7Z archives only.')
+  }
+
+  if (options.encryptFileNames && !supportsHeaderEncryption(format)) {
+    throw new Error('Encrypting file names is currently available for 7Z archives only.')
   }
 
   if (splitSize !== undefined) {
@@ -210,7 +220,9 @@ export async function compressArchive(
         outputPath,
         totalBytes,
         level,
-        splitSize
+        splitSize,
+        password: options.password,
+        encryptFileNames: options.encryptFileNames
       },
       onProgress,
       { signal }

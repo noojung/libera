@@ -200,6 +200,170 @@ describe('pure TypeScript 7z container', () => {
     }
   }, 60_000)
 
+  // Fixed salt and IV so the emitted bytes can be asserted exactly.
+  const fixedRandomBytes = (length: number) => new Uint8Array(length).fill(0xa5)
+
+  it.each(['copy', 'lzma2'] as const)('round-trips an encrypted %s archive', async method => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method, password: 'hunter2' })
+    const bytes = sink.data()
+
+    await expect(collect((await open7z(new MemorySource(bytes))).openEntry(1)))
+      .rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+    await expect(collect((await open7z(new MemorySource(bytes), { password: 'wrong' })).openEntry(1)))
+      .rejects.toMatchObject({ code: 'WRONG_PASSWORD' })
+
+    const archive = await open7z(new MemorySource(bytes), { password: 'hunter2' })
+    // File names stay readable without the password; only the data is hidden.
+    expect(archive.entries.map(entry => entry.path)).toEqual(['bundle', 'bundle/안내.txt', 'bundle/empty.txt'])
+    expect(archive.entries[1]).toMatchObject({ encrypted: true, size: BigInt(payload.length) })
+    await expect(collect(archive.openEntry(1))).resolves.toEqual(payload)
+    await expect(collect(archive.openEntry(2))).resolves.toEqual(new Uint8Array(0))
+  }, 60_000)
+
+  it.each(['copy', 'lzma2'] as const)('round-trips an encrypted %s archive with a hidden header', async method => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method, password: 'hunter2', encryptHeader: true })
+    const bytes = sink.data()
+
+    // Without the password the archive cannot even be listed.
+    await expect(open7z(new MemorySource(bytes))).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+    await expect(open7z(new MemorySource(bytes), { password: 'wrong' }))
+      .rejects.toMatchObject({ code: 'WRONG_PASSWORD' })
+
+    const archive = await open7z(new MemorySource(bytes), { password: 'hunter2' })
+    expect(archive.entries.map(entry => entry.path)).toEqual(['bundle', 'bundle/안내.txt', 'bundle/empty.txt'])
+    await expect(collect(archive.openEntry(1))).resolves.toEqual(payload)
+  }, 60_000)
+
+  it('refuses to hide the header without a password', async () => {
+    await expect(create7z(entries(), new MemorySink(), { encryptHeader: true }))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_FEATURE' })
+    // An empty password is no password rather than a weak one.
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'copy', password: '' })
+    expect((await open7z(new MemorySource(sink.data()))).entries[1].encrypted).toBe(false)
+  })
+
+  it('emits the AES coder chain 7-Zip writes', async () => {
+    const sink = new MemorySink()
+    await create7z(
+      [{ path: 'secret.txt', size: 5n, open: () => stream(Uint8Array.of(1, 2, 3, 4, 5)) }],
+      sink,
+      { method: 'lzma2', password: 'hunter2', randomBytes: fixedRandomBytes, dictionarySize: 1024 * 1024 }
+    )
+    const header = Buffer.from(sink.data()).toString('hex')
+    const properties = `d3ff${'a5'.repeat(32)}`
+
+    // Two coders, AES first then LZMA2, joined by a bind pair from LZMA2's
+    // input (1) to the AES output (0). One coder input stays unbound, so the
+    // packed-index list is inferred and never written.
+    expect(header).toMatch(new RegExp(`022406f1070122${properties}212101[0-9a-f]{2}0100`))
+
+    const archive = await open7z(new MemorySource(sink.data()), { password: 'hunter2' })
+    await expect(collect(archive.openEntry(0))).resolves.toEqual(Uint8Array.of(1, 2, 3, 4, 5))
+  }, 60_000)
+
+  it('pads the packed stream to the AES block size and declares both sizes', async () => {
+    const sink = new MemorySink()
+    const contents = new Uint8Array(1000).fill(9)
+    await create7z(
+      [{ path: 'blob.bin', size: 1000n, open: () => stream(contents) }],
+      sink,
+      { method: 'copy', password: 'hunter2', randomBytes: fixedRandomBytes }
+    )
+    // Copy folders collapse to a single AES coder, so the packed stream is the
+    // plaintext zero-padded to 16 bytes while the coder output stays 1000.
+    const hex = Buffer.from(sink.data()).toString('hex')
+    expect(hex).toContain('0983f000')
+    expect(hex).toContain('0c83e800')
+    const archive = await open7z(new MemorySource(sink.data()), { password: 'hunter2' })
+    expect(archive.entries[0].packedSize).toBe(1008n)
+    await expect(collect(archive.openEntry(0))).resolves.toEqual(contents)
+  }, 60_000)
+
+  it('derives the archive key once however many folders are encrypted', async () => {
+    const many: SevenZipEntryInput[] = Array.from({ length: 12 }, (_, index) => ({
+      path: `part-${index}.bin`,
+      size: 64n,
+      open: () => stream(new Uint8Array(64).fill(index))
+    }))
+    const sink = new MemorySink()
+    await create7z(many, sink, { method: 'copy', password: 'hunter2', encryptHeader: true })
+
+    // Every folder carries the same salt, so the 2^19-round loop runs once for
+    // the header and is reused for all twelve entries.
+    const started = Date.now()
+    const archive = await open7z(new MemorySource(sink.data()), { password: 'hunter2' })
+    for (const entry of archive.entries) {
+      await expect(collect(archive.openEntry(entry.id))).resolves.toHaveLength(64)
+    }
+    const perDerivation = Date.now() - started
+    const single = new MemorySink()
+    await create7z([many[0]], single, { method: 'copy', password: 'hunter2', encryptHeader: true })
+    const baselineStart = Date.now()
+    const one = await open7z(new MemorySource(single.data()), { password: 'hunter2' })
+    await collect(one.openEntry(0))
+    const baseline = Date.now() - baselineStart
+    // Thirteen derivations would cost an order of magnitude more than one.
+    expect(perDerivation).toBeLessThan(baseline * 4 + 500)
+  }, 120_000)
+
+  it('decrypts encrypted folders without buffering the whole entry', async () => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'lzma2', password: 'hunter2' })
+
+    // The streaming path is the only one that asks for a decoder session; the
+    // buffering fallback goes through decodeLzma2Buffer instead.
+    let sessions = 0
+    let buffered = 0
+    const archive = await open7z(new MemorySource(sink.data()), {
+      password: 'hunter2',
+      decodeLzma2Buffer: async () => {
+        buffered += 1
+        return undefined as unknown as Uint8Array
+      },
+      lzma2DecoderFactory: async property => {
+        sessions += 1
+        const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
+        return {
+          resetDictionary: async () => decoder.resetDictionary(),
+          setProperties: async value => decoder.setProperties(value),
+          resetState: async () => decoder.resetState(),
+          writeUncompressed: async bytes => decoder.writeUncompressed(bytes),
+          decodeChunk: async (bytes, size, signal) => decoder.decodeChunk(bytes, size, signal),
+          close: async () => undefined
+        } satisfies Lzma2DecoderSession
+      }
+    })
+
+    await expect(collect(archive.openEntry(1))).resolves.toEqual(payload)
+    expect(sessions).toBe(1)
+    expect(buffered).toBe(0)
+  }, 60_000)
+
+  it('gives every folder its own IV', async () => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'copy', password: 'hunter2' })
+    const hex = Buffer.from(sink.data()).toString('hex')
+    const ivs = [...hex.matchAll(/2406f1070122d3ff([0-9a-f]{64})/g)].map(match => match[1])
+    expect(ivs).toHaveLength(1)
+    // One entry has content, so widen the archive to compare two folders.
+    const many = new MemorySink()
+    await create7z(
+      [
+        { path: 'a.bin', size: 3n, open: () => stream(Uint8Array.of(1, 2, 3)) },
+        { path: 'b.bin', size: 3n, open: () => stream(Uint8Array.of(4, 5, 6)) }
+      ],
+      many,
+      { method: 'copy', password: 'hunter2' }
+    )
+    const both = [...Buffer.from(many.data()).toString('hex').matchAll(/2406f1070122([0-9a-f]{68})/g)]
+      .map(match => match[1])
+    expect(both).toHaveLength(2)
+    expect(both[0]).not.toBe(both[1])
+  }, 60_000)
+
   it.each([false, true])('decrypts reference 7zAES data with header encryption=%s', async headerEncryption => {
     const contents = Buffer.from('encrypted external archive\n'.repeat(1_000))
     const bytes = referenceSevenZipFixture(headerEncryption ? 'aes-header' : 'aes-data')
@@ -219,6 +383,25 @@ describe('pure TypeScript 7z container', () => {
     try {
       const entry = archive.entries.find(item => item.path === 'secret.txt')!
       expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it('reports a wrong password on an encrypted header that carries no CRC', async () => {
+    const bytes = referenceSevenZipFixture('aes-header-py7zr')
+    // py7zr omits the folder digest 7-Zip writes, so the mismatch only shows up
+    // as nonsense where the header should be. Reporting that as corruption
+    // would send the user after a broken file instead of the password.
+    await expect(open7z(new MemorySource(bytes))).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+    await expect(open7z(new MemorySource(bytes), { password: 'wrong' }))
+      .rejects.toMatchObject({ code: 'WRONG_PASSWORD' })
+
+    const archive = await open7z(new MemorySource(bytes), { password: 'hunter2' })
+    try {
+      const entry = archive.entries.find(item => item.path === 'secret.txt')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id))))
+        .toEqual(Buffer.from('encrypted external archive\n'.repeat(1_000)))
     } finally {
       await archive.close()
     }

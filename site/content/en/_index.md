@@ -97,7 +97,7 @@ formats:
     - name: ZIP
       detail: compress · extract · preview · password
     - name: 7Z
-      detail: compress · extract · preview
+      detail: compress · extract · preview · password
     - name: TAR
       detail: compress · extract · preview
     - name: TAR.GZ
@@ -108,8 +108,8 @@ formats:
       detail: extract · preview
     - name: WAR
       detail: extract · preview
-  security_title: About ZIP passwords
-  security_description: ZIP encryption uses ZipCrypto for compatibility. Do not rely on it as strong confidentiality for sensitive files.
+  security_title: About archive passwords
+  security_description: 7Z uses AES-256 and can hide file names as well, so it is the choice for sensitive files. ZIP encryption uses ZipCrypto for compatibility, so do not rely on it as strong confidentiality.
 download:
   kicker: Start for free
   title: Meet Libera today.

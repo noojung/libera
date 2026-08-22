@@ -111,3 +111,42 @@ test('compresses a folder to 7z and extracts it back', async ({ app, page, workD
   await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
   expect(await findFile(extractDir, 'one.bin')).not.toBeNull()
 })
+
+test('compresses a folder to an encrypted 7z with hidden names and extracts it back', async ({ app, page, workDir }) => {
+  const source = path.join(workDir, 'source')
+  await seedFiles(source, ['one.bin', 'two.bin'], 128 * 1024)
+  const outputPath = path.join(workDir, 'out', 'secret.7z')
+
+  await stubDialogs(app, { filePaths: [source] })
+  await page.getByRole('button', { name: 'Browse folders' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '.7Z' }).click()
+  await page.getByPlaceholder('Enter password').fill('hunter2')
+  await page.getByPlaceholder('Confirm password').fill('hunter2')
+  await page.getByText('Hide the file names too').click()
+  await page.locator('.compression-panel__destination-row .input-text').fill(outputPath)
+  await page.locator('.compression-panel__start-button').click()
+
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(1, { timeout: 60_000 })
+  await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
+  expect((await fs.stat(outputPath)).size).toBeGreaterThan(0)
+
+  // The header is encrypted, so even listing the archive has to ask first.
+  await page.getByRole('button', { name: 'Extract' }).click()
+  await stubDialogs(app, { filePaths: [outputPath] })
+  await page.getByRole('button', { name: 'Browse files' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  const extractDir = path.join(workDir, 'unpacked')
+  await page.locator('.extraction-panel__destination-row .input-text').fill(extractDir)
+  await page.locator('.extraction-panel__start-button').click()
+
+  await expect(page.locator('.password-prompt')).toBeVisible({ timeout: 60_000 })
+  await page.locator('.password-prompt input[type="password"]').fill('hunter2')
+  await page.locator('.password-prompt__submit').click()
+
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(2, { timeout: 60_000 })
+  await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
+  expect(await findFile(extractDir, 'one.bin')).not.toBeNull()
+})

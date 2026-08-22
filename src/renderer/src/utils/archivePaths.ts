@@ -71,9 +71,14 @@ export const COMPRESSION_FORMATS = ['zip', 'tar', 'gz', 'tgz', '7z'] as const
 
 export type ArchiveFormat = (typeof COMPRESSION_FORMATS)[number]
 
-/** Only ZIP archives can be created with a password. */
+/** ZIP and 7Z are the formats whose containers define an encryption scheme. */
 export function supportsPassword(format: ArchiveFormat): boolean {
-  return format === 'zip'
+  return format === 'zip' || format === '7z'
+}
+
+/** Only 7Z can encrypt its header, which is what hides the file names. */
+export function supportsHeaderEncryption(format: ArchiveFormat): boolean {
+  return format === '7z'
 }
 
 export function supportsSplit(format: ArchiveFormat): boolean {

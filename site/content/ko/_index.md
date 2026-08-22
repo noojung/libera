@@ -97,7 +97,7 @@ formats:
     - name: ZIP
       detail: 압축 · 해제 · 미리보기 · 비밀번호
     - name: 7Z
-      detail: 압축 · 해제 · 미리보기
+      detail: 압축 · 해제 · 미리보기 · 비밀번호
     - name: TAR
       detail: 압축 · 해제 · 미리보기
     - name: TAR.GZ
@@ -108,8 +108,8 @@ formats:
       detail: 해제 · 미리보기
     - name: WAR
       detail: 해제 · 미리보기
-  security_title: ZIP 비밀번호 안내
-  security_description: ZIP 암호화는 호환성을 위한 ZipCrypto 방식입니다. 민감한 파일의 강한 기밀 보호 수단으로 사용하지 마세요.
+  security_title: 압축 비밀번호 안내
+  security_description: 7Z는 AES-256을 사용하고 파일 이름까지 숨길 수 있어 민감한 파일에 적합합니다. ZIP 암호화는 호환성을 위한 ZipCrypto 방식이므로 강한 기밀 보호 수단으로 사용하지 마세요.
 download:
   kicker: 무료로 시작하세요
   title: 지금 Libera를 만나보세요.

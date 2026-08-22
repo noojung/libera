@@ -68,7 +68,14 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
 
     expect(api.selectSaveLocation).toHaveBeenCalledWith('archive.zip', 'zip', expect.any(Object))
-    expect(onStart).toHaveBeenCalledWith({ format: 'zip', level: 9, outputPath: 'D:\\secure.zip', password: 'secret', splitSize: undefined })
+    expect(onStart).toHaveBeenCalledWith({
+      format: 'zip',
+      level: 9,
+      outputPath: 'D:\\secure.zip',
+      password: 'secret',
+      encryptFileNames: undefined,
+      splitSize: undefined
+    })
   })
 
   it('hides password inputs for formats that cannot encrypt, and disables empty jobs', async () => {
@@ -79,14 +86,56 @@ describe('CompressionPanel', () => {
     expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
   })
 
-  it('offers split but not a password for 7z, which cannot be created encrypted', async () => {
+  it('offers both split and a password for 7z, and explains its stronger encryption', async () => {
     installElectronApi()
-    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: '/a', name: 'a', isDirectory: false, size: 1 }]} onStartCompress={onStart} />
+    )
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
-
     expect(screen.getByText('Split into volumes')).toBeInTheDocument()
-    expect(screen.queryByPlaceholderText('Enter password')).not.toBeInTheDocument()
+
+    // The name-hiding option only appears once a usable password is entered.
+    expect(screen.queryByText('Hide the file names too')).not.toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    expect(screen.queryByText('Hide the file names too')).not.toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+
+    expect(screen.getByText(/AES-256 encryption will be used/)).toBeInTheDocument()
+    await user.click(screen.getByText('Hide the file names too'))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: '7z',
+      password: 'secret',
+      encryptFileNames: true
+    }))
+  })
+
+  it('drops the name-hiding option when switching away from 7z', async () => {
+    installElectronApi()
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: '/a', name: 'a', isDirectory: false, size: 1 }]} onStartCompress={onStart} />
+    )
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+    await user.click(screen.getByText('Hide the file names too'))
+
+    // ZIP keeps the password but has no header to encrypt.
+    await user.click(screen.getByRole('button', { name: '.ZIP' }))
+    expect(screen.queryByText('Hide the file names too')).not.toBeInTheDocument()
+    expect(screen.getByText(/Compatibility-focused ZIP encryption/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'zip',
+      password: 'secret',
+      encryptFileNames: undefined
+    }))
   })
 
   it('names the levels each family uses and snaps 7z to its own scale', async () => {

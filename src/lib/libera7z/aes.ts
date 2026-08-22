@@ -1,3 +1,4 @@
+import { concatBytes } from './binary'
 import { invalidArchive, Libera7zError, throwIfCancelled } from './errors'
 
 const SHA256_INITIAL = Uint32Array.of(
@@ -24,6 +25,9 @@ function rotateRight(value: number, count: number): number {
 export class Sha256 {
   private readonly state = SHA256_INITIAL.slice()
   private readonly block = new Uint8Array(64)
+  // The derivation loop compresses hundreds of thousands of blocks, so the
+  // message schedule is reused instead of allocated once per block.
+  private readonly words = new Uint32Array(64)
   private blockLength = 0
   private length = 0n
 
@@ -44,7 +48,7 @@ export class Sha256 {
   }
 
   private compress(block: Uint8Array): void {
-    const words = new Uint32Array(64)
+    const words = this.words
     for (let index = 0; index < 16; index += 1) {
       const offset = index * 4
       words[index] = (
@@ -187,12 +191,69 @@ export function deriveSevenZipAesKey(
   return hash.digest()
 }
 
+const EMPTY = new Uint8Array(0)
+
+function requireSubtle(): SubtleCrypto {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Libera7zError('UNSUPPORTED_FEATURE', 'AES-CBC is unavailable in this JavaScript runtime')
+  return subtle
+}
+
+export function importSevenZipAesKey(key: Uint8Array): Promise<CryptoKey> {
+  return requireSubtle().importKey('raw', key as Uint8Array<ArrayBuffer>, { name: 'AES-CBC' }, false, ['encrypt', 'decrypt'])
+}
+
+/**
+ * Raw CBC without padding. Web Crypto always applies PKCS#7, so one valid
+ * padding block chained from the real ciphertext is appended and decrypt()
+ * removes only that synthetic block. The original 7z zero padding survives
+ * byte-for-byte.
+ */
+export async function decryptAesCbcRaw(cryptoKey: CryptoKey, iv: Uint8Array, input: Uint8Array): Promise<Uint8Array> {
+  const subtle = requireSubtle()
+  const paddingIv = input.length === 0 ? iv : input.subarray(input.length - 16)
+  const padding = new Uint8Array(await subtle.encrypt(
+    { name: 'AES-CBC', iv: paddingIv as Uint8Array<ArrayBuffer> },
+    cryptoKey,
+    EMPTY
+  ))
+  const extended = new Uint8Array(input.length + padding.length)
+  extended.set(input)
+  extended.set(padding, input.length)
+  return new Uint8Array(await subtle.decrypt(
+    { name: 'AES-CBC', iv: iv as Uint8Array<ArrayBuffer> },
+    cryptoKey,
+    extended
+  ))
+}
+
+/** The encryption mirror of the trick above: the trailing padding block is dropped. */
+async function encryptAesCbcRaw(cryptoKey: CryptoKey, iv: Uint8Array, input: Uint8Array): Promise<Uint8Array> {
+  const padded = new Uint8Array(await requireSubtle().encrypt(
+    { name: 'AES-CBC', iv: iv as Uint8Array<ArrayBuffer> },
+    cryptoKey,
+    input as Uint8Array<ArrayBuffer>
+  ))
+  return padded.slice(0, input.length)
+}
+
+/**
+ * Derives the archive key, letting callers substitute a memoised derivation.
+ * The default runs the full 2^cyclesPower hashing loop on every call.
+ */
+export type SevenZipAesKeyDeriver = (
+  password: string,
+  properties: SevenZipAesProperties,
+  signal?: AbortSignal
+) => Uint8Array
+
 export async function decryptSevenZipAes(
   input: Uint8Array,
   properties: Uint8Array,
   password: string | undefined,
   outputSize: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  deriveKey: SevenZipAesKeyDeriver = deriveSevenZipAesKey
 ): Promise<Uint8Array> {
   if (password === undefined) throw new Libera7zError('PASSWORD_REQUIRED', 'The 7z archive needs a password')
   if ((input.length & 15) !== 0) throw invalidArchive('7zAES packed stream is not block aligned')
@@ -200,35 +261,11 @@ export async function decryptSevenZipAes(
     throw invalidArchive('7zAES output size is invalid')
   }
   const parsed = parseSevenZipAesProperties(properties)
-  const key = deriveSevenZipAesKey(password, parsed, signal)
-  const subtle = globalThis.crypto?.subtle
-  if (!subtle) throw new Libera7zError('UNSUPPORTED_FEATURE', 'AES-CBC is unavailable in this JavaScript runtime')
+  const key = deriveKey(password, parsed, signal)
   try {
     throwIfCancelled(signal)
-    const cryptoKey = await subtle.importKey(
-      'raw',
-      key as Uint8Array<ArrayBuffer>,
-      { name: 'AES-CBC' },
-      false,
-      ['encrypt', 'decrypt']
-    )
-    // Web Crypto always applies PKCS#7 padding. Append one valid padding block
-    // chained from the real ciphertext, then let decrypt() remove only that
-    // synthetic block. The original 7z zero padding remains byte-for-byte.
-    const paddingIv = input.length === 0 ? parsed.iv : input.subarray(input.length - 16)
-    const padding = new Uint8Array(await subtle.encrypt(
-      { name: 'AES-CBC', iv: paddingIv as Uint8Array<ArrayBuffer> },
-      cryptoKey,
-      new Uint8Array(0)
-    ))
-    const extended = new Uint8Array(input.length + padding.length)
-    extended.set(input)
-    extended.set(padding, input.length)
-    const clear = new Uint8Array(await subtle.decrypt(
-      { name: 'AES-CBC', iv: parsed.iv as Uint8Array<ArrayBuffer> },
-      cryptoKey,
-      extended
-    ))
+    const cryptoKey = await importSevenZipAesKey(key)
+    const clear = await decryptAesCbcRaw(cryptoKey, parsed.iv, input)
     throwIfCancelled(signal)
     return clear.slice(0, outputSize)
   } catch (error) {
@@ -236,5 +273,87 @@ export async function decryptSevenZipAes(
     throw invalidArchive(`7zAES decryption failed: ${(error as Error).message}`)
   } finally {
     key.fill(0)
+  }
+}
+
+export function serializeSevenZipAesProperties(properties: SevenZipAesProperties): Uint8Array {
+  const { cyclesPower, salt, iv } = properties
+  if (!Number.isInteger(cyclesPower) || cyclesPower < 0 || (cyclesPower > 24 && cyclesPower !== 0x3f)) {
+    throw new RangeError(`7zAES cycle count is out of range: ${cyclesPower}`)
+  }
+  if (salt.length > 16 || iv.length > 16) throw new RangeError('7zAES salt and IV cannot exceed 16 bytes')
+  if (salt.length === 0 && iv.length === 0) return Uint8Array.of(cyclesPower)
+  const first = cyclesPower | (salt.length > 0 ? 0x80 : 0) | (iv.length > 0 ? 0x40 : 0)
+  const second = ((salt.length > 0 ? salt.length - 1 : 0) << 4) | (iv.length > 0 ? iv.length - 1 : 0)
+  return concatBytes([Uint8Array.of(first, second), salt, iv])
+}
+
+/** 7-Zip omits the salt, so every archive shares one key per password. A random
+ * salt costs two bytes of header and makes the key archive-specific instead. */
+export function generateSevenZipAesProperties(
+  randomBytes: (length: number) => Uint8Array = defaultRandomBytes
+): SevenZipAesProperties {
+  return { cyclesPower: 19, salt: randomBytes(16), iv: randomBytes(16) }
+}
+
+export function defaultRandomBytes(length: number): Uint8Array {
+  const random = globalThis.crypto?.getRandomValues
+  if (!random) throw new Libera7zError('UNSUPPORTED_FEATURE', 'Secure random bytes are unavailable in this JavaScript runtime')
+  return globalThis.crypto.getRandomValues(new Uint8Array(length))
+}
+
+/**
+ * Streaming 7zAES encryption. 7z pads the final block with zeroes and relies on
+ * the coder's declared output size to trim them, so `plainSize` (what went in)
+ * and `cipherSize` (what came out) are both reported.
+ */
+export class SevenZipAesEncryptor {
+  private pending = EMPTY
+  private plain = 0n
+  private cipher = 0n
+
+  private constructor(private readonly cryptoKey: CryptoKey, private iv: Uint8Array) {}
+
+  static async create(key: Uint8Array, iv: Uint8Array): Promise<SevenZipAesEncryptor> {
+    if (iv.length !== 16) throw new RangeError('7zAES needs a 16-byte IV')
+    return new SevenZipAesEncryptor(await importSevenZipAesKey(key), iv.slice())
+  }
+
+  /** Total bytes fed in, which is the AES coder's declared output size. */
+  get plainSize(): bigint {
+    return this.plain
+  }
+
+  /** Total ciphertext produced, which is the packed stream size. */
+  get cipherSize(): bigint {
+    return this.cipher
+  }
+
+  async update(bytes: Uint8Array): Promise<Uint8Array> {
+    this.plain += BigInt(bytes.length)
+    const joined = this.pending.length === 0 ? bytes : concatBytes([this.pending, bytes])
+    const aligned = joined.length & ~15
+    // slice() rather than subarray(): the caller may reuse its buffer, and the
+    // remainder has to survive until the next call.
+    this.pending = joined.slice(aligned)
+    if (aligned === 0) return EMPTY
+    return this.encrypt(joined.subarray(0, aligned))
+  }
+
+  async final(): Promise<Uint8Array> {
+    if (this.pending.length === 0) return EMPTY
+    const block = new Uint8Array(16)
+    block.set(this.pending)
+    this.pending = EMPTY
+    return this.encrypt(block)
+  }
+
+  private async encrypt(input: Uint8Array): Promise<Uint8Array> {
+    const output = await encryptAesCbcRaw(this.cryptoKey, this.iv, input)
+    // A copy, because the next call hands this buffer to Web Crypto as the IV
+    // while the ciphertext itself is already on its way to the sink.
+    this.iv = output.slice(output.length - 16)
+    this.cipher += BigInt(output.length)
+    return output
   }
 }

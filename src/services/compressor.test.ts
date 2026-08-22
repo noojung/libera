@@ -13,6 +13,7 @@ import {
   type ProgressData
 } from './compressor'
 import { inspectArchive } from './archiveInspector'
+import { extractArchive } from './extractor'
 import { MIN_SPLIT_SIZE } from './splitZipWriter'
 
 const temporaryDirectories: string[] = []
@@ -131,7 +132,7 @@ describe('compressArchive', () => {
     })
   })
 
-  it('rejects passwords for non-ZIP formats and directory input for GZ', async () => {
+  it('rejects passwords for formats without encryption and directory input for GZ', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
@@ -141,7 +142,14 @@ describe('compressArchive', () => {
       outputPath: path.join(directory, 'archive.tar'),
       format: 'tar',
       password: 'not-supported'
-    })).rejects.toThrow('ZIP archives only')
+    })).rejects.toThrow('ZIP and 7Z archives only')
+    await expect(compressArchive({
+      inputPaths: [],
+      outputPath: path.join(directory, 'archive.zip'),
+      format: 'zip',
+      password: 'hunter2',
+      encryptFileNames: true
+    })).rejects.toThrow('7Z archives only')
     await expect(compressArchive({
       inputPaths: [sourceDir],
       outputPath: path.join(directory, 'archive.gz'),
@@ -257,18 +265,42 @@ describe('7z compression', () => {
     expect(updates.every(update => (update.percent ?? 0) <= 100)).toBe(true)
   }, 60_000)
 
-  it('refuses a password, which 7z creation no longer offers', async () => {
+  it.each([false, true])('creates an encrypted 7z with hidden names=%s', async encryptFileNames => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')
-    await fs.writeFile(sourcePath, 'secret contents')
+    const contents = 'secret contents\n'.repeat(500)
+    await fs.writeFile(sourcePath, contents)
+    const outputPath = path.join(directory, 'enc.7z')
 
-    await expect(compressArchive({
+    await compressArchive({
       inputPaths: [sourcePath],
-      outputPath: path.join(directory, 'enc.7z'),
+      outputPath,
       format: '7z',
-      password: 'hunter2'
-    })).rejects.toThrow('ZIP archives only')
-  }, 60_000)
+      password: 'hunter2',
+      encryptFileNames
+    })
+
+    if (encryptFileNames) {
+      // Listing itself needs the password once the header is encrypted.
+      await expect(inspectArchive(outputPath)).rejects.toMatchObject({ code: 'SEVEN_ZIP_PASSWORD_REQUIRED' })
+    } else {
+      const listing = await inspectArchive(outputPath)
+      expect(listing.entries.map(entry => entry.path)).toEqual(['secret.txt'])
+      expect(listing.passwordProtected).toBe(true)
+    }
+    const listing = await inspectArchive(outputPath, { password: 'hunter2' })
+    expect(listing.entries.map(entry => entry.path)).toEqual(['secret.txt'])
+
+    const targetDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir, password: 'hunter2' })
+    await expect(fs.readFile(path.join(targetDir, 'secret.txt'), 'utf8')).resolves.toBe(contents)
+
+    await expect(extractArchive({
+      archivePath: outputPath,
+      targetDir: path.join(directory, 'bad'),
+      password: 'wrong'
+    })).rejects.toMatchObject({ code: 'SEVEN_ZIP_WRONG_PASSWORD' })
+  }, 120_000)
 
   it('splits into numbered volumes and returns the first one', async () => {
     const directory = await createTemporaryDirectory()

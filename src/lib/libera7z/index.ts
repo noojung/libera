@@ -1,7 +1,19 @@
 export * from './errors'
 export * from './format'
 export * from './io'
-export { decryptSevenZipAes, deriveSevenZipAesKey, parseSevenZipAesProperties, Sha256 } from './aes'
+export {
+  decryptAesCbcRaw,
+  decryptSevenZipAes,
+  deriveSevenZipAesKey,
+  generateSevenZipAesProperties,
+  importSevenZipAesKey,
+  parseSevenZipAesProperties,
+  serializeSevenZipAesProperties,
+  SevenZipAesEncryptor,
+  Sha256,
+  type SevenZipAesKeyDeriver,
+  type SevenZipAesProperties
+} from './aes'
 export { inflateRaw } from './deflate'
 export { decodeBzip2 } from './bzip2'
 export { decodeBcj2 } from './bcj2'

@@ -5,6 +5,7 @@ import {
   compressionLevels,
   nearestLevel,
   supportsLevel,
+  supportsHeaderEncryption,
   supportsPassword,
   supportsSplit,
   type ArchiveFormat
@@ -80,6 +81,12 @@ describe('renderer compression format helper', () => {
   it('agrees with the service about which formats take a password', () => {
     for (const format of renderer.COMPRESSION_FORMATS) {
       expect(renderer.supportsPassword(format)).toBe(supportsPassword(format))
+    }
+  })
+
+  it('agrees with the service about which formats can hide their file names', () => {
+    for (const format of renderer.COMPRESSION_FORMATS) {
+      expect(renderer.supportsHeaderEncryption(format)).toBe(supportsHeaderEncryption(format))
     }
   })
 

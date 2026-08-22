@@ -5,7 +5,19 @@ import { type RandomAccessSource, type SeekableSink, readExactly, readableFromGe
 import { LzmaDecoder, type LzmaEncoderOptions } from './lzma'
 import { decodeLzma1, parseLzma1Properties } from './lzma1'
 import { decodePpmd7, parsePpmd7Properties } from './ppmd7'
-import { decryptSevenZipAes, parseSevenZipAesProperties } from './aes'
+import {
+  decryptAesCbcRaw,
+  decryptSevenZipAes,
+  defaultRandomBytes,
+  deriveSevenZipAesKey,
+  generateSevenZipAesProperties,
+  importSevenZipAesKey,
+  parseSevenZipAesProperties,
+  serializeSevenZipAesProperties,
+  SevenZipAesEncryptor,
+  type SevenZipAesKeyDeriver,
+  type SevenZipAesProperties
+} from './aes'
 import { decodeBzip2 } from './bzip2'
 import { decodeBcj2 } from './bcj2'
 import { inflateRaw } from './deflate'
@@ -102,6 +114,12 @@ export interface CreateSevenZipOptions {
   /** Optional off-main-thread codec hook used by the Electron adapter. */
   encodeLzma2Chunk?: (chunk: Uint8Array, signal?: AbortSignal) => Promise<{ data: Uint8Array; compressed: boolean }>
   lzmaEncoder?: LzmaEncoderOptions
+  /** Encrypts every entry with AES-256. An empty string counts as no password. */
+  password?: string
+  /** Also encrypts the header, which hides the file names. Needs a password. */
+  encryptHeader?: boolean
+  /** Overrides salt and IV generation so tests can assert exact bytes. */
+  randomBytes?: (length: number) => Uint8Array
 }
 
 export interface SevenZipEntry {
@@ -118,11 +136,15 @@ export interface SevenZipEntry {
 }
 
 interface WrittenStream {
+  /** The packed stream size, which is the padded ciphertext when encrypted. */
   packedSize: bigint
   unpackedSize: bigint
   crc: number
   method: SevenZipMethod
   dictionaryProperty?: number
+  /** Present when the folder ends in an AES coder. `codedSize` is that coder's
+   * declared output, so the trailing zero padding is trimmed on the way back. */
+  aes?: { properties: Uint8Array; codedSize: bigint }
 }
 
 interface ParsedCoder {
@@ -258,13 +280,46 @@ function writeProperty(writer: ByteWriter, id: number, value: Uint8Array): void 
   writer.byte(id).variableUint64(BigInt(value.length)).bytesValue(value)
 }
 
+/** Coder flags are `idSize | 0x20` when properties follow; the AES method ID is
+ * four bytes wide while Copy and LZMA2 are one. */
+function writeAesCoder(writer: ByteWriter, properties: Uint8Array): void {
+  writer.byte(0x24).byte(0x06).byte(0xf1).byte(0x07).byte(0x01)
+    .variableUint64(BigInt(properties.length)).bytesValue(properties)
+}
+
+function writeLzma2Coder(writer: ByteWriter, dictionaryProperty: number): void {
+  writer.byte(0x21).byte(LZMA2_METHOD).variableUint64(1n).byte(dictionaryProperty)
+}
+
+/**
+ * Coders are listed in decode order, so an encrypted LZMA2 folder reads
+ * `[AES, LZMA2]` with a bind pair joining LZMA2's input to the AES output.
+ * Copy folders collapse to a single AES coder, which is what 7-Zip itself
+ * emits for `-mx0 -p`. Either way exactly one coder input stays unbound, so
+ * the packed index list is inferred rather than written.
+ */
 function writeFolder(writer: ByteWriter, stream: WrittenStream): void {
-  writer.variableUint64(1n)
-  if (stream.method === 'copy') {
-    writer.byte(0x01).byte(COPY_METHOD)
-  } else {
-    writer.byte(0x21).byte(LZMA2_METHOD).variableUint64(1n).byte(stream.dictionaryProperty!)
+  if (!stream.aes) {
+    writer.variableUint64(1n)
+    if (stream.method === 'copy') writer.byte(0x01).byte(COPY_METHOD)
+    else writeLzma2Coder(writer, stream.dictionaryProperty!)
+    return
   }
+  if (stream.method === 'copy') {
+    writer.variableUint64(1n)
+    writeAesCoder(writer, stream.aes.properties)
+    return
+  }
+  writer.variableUint64(2n)
+  writeAesCoder(writer, stream.aes.properties)
+  writeLzma2Coder(writer, stream.dictionaryProperty!)
+  writer.variableUint64(1n).variableUint64(0n)
+}
+
+/** One size per coder output, in global output-index order. */
+function writeCodersUnpackSizes(writer: ByteWriter, stream: WrittenStream): void {
+  if (stream.aes && stream.method !== 'copy') writer.variableUint64(stream.aes.codedSize)
+  writer.variableUint64(stream.unpackedSize)
 }
 
 function buildNextHeader(entries: readonly SevenZipEntryInput[], streams: readonly WrittenStream[]): Uint8Array {
@@ -285,7 +340,7 @@ function buildNextHeader(entries: readonly SevenZipEntryInput[], streams: readon
       .byte(0)
     for (const stream of streams) writeFolder(writer, stream)
     writer.byte(NID.CodersUnpackSize)
-    for (const stream of streams) writer.variableUint64(stream.unpackedSize)
+    for (const stream of streams) writeCodersUnpackSizes(writer, stream)
     writer.byte(NID.End)
 
     // libarchive (and therefore macOS Archive Utility) rejects archives whose
@@ -342,20 +397,57 @@ function signatureHeader(nextHeaderOffset: bigint, nextHeader: Uint8Array): Uint
     .build()
 }
 
+/** Archive-wide encryption state. The key and salt are derived once; only the
+ * IV changes per folder, matching 7-Zip. */
+interface ArchiveEncryption {
+  key: Uint8Array
+  cyclesPower: number
+  salt: Uint8Array
+  randomBytes: (length: number) => Uint8Array
+}
+
+async function beginEncryption(
+  encryption: ArchiveEncryption
+): Promise<{ encryptor: SevenZipAesEncryptor; properties: Uint8Array }> {
+  const properties: SevenZipAesProperties = {
+    cyclesPower: encryption.cyclesPower,
+    salt: encryption.salt,
+    iv: encryption.randomBytes(16)
+  }
+  return {
+    encryptor: await SevenZipAesEncryptor.create(encryption.key, properties.iv),
+    properties: serializeSevenZipAesProperties(properties)
+  }
+}
+
 async function consumeEntry(
   entry: SevenZipEntryInput,
   sink: SeekableSink,
   method: SevenZipMethod,
   dictionaryProperty: number,
   options: CreateSevenZipOptions,
-  processed: { value: bigint }
+  processed: { value: bigint },
+  encryption?: ArchiveEncryption
 ): Promise<WrittenStream> {
   if (!entry.open) throw new TypeError(`File entry has no content stream: ${entry.path}`)
+  const aes = encryption ? await beginEncryption(encryption) : undefined
   const reader = entry.open().getReader()
   const crc = new Crc32()
   let unpackedSize = 0n
   let packedSize = 0n
   let pending = new Uint8Array(0)
+
+  // Everything bound for the packed stream goes through here so encryption sits
+  // above the sink and below the codec, exactly where the coder chain puts it.
+  const emit = async (bytes: Uint8Array) => {
+    if (!aes) {
+      await sink.write(bytes, options.signal)
+      packedSize += BigInt(bytes.length)
+      return
+    }
+    const ciphertext = await aes.encryptor.update(bytes)
+    if (ciphertext.length > 0) await sink.write(ciphertext, options.signal)
+  }
 
   const writeRaw = async (bytes: Uint8Array) => {
     crc.update(bytes)
@@ -363,8 +455,7 @@ async function consumeEntry(
     processed.value += BigInt(bytes.length)
     options.onProgress?.(processed.value, entry.path)
     if (method === 'copy') {
-      await sink.write(bytes, options.signal)
-      packedSize += BigInt(bytes.length)
+      await emit(bytes)
       return
     }
 
@@ -375,8 +466,7 @@ async function consumeEntry(
       const encoded = options.encodeLzma2Chunk
         ? await options.encodeLzma2Chunk(chunk, options.signal)
         : encodeLzma2Block(chunk, options.lzmaEncoder)
-      await sink.write(encoded.data, options.signal)
-      packedSize += BigInt(encoded.data.length)
+      await emit(encoded.data)
       offset += LZMA2_ENCODE_CHUNK_SIZE
     }
     pending = joined.slice(offset)
@@ -406,11 +496,15 @@ async function consumeEntry(
       const encoded = options.encodeLzma2Chunk
         ? await options.encodeLzma2Chunk(pending, options.signal)
         : encodeLzma2Block(pending, options.lzmaEncoder)
-      await sink.write(encoded.data, options.signal)
-      packedSize += BigInt(encoded.data.length)
+      await emit(encoded.data)
     }
-    await sink.write(Uint8Array.of(0), options.signal)
-    packedSize += 1n
+    await emit(Uint8Array.of(0))
+  }
+
+  if (aes) {
+    const trailer = await aes.encryptor.final()
+    if (trailer.length > 0) await sink.write(trailer, options.signal)
+    packedSize = aes.encryptor.cipherSize
   }
 
   return {
@@ -418,8 +512,52 @@ async function consumeEntry(
     unpackedSize,
     crc: crc.digest(),
     method,
-    ...(method === 'lzma2' ? { dictionaryProperty } : {})
+    ...(method === 'lzma2' ? { dictionaryProperty } : {}),
+    ...(aes ? { aes: { properties: aes.properties, codedSize: aes.encryptor.plainSize } } : {})
   }
+}
+
+/**
+ * Writes the plain header as one more packed stream, encrypted, and returns the
+ * EncodedHeader descriptor that replaces it. 7-Zip does the same with a single
+ * AES coder and no compression, so the descriptor stays small enough that
+ * skipping LZMA2 here costs nothing.
+ *
+ * The folder CRC has to live in UnpackInfo: `decodeEncodedHeader` reads
+ * `folder.crc`, which only `parseUnpackInfo` sets, and without it a wrong
+ * password would surface as a garbage header parse instead of WRONG_PASSWORD.
+ */
+async function writeEncryptedHeader(
+  header: Uint8Array,
+  sink: SeekableSink,
+  encryption: ArchiveEncryption,
+  options: CreateSevenZipOptions
+): Promise<Uint8Array> {
+  const packPosition = sink.position - BigInt(SIGNATURE_HEADER_SIZE)
+  const aes = await beginEncryption(encryption)
+  const body = await aes.encryptor.update(header)
+  if (body.length > 0) await sink.write(body, options.signal)
+  const trailer = await aes.encryptor.final()
+  if (trailer.length > 0) await sink.write(trailer, options.signal)
+
+  const writer = new ByteWriter().byte(NID.EncodedHeader)
+  writer.byte(NID.PackInfo)
+    .variableUint64(packPosition)
+    .variableUint64(1n)
+    .byte(NID.Size)
+    .variableUint64(aes.encryptor.cipherSize)
+    .byte(NID.End)
+  writer.byte(NID.UnpackInfo)
+    .byte(NID.Folder)
+    .variableUint64(1n)
+    .byte(0)
+  writer.variableUint64(1n)
+  writeAesCoder(writer, aes.properties)
+  writer.byte(NID.CodersUnpackSize).variableUint64(BigInt(header.length))
+  writer.byte(NID.CRC).byte(1).uint32(crc32(header))
+  writer.byte(NID.End)
+  writer.byte(NID.End)
+  return writer.build()
 }
 
 export async function create7z(
@@ -441,6 +579,22 @@ export async function create7z(
   const method = options.method ?? 'lzma2'
   const dictionarySize = options.dictionarySize ?? 16 * 1024 * 1024
   const dictionaryProperty = dictionaryPropertyForSize(dictionarySize)
+  const password = options.password === '' ? undefined : options.password
+  if (options.encryptHeader && password === undefined) {
+    throw new Libera7zError('UNSUPPORTED_FEATURE', 'Encrypting the 7z header needs a password')
+  }
+  const randomBytes = options.randomBytes ?? defaultRandomBytes
+  // One derivation per archive: the salt is archive-wide and the loop runs
+  // 2^19 rounds, so paying it per folder would dominate the whole job.
+  const encryption: ArchiveEncryption | undefined = password === undefined ? undefined : (() => {
+    const properties = generateSevenZipAesProperties(randomBytes)
+    return {
+      key: deriveSevenZipAesKey(password, properties, options.signal),
+      cyclesPower: properties.cyclesPower,
+      salt: properties.salt,
+      randomBytes
+    }
+  })()
   const streams: WrittenStream[] = []
   const processed = { value: 0n }
   let closed = false
@@ -450,15 +604,18 @@ export async function create7z(
     for (const entry of entries) {
       throwIfCancelled(options.signal)
       if (entry.isDirectory || entry.size === 0n) continue
-      streams.push(await consumeEntry(entry, sink, method, dictionaryProperty, options, processed))
+      streams.push(await consumeEntry(entry, sink, method, dictionaryProperty, options, processed, encryption))
     }
-    const nextHeaderOffset = sink.position - BigInt(SIGNATURE_HEADER_SIZE)
     const header = buildNextHeader(entries, streams)
-    await sink.write(header, options.signal)
-    await sink.writeAt(0n, signatureHeader(nextHeaderOffset, header), options.signal)
+    const nextHeader = encryption && options.encryptHeader
+      ? await writeEncryptedHeader(header, sink, encryption, options)
+      : header
+    const nextHeaderOffset = sink.position - BigInt(SIGNATURE_HEADER_SIZE)
+    await sink.write(nextHeader, options.signal)
+    await sink.writeAt(0n, signatureHeader(nextHeaderOffset, nextHeader), options.signal)
     await sink.close()
     closed = true
-    return { size: sink.position, headerSize: header.length }
+    return { size: sink.position, headerSize: nextHeader.length }
   } finally {
     if (!closed) await sink.close().catch(() => undefined)
   }
@@ -852,7 +1009,8 @@ async function decodeEncodedHeader(
   bytes: Uint8Array,
   signal?: AbortSignal,
   decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string
+  password?: string,
+  deriveKey?: SevenZipAesKeyDeriver
 ): Promise<Uint8Array> {
   const reader = new ByteReader(bytes)
   if (reader.byte() !== NID.EncodedHeader) throw invalidArchive('Invalid encoded-header marker')
@@ -866,7 +1024,7 @@ async function decodeEncodedHeader(
   if (packedSize > BigInt(MAX_ENCODED_HEADER_SIZE) || folder.unpackSize > BigInt(MAX_ENCODED_HEADER_SIZE)) {
     throw new Libera7zError('LIMIT_EXCEEDED', 'Encoded 7z header exceeds the 64 MiB limit')
   }
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password, deriveKey)
   if (folder.crc !== undefined && crc32(decoded) !== folder.crc) {
     if (password !== undefined && folder.coders.some(coder => coder.methodId === AES_METHOD)) {
       throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
@@ -904,7 +1062,8 @@ async function decodeFolderBuffer(
   folder: ParsedFolder,
   signal?: AbortSignal,
   decodeLzma2Buffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string
+  password?: string,
+  deriveKey: SevenZipAesKeyDeriver = deriveSevenZipAesKey
 ): Promise<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) throw invalidArchive('7z folder has no packed stream')
   const packedInputs = new Map<number, Uint8Array>()
@@ -970,7 +1129,7 @@ async function decodeFolderBuffer(
           if (value.length !== outputSize) throw invalidArchive('7z filter changed the declared stream size')
           value = decodeSevenZipFilter(SIMPLE_FILTERS.get(coder.methodId)!, value, coder.properties, signal)
         } else if (coder.methodId === AES_METHOD) {
-          value = await decryptSevenZipAes(value, coder.properties, password, outputSize, signal)
+          value = await decryptSevenZipAes(value, coder.properties, password, outputSize, signal, deriveKey)
         } else {
           throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${coder.methodId.toString(16)}`)
         }
@@ -990,18 +1149,22 @@ async function decodeFolderBuffer(
     }
     return value
   } catch (error) {
-    if (
-      encrypted &&
-      password !== undefined &&
-      !(error instanceof Libera7zError && ['CANCELLED', 'LIMIT_EXCEEDED', 'UNSUPPORTED_METHOD'].includes(error.code))
-    ) {
+    if (encrypted && password !== undefined && isWrongPasswordFailure(error)) {
       throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
     }
     throw error
   }
 }
 
-class PackedCursor {
+/** The slice of `PackedCursor` the LZMA2 stream decoder actually consumes,
+ * so a decrypting cursor can stand in for it. */
+interface PackedByteCursor {
+  readonly remaining: bigint
+  read(length: number): Promise<Uint8Array>
+  byte(): Promise<number>
+}
+
+class PackedCursor implements PackedByteCursor {
   private position = 0n
 
   constructor(
@@ -1027,8 +1190,100 @@ class PackedCursor {
   }
 }
 
+const AES_DECRYPT_RUN_SIZE = 256 * 1024
+
+/**
+ * Decrypts a packed AES stream on the fly so the coders above it keep
+ * streaming. `remaining` counts plaintext, which is what the callers compare
+ * against the declared coder output; the trailing zero padding is never handed
+ * out. Each run is decrypted into a fresh buffer because callers hold on to
+ * what they are given across awaits.
+ */
+class AesDecryptingCursor implements PackedByteCursor {
+  private run: Uint8Array = new Uint8Array(0)
+  private runOffset = 0
+  private produced = 0n
+
+  private constructor(
+    private readonly cursor: PackedCursor,
+    private readonly cryptoKey: CryptoKey,
+    private iv: Uint8Array,
+    private readonly outputSize: bigint,
+    private readonly signal?: AbortSignal
+  ) {}
+
+  static async create(
+    source: RandomAccessSource,
+    start: bigint,
+    packedSize: bigint,
+    coder: ParsedCoder,
+    outputSize: bigint,
+    password: string | undefined,
+    deriveKey: SevenZipAesKeyDeriver,
+    signal?: AbortSignal
+  ): Promise<AesDecryptingCursor> {
+    if (password === undefined) throw new Libera7zError('PASSWORD_REQUIRED', 'The 7z archive needs a password')
+    if ((packedSize & 15n) !== 0n) throw invalidArchive('7zAES packed stream is not block aligned')
+    if (outputSize > packedSize) throw invalidArchive('7zAES output size is invalid')
+    const properties = parseSevenZipAesProperties(coder.properties)
+    const key = deriveKey(password, properties, signal)
+    try {
+      return new AesDecryptingCursor(
+        new PackedCursor(source, start, packedSize, signal),
+        await importSevenZipAesKey(key),
+        properties.iv.slice(),
+        outputSize,
+        signal
+      )
+    } finally {
+      key.fill(0)
+    }
+  }
+
+  get remaining(): bigint {
+    return this.outputSize - this.produced
+  }
+
+  async read(length: number): Promise<Uint8Array> {
+    if (BigInt(length) > this.remaining) throw invalidArchive('7zAES stream is truncated')
+    this.produced += BigInt(length)
+    const available = this.run.length - this.runOffset
+    if (available >= length) {
+      const value = this.run.subarray(this.runOffset, this.runOffset + length)
+      this.runOffset += length
+      return value
+    }
+    const value = new Uint8Array(length)
+    let offset = 0
+    while (offset < length) {
+      if (this.runOffset === this.run.length) await this.fill()
+      const take = Math.min(length - offset, this.run.length - this.runOffset)
+      value.set(this.run.subarray(this.runOffset, this.runOffset + take), offset)
+      this.runOffset += take
+      offset += take
+    }
+    return value
+  }
+
+  async byte(): Promise<number> {
+    return (await this.read(1))[0]
+  }
+
+  private async fill(): Promise<void> {
+    throwIfCancelled(this.signal)
+    const length = Number(this.cursor.remaining < BigInt(AES_DECRYPT_RUN_SIZE)
+      ? this.cursor.remaining
+      : BigInt(AES_DECRYPT_RUN_SIZE))
+    if (length === 0) throw invalidArchive('7zAES stream is truncated')
+    const block = await this.cursor.read(length)
+    this.run = await decryptAesCbcRaw(this.cryptoKey, this.iv, block)
+    this.iv = block.slice(block.length - 16)
+    this.runOffset = 0
+  }
+}
+
 async function* decodeLzma2FromSource(
-  cursor: PackedCursor,
+  cursor: PackedByteCursor,
   property: number,
   expectedSize: bigint,
   signal?: AbortSignal,
@@ -1096,48 +1351,107 @@ async function* decodeLzma2FromSource(
   if (total !== expectedSize) throw invalidArchive('LZMA2 output size does not match the 7z header')
 }
 
+/**
+ * Memoises the 7zAES key derivation for one archive. The loop runs 2^19 SHA-256
+ * rounds and every folder repeats it, so a non-solid archive of N entries paid
+ * it N times. Salt and cycle count are archive-wide, so one entry suffices;
+ * copies are handed out because callers zero what they are given.
+ */
+function memoiseKeyDerivation(): SevenZipAesKeyDeriver {
+  const cache = new Map<string, Uint8Array>()
+  return (password, properties, signal) => {
+    const key = `${properties.cyclesPower}:${Array.from(properties.salt).join(',')}`
+    const existing = cache.get(key)
+    if (existing) return existing.slice()
+    const derived = deriveSevenZipAesKey(password, properties, signal)
+    cache.set(key, derived.slice())
+    return derived
+  }
+}
+
+/** Wrong passwords surface as whatever the coder above AES makes of the
+ * garbage, so anything short of a deliberate stop is reported as such. */
+function isWrongPasswordFailure(error: unknown): boolean {
+  return !(error instanceof Libera7zError && ['CANCELLED', 'LIMIT_EXCEEDED', 'UNSUPPORTED_METHOD'].includes(error.code))
+}
+
+async function* classifyPasswordFailures(
+  encrypted: boolean,
+  password: string | undefined,
+  body: () => AsyncGenerator<Uint8Array>
+): AsyncGenerator<Uint8Array> {
+  try {
+    yield* body()
+  } catch (error) {
+    if (encrypted && password !== undefined && isWrongPasswordFailure(error)) {
+      throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+    }
+    throw error
+  }
+}
+
 async function* decodeFolderFromSource(
   source: RandomAccessSource,
   folder: ParsedFolder,
   signal?: AbortSignal,
   decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
   decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string
+  password?: string,
+  deriveKey: SevenZipAesKeyDeriver = deriveSevenZipAesKey
 ): AsyncGenerator<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) {
     throw invalidArchive('7z folder has no packed stream')
   }
   const order = linearCoderOrder(folder)
-  const coder = order?.length === 1 ? order[0] : undefined
-  if (coder && folder.packedOffsets.length === 1 && coder.methodId === COPY_METHOD) {
-    const cursor = new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
-    let remaining = folder.unpackSize
-    while (remaining > 0n) {
-      throwIfCancelled(signal)
-      const length = Number(remaining > 1024n * 1024n ? 1024n * 1024n : remaining)
-      const bytes = await cursor.read(length)
-      remaining -= BigInt(bytes.length)
-      yield bytes
-    }
-    if (cursor.remaining !== 0n) throw invalidArchive('Copy stream size does not match the 7z folder size')
-    return
-  }
-  if (coder && folder.packedOffsets.length === 1 && coder.methodId === LZMA2_METHOD && coder.properties.length === 1) {
-    const cursor = new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
-    for await (const decoded of decodeLzma2FromSource(
-        cursor,
-        coder.properties[0],
-        folder.unpackSize,
-        signal,
-        decoderFactory
-      )) {
-      for (let offset = 0; offset < decoded.length; offset += 256 * 1024) {
-        yield decoded.subarray(offset, Math.min(decoded.length, offset + 256 * 1024))
+  const single = folder.packedOffsets.length === 1
+  // An encrypted folder reads as [AES, …]: decrypt into a cursor and let the
+  // coder above it stream as usual, rather than buffering the whole entry.
+  const aes = single && order?.[0]?.methodId === AES_METHOD ? order[0] : undefined
+  const coder = order?.length === (aes ? 2 : 1) ? order.at(-1) : undefined
+  if (coder && (coder === aes || coder.methodId === COPY_METHOD ||
+      (coder.methodId === LZMA2_METHOD && coder.properties.length === 1))) {
+    const cursor = aes
+      ? await AesDecryptingCursor.create(
+        source,
+        folder.packedOffsets[0],
+        folder.packedSizes[0],
+        aes,
+        folder.unpackSizes[aes.outputStart],
+        password,
+        deriveKey,
+        signal
+      )
+      : new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
+    // The classifier decodeFolderBuffer applies, repeated here because a wrong
+    // password only shows up once the coder above chokes on the garbage.
+    yield* classifyPasswordFailures(aes !== undefined, password, async function* () {
+      if (coder.methodId === LZMA2_METHOD) {
+        for await (const decoded of decodeLzma2FromSource(
+            cursor,
+            coder.properties[0],
+            folder.unpackSize,
+            signal,
+            decoderFactory
+          )) {
+          for (let offset = 0; offset < decoded.length; offset += 256 * 1024) {
+            yield decoded.subarray(offset, Math.min(decoded.length, offset + 256 * 1024))
+          }
+        }
+        return
       }
-    }
+      let remaining = folder.unpackSize
+      while (remaining > 0n) {
+        throwIfCancelled(signal)
+        const length = Number(remaining > 1024n * 1024n ? 1024n * 1024n : remaining)
+        const bytes = await cursor.read(length)
+        remaining -= BigInt(bytes.length)
+        yield bytes
+      }
+      if (cursor.remaining !== 0n) throw invalidArchive('Copy stream size does not match the 7z folder size')
+    })
     return
   }
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password, deriveKey)
   for (let offset = 0; offset < decoded.length; offset += 1024 * 1024) {
     throwIfCancelled(signal)
     yield decoded.subarray(offset, Math.min(decoded.length, offset + 1024 * 1024))
@@ -1225,7 +1539,8 @@ export class SevenZipArchive {
     private readonly parsedFiles: readonly ParsedFile[],
     private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
     private readonly decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-    private readonly password?: string
+    private readonly password?: string,
+    private readonly deriveKey: SevenZipAesKeyDeriver = memoiseKeyDerivation()
   ) {
     this.entries = parsedFiles.map((file, id) => ({
       id,
@@ -1253,6 +1568,7 @@ export class SevenZipArchive {
     const decoderFactory = this.decoderFactory
     const decodeBuffer = this.decodeBuffer
     const password = this.password
+    const deriveKey = this.deriveKey
     const generator = (async function* (): AsyncGenerator<SevenZipEntryEvent> {
       let activeFolder: ParsedFolder | null = null
       let output: FolderOutputReader | null = null
@@ -1270,7 +1586,15 @@ export class SevenZipArchive {
             await output?.close()
             activeFolder = file.folder
             output = new FolderOutputReader(
-              decodeFolderFromSource(source, file.folder, options.signal, decoderFactory, decodeBuffer, password),
+              decodeFolderFromSource(
+                source,
+                file.folder,
+                options.signal,
+                decoderFactory,
+                decodeBuffer,
+                password,
+                deriveKey
+              ),
               file.folder
             )
             nextSubstream = 0
@@ -1369,10 +1693,29 @@ export async function open7z(
   const nextHeader = await readExactly(source, nextPosition, headerSize, options.signal)
   if (crc32(nextHeader) !== nextCrc) throw new Libera7zError('CRC_MISMATCH', '7z NextHeader CRC does not match')
   if (nextHeader.length === 0) throw invalidArchive('7z NextHeader is empty')
-  const decoded = nextHeader[0] === NID.EncodedHeader
-    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, options.password)
+  // One deriver for the header and every folder: same salt, same key, and the
+  // derivation is by far the most expensive part of opening the archive.
+  const deriveKey = memoiseKeyDerivation()
+  const encodedHeader = nextHeader[0] === NID.EncodedHeader
+  const decoded = encodedHeader
+    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, options.password, deriveKey)
     : nextHeader
-  const files = parseHeader(decoded)
+  // Not every writer puts a CRC on the encrypted header - py7zr omits it - so a
+  // wrong password can reach this point as nonsense bytes rather than a digest
+  // mismatch. Reading them as corruption would send the user hunting a broken
+  // file instead of retyping the password.
+  const files = encodedHeader && options.password !== undefined
+    ? (() => {
+      try {
+        return parseHeader(decoded)
+      } catch (error) {
+        if (isWrongPasswordFailure(error)) {
+          throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+        }
+        throw error
+      }
+    })()
+    : parseHeader(decoded)
   if (options.maxEntries !== undefined && files.length > options.maxEntries) {
     throw new Libera7zError('LIMIT_EXCEEDED', '7z archive contains too many entries')
   }
@@ -1388,5 +1731,12 @@ export async function open7z(
       }
     }
   }
-  return new SevenZipArchive(source, files, options.lzma2DecoderFactory, options.decodeLzma2Buffer, options.password)
+  return new SevenZipArchive(
+    source,
+    files,
+    options.lzma2DecoderFactory,
+    options.decodeLzma2Buffer,
+    options.password,
+    deriveKey
+  )
 }

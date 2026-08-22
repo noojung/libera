@@ -16,6 +16,9 @@ export interface SevenZipWriteOptions {
   totalBytes: number
   level: number
   splitSize?: number
+  password?: string
+  /** Encrypts the header too, so the file names need the password as well. */
+  encryptFileNames?: boolean
 }
 
 export interface SevenZipWriteResult {
@@ -46,7 +49,7 @@ export async function writeSevenZipArchive(
   onProgress?: ProgressCallback,
   context: { signal?: AbortSignal } = {}
 ): Promise<SevenZipWriteResult> {
-  const { inputPaths, outputPath, totalBytes, level, splitSize } = options
+  const { inputPaths, outputPath, totalBytes, level, splitSize, password, encryptFileNames } = options
 
   if (splitSize !== undefined && Math.ceil(totalBytes / splitSize) > MAX_SEVEN_ZIP_VOLUMES) {
     throw new SevenZipError('SEVEN_ZIP_FAILED', 'The split size produces too many volumes.')
@@ -63,6 +66,8 @@ export async function writeSevenZipArchive(
       outputPath,
       level: Number(sevenZipLevelArgument(level).slice('-mx='.length)),
       splitSize,
+      password,
+      encryptFileNames,
       signal: context.signal,
       onProgress: (processedBytes, file) => {
         currentFile = file ?? currentFile

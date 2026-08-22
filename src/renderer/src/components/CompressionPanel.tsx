@@ -10,6 +10,7 @@ import {
   saveDialogExtension,
   compressionLevels,
   nearestLevel,
+  supportsHeaderEncryption,
   supportsLevel,
   supportsPassword,
   supportsSplit,
@@ -26,6 +27,7 @@ interface CompressionPanelProps {
     level: number
     outputPath: string
     password?: string
+    encryptFileNames?: boolean
     splitSize?: number
   }) => void
 }
@@ -53,6 +55,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [defaultDir, setDefaultDir] = useState<string>('')
   const [password, setPassword] = useState<string>('')
   const [passwordConfirmation, setPasswordConfirmation] = useState<string>('')
+  const [encryptFileNames, setEncryptFileNames] = useState<boolean>(false)
   const [splitEnabled, setSplitEnabled] = useState<boolean>(false)
   const [splitPreset, setSplitPreset] = useState<SplitPreset>('100mb')
   const [splitCustomValue, setSplitCustomValue] = useState<string>('100')
@@ -112,6 +115,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       level,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
+      encryptFileNames: supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
       splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined
     })
   }
@@ -142,6 +146,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               onClick={() => {
                 setFormat(fmt)
                 setLevel(current => nearestLevel(current, fmt))
+                if (!supportsHeaderEncryption(fmt)) setEncryptFileNames(false)
               }}
               className={`compression-panel__format-button${format === fmt ? ' is-active' : ''}`}
             >
@@ -176,7 +181,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       {supportsPassword(format) && (
         <div className="compression-panel__field">
           <label className="compression-panel__label compression-panel__label--stacked">
-            {t('compression.zipPassword')} <span className="compression-panel__optional">{t('compression.optional')}</span>
+            {t('compression.password')} <span className="compression-panel__optional">{t('compression.optional')}</span>
           </label>
           <div className="compression-panel__password-grid">
             <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
@@ -186,7 +191,25 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
           )}
           {password && password === passwordConfirmation && (
-            <p className="compression-panel__message">{t('compression.passwordNotice')}</p>
+            <p className="compression-panel__message">
+              {t(format === '7z' ? 'compression.passwordNotice7z' : 'compression.passwordNoticeZip')}
+            </p>
+          )}
+          {supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
+            <label className="compression-panel__split-option compression-panel__split-option--nested">
+              <input
+                type="checkbox"
+                className="compression-panel__checkbox"
+                checked={encryptFileNames}
+                onChange={(e) => setEncryptFileNames(e.target.checked)}
+              />
+              <span>
+                <span className="compression-panel__option-title">{t('compression.encryptFileNames')}</span>
+                <span className="compression-panel__option-description">
+                  {t('compression.encryptFileNamesHint')}
+                </span>
+              </span>
+            </label>
           )}
         </div>
       )}

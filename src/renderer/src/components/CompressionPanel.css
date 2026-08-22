@@ -137,6 +137,12 @@
   cursor: pointer;
 }
 
+/* The name-hiding toggle sits under the password notice rather than alone in
+   its own field, so it needs the gap the other options get from stacking. */
+.compression-panel__split-option--nested {
+  margin-top: 10px;
+}
+
 .compression-panel__checkbox {
   width: 18px;
   height: 18px;
