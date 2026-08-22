@@ -7,8 +7,8 @@ import * as tar from 'tar'
 import { strToU8, zipSync } from 'fflate'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive, type ProgressData } from './compressor'
-import { runSevenZip } from './sevenZip'
 import { writeLibera7z } from './libera7zNode'
 import {
   buildExtractionPlan,
@@ -637,7 +637,7 @@ describe('7z extraction', () => {
     const sourceDir = await seedSource(directory)
     const archivePath = path.join(directory, 'archive.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const result = await extractArchive({ archivePath, targetDir })
 
@@ -656,7 +656,7 @@ describe('7z extraction', () => {
     await fs.mkdir(sourceDir)
     await fs.writeFile(path.join(sourceDir, 'payload.bin'), Buffer.alloc(1024 * 1024, 9))
     const archivePath = path.join(directory, 'metered.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const updates: ProgressData[] = []
     await extractArchive({ archivePath, targetDir: path.join(directory, 'out') }, data => updates.push(data))
@@ -673,7 +673,7 @@ describe('7z extraction', () => {
     await fs.symlink('a.txt', path.join(sourceDir, 'link.txt'))
     const archivePath = path.join(directory, 'linked.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-snl', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     await extractArchive({ archivePath, targetDir })
 
@@ -691,7 +691,7 @@ describe('7z extraction', () => {
     await fs.symlink('../../escape.txt', path.join(sourceDir, 'escape.txt'))
     const archivePath = path.join(directory, 'escape.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-snl', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     await expect(extractArchive({ archivePath, targetDir }))
       .rejects.toThrow('symlink target escapes the destination')
@@ -704,7 +704,7 @@ describe('7z extraction', () => {
     const sourceDir = await seedSource(directory)
     const archivePath = path.join(directory, 'partial.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     await extractArchive({ archivePath, targetDir, selectedEntries: ['src/sub'] })
 
@@ -714,16 +714,16 @@ describe('7z extraction', () => {
 
   it('extracts an encrypted archive and rejects the wrong password', async () => {
     const directory = await createTemporaryDirectory()
-    const sourceDir = await seedSource(directory)
     const archivePath = path.join(directory, 'enc.7z')
-    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+    await fs.writeFile(archivePath, referenceSevenZipFixture('aes-header'))
 
     await expect(extractArchive({ archivePath, targetDir: path.join(directory, 'bad'), password: 'nope' }))
       .rejects.toMatchObject({ code: 'SEVEN_ZIP_WRONG_PASSWORD' })
 
     const targetDir = path.join(directory, 'good')
     await extractArchive({ archivePath, targetDir, password: 'hunter2' })
-    await expect(fs.readFile(path.join(targetDir, 'src', 'a.txt'), 'utf8')).resolves.toBe('alpha')
+    await expect(fs.readFile(path.join(targetDir, 'secret.txt'), 'utf8'))
+      .resolves.toBe('encrypted external archive\n'.repeat(1_000))
   }, 60_000)
 
   it('does not overwrite a file already in the destination', async () => {
@@ -731,7 +731,7 @@ describe('7z extraction', () => {
     const sourceDir = await seedSource(directory)
     const archivePath = path.join(directory, 'clash.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
     await fs.mkdir(path.join(targetDir, 'src'), { recursive: true })
     await fs.writeFile(path.join(targetDir, 'src', 'a.txt'), 'original')
 
@@ -748,7 +748,7 @@ describe('7z extraction', () => {
     }
     const archivePath = path.join(directory, 'cancel.7z')
     const targetDir = path.join(directory, 'out')
-    await runSevenZip(['a', '-mx=0', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 0 })
 
     const controller = new AbortController()
     const extraction = extractArchive({ archivePath, targetDir }, data => {

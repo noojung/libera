@@ -5,9 +5,10 @@ import path from 'path'
 import zlib from 'zlib'
 import * as tar from 'tar'
 import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
+import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
-import { runSevenZip } from './sevenZip'
+import { writeLibera7z } from './libera7zNode'
 
 const temporaryDirectories: string[] = []
 
@@ -159,7 +160,7 @@ describe('inspectArchive for 7z', () => {
     await fs.writeFile(path.join(sourceDir, 'docs', 'guide.txt'), 'guide')
     await fs.writeFile(path.join(sourceDir, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 })
     const archivePath = path.join(directory, 'archive.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const result = await inspectArchive(archivePath)
 
@@ -181,7 +182,7 @@ describe('inspectArchive for 7z', () => {
       await fs.writeFile(path.join(sourceDir, name), name)
     }
     const archivePath = path.join(directory, 'ordered.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const first = await inspectArchive(archivePath)
     const second = await inspectArchive(archivePath)
@@ -195,11 +196,8 @@ describe('inspectArchive for 7z', () => {
 
   it('flags an archive whose entries are encrypted', async () => {
     const directory = await createTemporaryDirectory()
-    const sourceDir = path.join(directory, 'source')
-    await fs.mkdir(sourceDir)
-    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
     const archivePath = path.join(directory, 'enc.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], 'hunter2')
+    await fs.writeFile(archivePath, referenceSevenZipFixture('aes-data'))
 
     // Headers are readable without a password here, so the listing succeeds
     // and only the entries are marked encrypted.
@@ -209,11 +207,8 @@ describe('inspectArchive for 7z', () => {
 
   it('needs a password before it can list a header-encrypted archive', async () => {
     const directory = await createTemporaryDirectory()
-    const sourceDir = path.join(directory, 'source')
-    await fs.mkdir(sourceDir)
-    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
     const archivePath = path.join(directory, 'hidden.7z')
-    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+    await fs.writeFile(archivePath, referenceSevenZipFixture('aes-header'))
 
     await expect(inspectArchive(archivePath))
       .rejects.toMatchObject({ code: 'SEVEN_ZIP_PASSWORD_REQUIRED' })
@@ -227,7 +222,12 @@ describe('inspectArchive for 7z', () => {
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
     await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
-    await runSevenZip(['a', '-v30k', '-mx=0', path.join(directory, 'set.7z'), sourceDir], undefined)
+    await writeLibera7z({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'set.7z'),
+      level: 0,
+      splitSize: 30_000
+    })
 
     const result = await inspectArchive(path.join(directory, 'set.7z.003'))
 

@@ -5,9 +5,9 @@ import path from 'path'
 import zlib from 'zlib'
 import * as tar from 'tar'
 import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
+import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
-import { runSevenZip } from './sevenZip'
 import { writeLibera7z } from './libera7zNode'
 import {
   ArchivePreviewError,
@@ -399,7 +399,7 @@ describe('7z preview', () => {
     await fs.writeFile(path.join(sourceDir, 'a.txt'), contents)
     await fs.writeFile(path.join(sourceDir, 'b.txt'), 'second entry')
     const archivePath = path.join(directory, 'p.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const listing = await inspectArchive(archivePath)
     const target = listing.entries.find(entry => entry.path.endsWith('a.txt'))!
@@ -418,7 +418,7 @@ describe('7z preview', () => {
       await fs.writeFile(path.join(sourceDir, name), `contents of ${name}`)
     }
     const archivePath = path.join(directory, 'ids.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const listing = await inspectArchive(archivePath)
     for (const entry of listing.entries.filter(one => !one.isDirectory)) {
@@ -433,7 +433,7 @@ describe('7z preview', () => {
     await fs.mkdir(sourceDir)
     await fs.writeFile(path.join(sourceDir, 'pixel.png'), createPng(1, 1))
     const archivePath = path.join(directory, 'img.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const listing = await inspectArchive(archivePath)
     const target = listing.entries.find(entry => entry.path.endsWith('pixel.png'))!
@@ -445,18 +445,15 @@ describe('7z preview', () => {
 
   it('previews an entry of an encrypted archive once given the password', async () => {
     const directory = await createTemporaryDirectory()
-    const sourceDir = path.join(directory, 'src')
-    await fs.mkdir(sourceDir)
-    await fs.writeFile(path.join(sourceDir, 'secret.txt'), 'secret contents')
     const archivePath = path.join(directory, 'enc.7z')
-    await runSevenZip(['a', '-mx=1', '-mhe=on', archivePath, sourceDir], 'hunter2')
+    await fs.writeFile(archivePath, referenceSevenZipFixture('aes-header'))
 
     const listing = await inspectArchive(archivePath, { password: 'hunter2' })
     const target = listing.entries.find(entry => entry.path.endsWith('secret.txt'))!
 
     // Unlike ZIP, an encrypted 7z entry can be previewed rather than refused.
     const preview = await previewArchiveEntry(archivePath, target.id, { password: 'hunter2' })
-    expect((preview as { text: string }).text).toBe('secret contents')
+    expect((preview as { text: string }).text).toBe('encrypted external archive\n'.repeat(1_000))
 
     await expect(previewArchiveEntry(archivePath, target.id))
       .rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
@@ -468,7 +465,7 @@ describe('7z preview', () => {
     await fs.mkdir(path.join(sourceDir, 'sub'), { recursive: true })
     await fs.writeFile(path.join(sourceDir, 'sub', 'a.txt'), 'alpha')
     const archivePath = path.join(directory, 'dir.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const listing = await inspectArchive(archivePath)
     const folder = listing.entries.find(entry => entry.isDirectory)!
@@ -483,7 +480,7 @@ describe('7z preview', () => {
     await fs.mkdir(sourceDir)
     await fs.writeFile(path.join(sourceDir, 'big.txt'), 'x'.repeat(MAX_ARCHIVE_PREVIEW_BYTES + 4096))
     const archivePath = path.join(directory, 'big.7z')
-    await runSevenZip(['a', '-mx=1', archivePath, sourceDir], undefined)
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
 
     const listing = await inspectArchive(archivePath)
     const target = listing.entries.find(entry => entry.path.endsWith('big.txt'))!

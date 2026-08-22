@@ -5,8 +5,7 @@ import path from 'path'
 import { SplitVolumeError } from './splitZipVolumes'
 import { canonicalArchivePath } from './archiveVolumes'
 import { listSevenZipEntries } from './sevenZipList'
-import { openLibera7zFile } from './libera7zNode'
-import { runSevenZip } from './sevenZip'
+import { openLibera7zFile, writeLibera7z } from './libera7zNode'
 import {
   discoverSevenZipVolumes,
   firstVolumePath,
@@ -98,7 +97,7 @@ describe('discoverSevenZipVolumes', () => {
 })
 
 describe('removeStaleSevenZipVolumes', () => {
-  it('clears a previous run so `7za a` cannot append to it', async () => {
+  it('clears files from a previous split or non-split run', async () => {
     const directory = await createTemporaryDirectory()
     for (const name of ['out.7z', 'out.7z.001', 'out.7z.002', 'out.7z.tmp', 'keep.txt']) {
       await fs.writeFile(path.join(directory, name), 'x')
@@ -110,7 +109,7 @@ describe('removeStaleSevenZipVolumes', () => {
   })
 })
 
-describe('against a real split archive', () => {
+describe('against a Libera7z split archive', () => {
   it('lists a set opened from any volume and reports the volume count', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'src')
@@ -118,9 +117,12 @@ describe('against a real split archive', () => {
     // Incompressible, so the set genuinely spans several volumes.
     await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
     const outputPath = path.join(directory, 'm.7z')
-    // Leave the header uncompressed so this test isolates multi-volume I/O;
-    // p7zip 17 otherwise uses the still-separate LZMA1 compatibility path.
-    await runSevenZip(['a', '-v30k', '-mx=0', '-mhc=off', outputPath, sourceDir], undefined)
+    await writeLibera7z({
+      inputPaths: [sourceDir],
+      outputPath,
+      level: 0,
+      splitSize: 30_000
+    })
 
     const volumes = await discoverSevenZipVolumes(path.join(directory, 'm.7z.001'))
     expect(volumes.length).toBeGreaterThan(1)

@@ -288,7 +288,16 @@ async function collectPathEntries(
   if (path.resolve(itemPath) === excludedPath) return
   const stat = await fsPromises.lstat(itemPath)
   if (stat.isSymbolicLink()) {
-    throw new Libera7zError('UNSUPPORTED_FEATURE', `Symbolic-link input requires the compatibility backend: ${itemPath}`)
+    const target = Buffer.from(await fsPromises.readlink(itemPath), 'utf8')
+    entries.push({
+      path: storedPath,
+      size: BigInt(target.length),
+      isSymlink: true,
+      modified: stat.mtime,
+      mode: stat.mode & 0o7777,
+      open: () => Readable.toWeb(Readable.from([target])) as ReadableStream<Uint8Array>
+    })
+    return
   }
   if (stat.isDirectory()) {
     entries.push({
@@ -306,7 +315,7 @@ async function collectPathEntries(
     return
   }
   if (!stat.isFile()) {
-    throw new Libera7zError('UNSUPPORTED_FEATURE', `Special-file input requires the compatibility backend: ${itemPath}`)
+    throw new Libera7zError('UNSUPPORTED_FEATURE', `Special-file input is not supported: ${itemPath}`)
   }
   entries.push({
     path: storedPath,
@@ -408,11 +417,4 @@ export async function openLibera7zFile(
     await source.close().catch(() => undefined)
     throw error
   }
-}
-
-export function canFallbackFromLibera7z(error: unknown): boolean {
-  return error instanceof Libera7zError && (
-    error.code === 'UNSUPPORTED_FEATURE' ||
-    error.code === 'UNSUPPORTED_METHOD'
-  )
 }

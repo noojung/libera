@@ -16,15 +16,6 @@ describe('LicensesModal', () => {
       .toMatch(new RegExp(`^${thirdPartyLicenses[0].text.split('\n')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
   })
 
-  it('surfaces the bundled 7-Zip LGPL notice, since that is the whole point of this screen', async () => {
-    const { user } = renderWithI18n(<LicensesModal onClose={vi.fn()} />)
-
-    const sevenZip = thirdPartyLicenses.find(entry => entry.name === '7-Zip')!
-    await user.click(screen.getByRole('button', { name: `${sevenZip.name}, ${sevenZip.version}, ${sevenZip.license}` }))
-
-    expect(screen.getByText(/GNU LESSER GENERAL PUBLIC LICENSE/)).toBeInTheDocument()
-  })
-
   it('closes on the close button and on Escape', async () => {
     const onClose = vi.fn()
     const { user } = renderWithI18n(<LicensesModal onClose={onClose} />)

@@ -8,11 +8,6 @@ const path = require('path')
 const repoRoot = path.resolve(__dirname, '..')
 const outputPath = path.join(repoRoot, 'src', 'renderer', 'src', 'generated', 'thirdPartyLicenses.json')
 
-// 7zip-bin only carries the binaries; the binaries themselves are licensed
-// separately (see below), so listing the npm package too would just repeat
-// the same notice under a different name.
-const EXCLUDED_PACKAGES = new Set(['7zip-bin'])
-
 function readLicenseFile(packageDir) {
   const entries = fs.readdirSync(packageDir)
   const licenseFile = entries.find(name => /^licen[cs]e/i.test(name))
@@ -22,7 +17,7 @@ function readLicenseFile(packageDir) {
 
 function collectNpmDependencies() {
   const rootPackageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
-  const dependencyNames = Object.keys(rootPackageJson.dependencies || {}).filter(name => !EXCLUDED_PACKAGES.has(name))
+  const dependencyNames = Object.keys(rootPackageJson.dependencies || {})
 
   return dependencyNames.map(name => {
     const packageDir = path.join(repoRoot, 'node_modules', name)
@@ -39,26 +34,8 @@ function collectNpmDependencies() {
   })
 }
 
-/**
- * 7-Zip is not an npm package - it is a standalone executable bundled as an
- * extraResource - so its entry is assembled from the notice already shipped
- * with the app rather than discovered from node_modules.
- */
-function collectSevenZipEntry() {
-  const noticePath = path.join(repoRoot, 'resources', 'licenses', '7-Zip-LICENSE.txt')
-  const text = fs.readFileSync(noticePath, 'utf8').trim()
-  const bundledVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).dependencies['7zip-bin']
-
-  return {
-    name: '7-Zip',
-    version: bundledVersion,
-    license: 'LGPL-2.1-or-later',
-    text
-  }
-}
-
 function generate() {
-  const entries = [...collectNpmDependencies(), collectSevenZipEntry()]
+  const entries = collectNpmDependencies()
     .sort((a, b) => a.name.localeCompare(b.name))
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })

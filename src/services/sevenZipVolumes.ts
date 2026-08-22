@@ -105,10 +105,9 @@ export async function discoverSevenZipVolumes(firstPath: string): Promise<string
 }
 
 /**
- * Clears volumes left by an earlier run. `7za a` appends to an archive it
- * finds, so a shorter second run would otherwise leave the previous set's
- * higher-numbered volumes beside the new ones and the mixed set reads as
- * corrupt - the same hazard removeStaleVolumes solves for ZIP.
+ * Clears volumes left by an earlier run. A shorter second run would otherwise
+ * leave the previous set's higher-numbered volumes beside the new ones and the
+ * mixed set would read as corrupt - the same hazard ZIP volumes have.
  */
 export async function removeStaleSevenZipVolumes(outputPath: string): Promise<void> {
   const directory = path.dirname(path.resolve(outputPath))

@@ -4,6 +4,8 @@ export type Libera7zErrorCode =
   | 'UNSUPPORTED_FEATURE'
   | 'CRC_MISMATCH'
   | 'LIMIT_EXCEEDED'
+  | 'PASSWORD_REQUIRED'
+  | 'WRONG_PASSWORD'
   | 'CANCELLED'
 
 export class Libera7zError extends Error {

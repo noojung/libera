@@ -3,13 +3,13 @@ import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
-import { path7za } from '7zip-bin'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Libera7zError } from './errors'
 import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
 import { MemorySink, MemorySource } from './io'
 import { LzmaDecoder } from './lzma'
 import { dictionarySizeFromProperty } from './lzma2'
+import { referenceSevenZipFixture } from './referenceFixtures.testData'
 
 const temporaryDirectories: string[] = []
 const execFileAsync = promisify(execFile)
@@ -43,19 +43,6 @@ async function collect(readable: ReadableStream<Uint8Array>): Promise<Uint8Array
     offset += chunk.length
   }
   return result
-}
-
-async function runReferenceSevenZip(args: string[]): Promise<{ stdout: string; stderr: string }> {
-  if (process.platform !== 'win32' && path.isAbsolute(path7za)) {
-    const stat = await fs.stat(path7za)
-    await fs.chmod(path7za, stat.mode | 0o111)
-  }
-  const result = await execFileAsync(path7za, ['-y', '-sccUTF-8', ...args], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true
-  })
-  return { stdout: result.stdout.toString(), stderr: result.stderr.toString() }
 }
 
 describe('pure TypeScript 7z container', () => {
@@ -119,25 +106,14 @@ describe('pure TypeScript 7z container', () => {
       .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
     await expect(open7z(new MemorySource(sink.data()), { maxDictionaryBytes: 1024 * 1024 }))
       .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
+    await expect(open7z(new MemorySource(referenceSevenZipFixture('ppmd')), { maxDictionaryBytes: 1024 * 1024 }))
+      .rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
 
     const controller = new AbortController()
     controller.abort()
     await expect(open7z(new MemorySource(sink.data()), { signal: controller.signal }))
       .rejects.toMatchObject({ code: 'CANCELLED' })
   })
-
-  it.each(['copy', 'lzma2'] as const)('writes a %s archive accepted by the reference 7-Zip', async method => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-'))
-    temporaryDirectories.push(directory)
-    const archivePath = path.join(directory, `${method}.7z`)
-    const sink = new MemorySink()
-    await create7z(entries(), sink, { method })
-    await fs.writeFile(archivePath, sink.data())
-
-    const { stdout } = await runReferenceSevenZip(['l', '-slt', '--', archivePath])
-    expect(stdout.normalize('NFC')).toContain(`Path = ${path.join('bundle', '안내.txt')}`)
-    await expect(runReferenceSevenZip(['t', '--', archivePath])).resolves.toBeDefined()
-  }, 60_000)
 
   it.skipIf(process.platform !== 'darwin').each(['copy', 'lzma2'] as const)(
     'writes a %s archive extractable by macOS libarchive',
@@ -158,15 +134,8 @@ describe('pure TypeScript 7z container', () => {
   )
 
   it('decodes match-coded LZMA2 produced by the reference 7-Zip', async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-external-'))
-    temporaryDirectories.push(directory)
-    const inputPath = path.join(directory, 'repeated.txt')
     const contents = Buffer.from('external lzma2 match stream\n'.repeat(10_000))
-    const archivePath = path.join(directory, 'external.7z')
-    await fs.writeFile(inputPath, contents)
-    await runReferenceSevenZip(['a', '-m0=lzma2', '-ms=off', '-mhc=off', '--', archivePath, inputPath])
-
-    const archive = await open7z(new MemorySource(await fs.readFile(archivePath)))
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture('lzma2')))
     try {
       const entry = archive.entries.find(item => item.path === 'repeated.txt')!
       expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
@@ -175,25 +144,95 @@ describe('pure TypeScript 7z container', () => {
     }
   }, 60_000)
 
+  it.each([false, true])('decodes reference LZMA data with header compression=%s', async headerCompression => {
+    const contents = Buffer.from('external lzma1 match stream\n'.repeat(10_000))
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture(
+      headerCompression ? 'lzma1-encoded-header' : 'lzma1-plain-header'
+    )))
+    try {
+      const entry = archive.entries.find(item => item.path === 'repeated.txt')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it.each(['deflate', 'deflate64', 'bzip2', 'ppmd'] as const)('decodes reference %s data', async method => {
+    const contents = Buffer.from(`external ${method} match stream\n`.repeat(10_000))
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture(method)))
+    try {
+      const entry = archive.entries.find(item => item.path === 'repeated.txt')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it.each([
+    ['BCJ', 'filter-bcj', Buffer.from([0xe8, 0x10, 0, 0, 0, 0x90, 0xe9, 0xf0, 0xff, 0xff, 0xff])],
+    ['PPC', 'filter-ppc', Buffer.from([0x48, 0, 0, 1, 0x48, 0, 1, 1])],
+    ['ARM', 'filter-arm', Buffer.from([0, 0, 0, 0xeb, 4, 0, 0, 0xeb])],
+    ['ARMT', 'filter-armt', Buffer.from([0, 0xf0, 0, 0xf8, 1, 0xf0, 2, 0xf8])],
+    ['SPARC', 'filter-sparc', Buffer.from([0x40, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff])],
+    ['IA64', 'filter-ia64', Buffer.from(Array.from({ length: 64 }, (_, index) => index * 17))],
+    ['Delta:4', 'filter-delta-4', Buffer.from(Array.from({ length: 257 }, (_, index) => (index * 29) & 0xff))],
+    ['Swap2', 'filter-swap2', Buffer.from(Array.from({ length: 258 }, (_, index) => index & 0xff))],
+    ['Swap4', 'filter-swap4', Buffer.from(Array.from({ length: 260 }, (_, index) => index & 0xff))]
+  ] as const)('decodes reference %s filtered data', async (_method, fixture, contents) => {
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture(fixture)))
+    try {
+      const entry = archive.entries.find(item => item.path === 'filtered.bin')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it('decodes a reference BCJ2 multi-stream coder graph', async () => {
+    const instruction = Buffer.from([0x90, 0xe8, 0x10, 0, 0, 0, 0x0f, 0x84, 0x20, 0, 0, 0, 0xe9, 0xf0, 0xff, 0xff, 0xff])
+    const contents = Buffer.concat(Array.from({ length: 1_000 }, () => instruction))
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture('bcj2')))
+    try {
+      const entry = archive.entries.find(item => item.path === 'program.bin')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it.each([false, true])('decrypts reference 7zAES data with header encryption=%s', async headerEncryption => {
+    const contents = Buffer.from('encrypted external archive\n'.repeat(1_000))
+    const bytes = referenceSevenZipFixture(headerEncryption ? 'aes-header' : 'aes-data')
+
+    if (headerEncryption) {
+      await expect(open7z(new MemorySource(bytes))).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+      await expect(open7z(new MemorySource(bytes), { password: 'wrong' }))
+        .rejects.toMatchObject({ code: 'WRONG_PASSWORD' })
+    } else {
+      const listing = await open7z(new MemorySource(bytes))
+      expect(listing.entries.find(entry => entry.path === 'secret.txt')).toMatchObject({ encrypted: true })
+      await expect(collect(listing.openEntry(0))).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' })
+      await listing.close()
+    }
+
+    const archive = await open7z(new MemorySource(bytes), { password: 'hunter2' })
+    try {
+      const entry = archive.entries.find(item => item.path === 'secret.txt')!
+      expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
   it('streams selected files from one solid LZMA2 folder with one decoder session', async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-solid-'))
-    temporaryDirectories.push(directory)
-    const sourceDir = path.join(directory, 'source')
-    await fs.mkdir(sourceDir)
     const contents = new Map([
       ['a.txt', Buffer.from('alpha '.repeat(400_000))],
       ['b.txt', Buffer.from('bravo '.repeat(20_000))],
       ['c.txt', Buffer.from('charlie '.repeat(20_000))]
     ])
-    await Promise.all([...contents].map(([name, bytes]) => fs.writeFile(path.join(sourceDir, name), bytes)))
-    const archivePath = path.join(directory, 'solid.7z')
-    await runReferenceSevenZip(['a', '-m0=lzma2', '-ms=on', '-mhc=off', '--', archivePath, sourceDir])
-    const { stdout } = await runReferenceSevenZip(['l', '-slt', '--', archivePath])
-    expect(stdout).toContain('Solid = +')
-    expect(stdout).toContain('Blocks = 1')
 
     let decoderSessions = 0
-    const archive = await open7z(new MemorySource(await fs.readFile(archivePath)), {
+    const archive = await open7z(new MemorySource(referenceSevenZipFixture('solid')), {
       lzma2DecoderFactory: async property => {
         decoderSessions += 1
         const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))

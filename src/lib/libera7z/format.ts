@@ -3,6 +3,13 @@ import { Crc32, crc32 } from './crc32'
 import { Libera7zError, invalidArchive, throwIfCancelled, unsupportedFeature } from './errors'
 import { type RandomAccessSource, type SeekableSink, readExactly, readableFromGenerator } from './io'
 import { LzmaDecoder, type LzmaEncoderOptions } from './lzma'
+import { decodeLzma1, parseLzma1Properties } from './lzma1'
+import { decodePpmd7, parsePpmd7Properties } from './ppmd7'
+import { decryptSevenZipAes, parseSevenZipAesProperties } from './aes'
+import { decodeBzip2 } from './bzip2'
+import { decodeBcj2 } from './bcj2'
+import { inflateRaw } from './deflate'
+import { decodeSevenZipFilter, type SevenZipFilter } from './filters'
 import {
   LZMA2_ENCODE_CHUNK_SIZE,
   decodeLzma2,
@@ -15,7 +22,39 @@ const SIGNATURE = Uint8Array.of(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
 const SIGNATURE_HEADER_SIZE = 32
 const MAX_ENCODED_HEADER_SIZE = 64 * 1024 * 1024
 const COPY_METHOD = 0
+const DELTA_METHOD = 0x03
+const ARM64_METHOD = 0x0a
+const RISCV_METHOD = 0x0b
 const LZMA2_METHOD = 0x21
+const SWAP2_METHOD = 0x20302
+const SWAP4_METHOD = 0x20304
+const LZMA_METHOD = 0x30101
+const PPMD_METHOD = 0x30401
+const BCJ_METHOD = 0x3030103
+const BCJ2_METHOD = 0x303011b
+const PPC_METHOD = 0x3030205
+const IA64_METHOD = 0x3030401
+const ARM_METHOD = 0x3030501
+const ARMT_METHOD = 0x3030701
+const SPARC_METHOD = 0x3030805
+const DEFLATE_METHOD = 0x40108
+const DEFLATE64_METHOD = 0x40109
+const BZIP2_METHOD = 0x40202
+const AES_METHOD = 0x6f10701
+
+const SIMPLE_FILTERS = new Map<number, SevenZipFilter>([
+  [DELTA_METHOD, 'delta'],
+  [ARM64_METHOD, 'arm64'],
+  [RISCV_METHOD, 'riscv'],
+  [SWAP2_METHOD, 'swap2'],
+  [SWAP4_METHOD, 'swap4'],
+  [BCJ_METHOD, 'bcj'],
+  [PPC_METHOD, 'ppc'],
+  [IA64_METHOD, 'ia64'],
+  [ARM_METHOD, 'arm'],
+  [ARMT_METHOD, 'armt'],
+  [SPARC_METHOD, 'sparc']
+])
 
 const NID = {
   End: 0x00,
@@ -51,6 +90,7 @@ export interface SevenZipEntryInput {
   isDirectory?: boolean
   modified?: Date
   mode?: number
+  isSymlink?: boolean
   open?: () => ReadableStream<Uint8Array>
 }
 
@@ -70,7 +110,8 @@ export interface SevenZipEntry {
   size: bigint
   packedSize?: bigint
   isDirectory: boolean
-  encrypted: false
+  encrypted: boolean
+  isSymlink: boolean
   modified?: Date
   mode?: number
   crc?: number
@@ -84,14 +125,31 @@ interface WrittenStream {
   dictionaryProperty?: number
 }
 
-interface ParsedFolder {
+interface ParsedCoder {
   methodId: number
   properties: Uint8Array
+  inputStreams: number
+  outputStreams: number
+  inputStart: number
+  outputStart: number
+}
+
+interface ParsedBindPair {
+  inputIndex: number
+  outputIndex: number
+}
+
+interface ParsedFolder {
+  coders: ParsedCoder[]
+  bindPairs: ParsedBindPair[]
+  packedIndices: number[]
+  unpackSizes: bigint[]
+  finalOutputIndex: number
   unpackSize: bigint
   crc?: number
   packIndex: number
-  packedOffset?: bigint
-  packedSize?: bigint
+  packedOffsets?: bigint[]
+  packedSizes?: bigint[]
   substreams?: ParsedSubstream[]
 }
 
@@ -112,6 +170,8 @@ interface ParsedFile {
   size: bigint
   modified?: Date
   mode?: number
+  isSymlink: boolean
+  encrypted: boolean
   crc?: number
   folder?: ParsedFolder
   substreamIndex?: number
@@ -123,6 +183,7 @@ export interface OpenSevenZipOptions {
   maxEntries?: number
   maxHeaderBytes?: number
   maxDictionaryBytes?: number
+  password?: string
   lzma2DecoderFactory?: (
     dictionaryProperty: number,
     signal?: AbortSignal
@@ -187,8 +248,9 @@ function fileTimeToDate(value: bigint): Date | undefined {
 
 function entryAttributes(entry: SevenZipEntryInput): number {
   const directory = entry.isDirectory === true
-  const permission = entry.mode ?? (directory ? 0o755 : 0o644)
-  const unixMode = (directory ? 0o040000 : 0o100000) | (permission & 0o7777)
+  const symlink = entry.isSymlink === true
+  const permission = entry.mode ?? (directory ? 0o755 : symlink ? 0o777 : 0o644)
+  const unixMode = (directory ? 0o040000 : symlink ? 0o120000 : 0o100000) | (permission & 0o7777)
   return (((unixMode & 0xffff) << 16) | (directory ? 0x10 : 0x20)) >>> 0
 }
 
@@ -420,23 +482,92 @@ function readMethodId(reader: ByteReader, length: number): number {
 
 function parseFolder(reader: ByteReader, packIndex: number): ParsedFolder {
   const numCoders = reader.safeNumber('7z folder coder count')
-  if (numCoders !== 1) throw unsupportedFeature('Only one-coder, non-filtered 7z folders are supported')
-  const flags = reader.byte()
-  if ((flags & 0x80) !== 0) throw unsupportedFeature('Alternative 7z coder methods are unsupported')
-  const methodId = readMethodId(reader, flags & 0x0f)
-  const complex = (flags & 0x10) !== 0
-  const inputStreams = complex ? reader.safeNumber('7z coder input count') : 1
-  const outputStreams = complex ? reader.safeNumber('7z coder output count') : 1
-  if (inputStreams !== 1 || outputStreams !== 1) throw unsupportedFeature('Multi-stream 7z coders are unsupported')
-  const properties = (flags & 0x20) !== 0
-    ? reader.read(reader.safeNumber('7z coder properties size')).slice()
-    : new Uint8Array(0)
-  if (methodId === COPY_METHOD && properties.length !== 0) throw invalidArchive('Copy coder has unexpected properties')
-  if (methodId === LZMA2_METHOD && properties.length !== 1) throw invalidArchive('LZMA2 coder properties are malformed')
-  if (methodId !== COPY_METHOD && methodId !== LZMA2_METHOD) {
-    throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${methodId.toString(16)}`)
+  if (numCoders < 1) throw invalidArchive('7z folder has no coders')
+  const coders: ParsedCoder[] = []
+  let totalInputs = 0
+  let totalOutputs = 0
+  for (let coderIndex = 0; coderIndex < numCoders; coderIndex += 1) {
+    const flags = reader.byte()
+    if ((flags & 0x80) !== 0) throw unsupportedFeature('Alternative 7z coder methods are unsupported')
+    const methodId = readMethodId(reader, flags & 0x0f)
+    const complex = (flags & 0x10) !== 0
+    const inputStreams = complex ? reader.safeNumber('7z coder input count') : 1
+    const outputStreams = complex ? reader.safeNumber('7z coder output count') : 1
+    if (inputStreams < 1 || outputStreams < 1) throw invalidArchive('7z coder has no input or output stream')
+    const properties = (flags & 0x20) !== 0
+      ? reader.read(reader.safeNumber('7z coder properties size')).slice()
+      : new Uint8Array(0)
+    if (methodId === COPY_METHOD && properties.length !== 0) throw invalidArchive('Copy coder has unexpected properties')
+    if (methodId === LZMA2_METHOD && properties.length !== 1) throw invalidArchive('LZMA2 coder properties are malformed')
+    if (methodId === LZMA_METHOD) parseLzma1Properties(properties)
+    if (methodId === PPMD_METHOD) parsePpmd7Properties(properties)
+    if ((methodId === DEFLATE_METHOD || methodId === DEFLATE64_METHOD) && properties.length !== 0) {
+      throw invalidArchive('DEFLATE coder has unexpected properties')
+    }
+    if (methodId === BZIP2_METHOD && properties.length !== 0) throw invalidArchive('BZip2 coder has unexpected properties')
+    if (methodId === AES_METHOD) parseSevenZipAesProperties(properties)
+    coders.push({
+      methodId,
+      properties,
+      inputStreams,
+      outputStreams,
+      inputStart: totalInputs,
+      outputStart: totalOutputs
+    })
+    totalInputs += inputStreams
+    totalOutputs += outputStreams
   }
-  return { methodId, properties, unpackSize: 0n, packIndex }
+
+  if (totalOutputs < 1 || totalInputs < totalOutputs - 1) throw invalidArchive('Invalid 7z folder stream counts')
+  const bindPairs = Array.from({ length: totalOutputs - 1 }, (): ParsedBindPair => ({
+    inputIndex: reader.safeNumber('7z bind input index'),
+    outputIndex: reader.safeNumber('7z bind output index')
+  }))
+  const boundInputs = new Set<number>()
+  const boundOutputs = new Set<number>()
+  for (const pair of bindPairs) {
+    if (pair.inputIndex >= totalInputs || pair.outputIndex >= totalOutputs) {
+      throw invalidArchive('7z folder bind pair is out of range')
+    }
+    if (boundInputs.has(pair.inputIndex) || boundOutputs.has(pair.outputIndex)) {
+      throw invalidArchive('7z folder binds a stream more than once')
+    }
+    boundInputs.add(pair.inputIndex)
+    boundOutputs.add(pair.outputIndex)
+  }
+
+  const packedStreamCount = totalInputs - bindPairs.length
+  if (packedStreamCount < 1) throw invalidArchive('7z folder has no packed input stream')
+  let packedIndices: number[]
+  if (packedStreamCount === 1) {
+    const inputIndex = Array.from({ length: totalInputs }, (_, index) => index)
+      .find(index => !boundInputs.has(index))
+    if (inputIndex === undefined) throw invalidArchive('7z folder has no unbound packed input')
+    packedIndices = [inputIndex]
+  } else {
+    packedIndices = Array.from({ length: packedStreamCount }, () =>
+      reader.safeNumber('7z packed input index'))
+    const unique = new Set(packedIndices)
+    if (
+      unique.size !== packedIndices.length ||
+      packedIndices.some(index => index >= totalInputs || boundInputs.has(index))
+    ) {
+      throw invalidArchive('7z folder packed input indices are invalid')
+    }
+  }
+
+  const finalOutputs = Array.from({ length: totalOutputs }, (_, index) => index)
+    .filter(index => !boundOutputs.has(index))
+  if (finalOutputs.length !== 1) throw invalidArchive('7z folder does not have one final output stream')
+  return {
+    coders,
+    bindPairs,
+    packedIndices,
+    unpackSizes: [],
+    finalOutputIndex: finalOutputs[0],
+    unpackSize: 0n,
+    packIndex
+  }
 }
 
 function parsePackInfo(reader: ByteReader): { packPosition: bigint; packSizes: bigint[] } {
@@ -462,10 +593,19 @@ function parseUnpackInfo(reader: ByteReader, packStreamCount: number): ParsedFol
   if (reader.byte() !== NID.Folder) throw invalidArchive('7z UnpackInfo has no Folder section')
   const count = reader.safeNumber('7z folder count')
   if (reader.byte() !== 0) throw unsupportedFeature('External 7z folder definitions are unsupported')
-  if (count !== packStreamCount) throw unsupportedFeature('Only one packed stream per 7z folder is supported')
-  const folders = Array.from({ length: count }, (_, index) => parseFolder(reader, index))
+  let packIndex = 0
+  const folders = Array.from({ length: count }, () => {
+    const folder = parseFolder(reader, packIndex)
+    packIndex += folder.packedIndices.length
+    return folder
+  })
+  if (packIndex !== packStreamCount) throw invalidArchive('7z folder packed streams do not match PackInfo')
   if (reader.byte() !== NID.CodersUnpackSize) throw invalidArchive('7z folder sizes are missing')
-  for (const folder of folders) folder.unpackSize = reader.variableUint64()
+  for (const folder of folders) {
+    const outputCount = folder.coders.reduce((total, coder) => total + coder.outputStreams, 0)
+    folder.unpackSizes = Array.from({ length: outputCount }, () => reader.variableUint64())
+    folder.unpackSize = folder.unpackSizes[folder.finalOutputIndex]
+  }
   let id = reader.byte()
   if (id === NID.CRC) {
     const digests = readDigests(reader, count)
@@ -551,13 +691,18 @@ function parseStreamsInfo(reader: ByteReader): ParsedStreams {
       throw unsupportedFeature(`Unsupported StreamsInfo section: 0x${id.toString(16)}`)
     }
   }
-  if (packSizes.length !== folders.length) throw invalidArchive('7z stream and folder counts do not match')
+  const expectedPackStreams = folders.reduce((total, folder) => total + folder.packedIndices.length, 0)
+  if (packSizes.length !== expectedPackStreams) throw invalidArchive('7z stream and folder counts do not match')
+  const packedOffsets: bigint[] = []
   let packedOffset = 32n + packPosition
-  folders.forEach((folder, index) => {
-    folder.packedOffset = packedOffset
-    folder.packedSize = packSizes[index]
+  for (const size of packSizes) {
+    packedOffsets.push(packedOffset)
+    packedOffset += size
+  }
+  folders.forEach(folder => {
+    folder.packedOffsets = folder.packedIndices.map((_, index) => packedOffsets[folder.packIndex + index])
+    folder.packedSizes = folder.packedIndices.map((_, index) => packSizes[folder.packIndex + index])
     folder.substreams ??= [{ size: folder.unpackSize, crc: folder.crc }]
-    packedOffset += packSizes[index]
   })
   return { packPosition, packSizes, folders }
 }
@@ -650,14 +795,16 @@ function parseFilesInfo(reader: ByteReader, streams: ParsedStreams): ParsedFile[
       substreamIndex = reference.substreamIndex
       size = reference.substream.size
       crc = reference.substream.crc
-      if (substreamIndex === 0) packedSize = folder.packedSize
+      if (substreamIndex === 0) {
+        packedSize = folder.packedSizes?.reduce((total, value) => total + value, 0n)
+      }
     }
     const rawAttributes = attributes[index]
     const unixMode = rawAttributes === undefined ? undefined : (rawAttributes >>> 16) & 0xffff
     const unixType = unixMode === undefined ? 0 : unixMode & 0o170000
-    if (unixType === 0o120000) throw unsupportedFeature('Symbolic-link entries require the compatibility backend')
-    if (unixType !== 0 && unixType !== 0o040000 && unixType !== 0o100000) {
-      throw unsupportedFeature('Special-file entries require the compatibility backend')
+    const isSymlink = unixType === 0o120000
+    if (unixType !== 0 && unixType !== 0o040000 && unixType !== 0o100000 && !isSymlink) {
+      throw unsupportedFeature('Special-file entries are not supported')
     }
     return {
       path,
@@ -665,6 +812,8 @@ function parseFilesInfo(reader: ByteReader, streams: ParsedStreams): ParsedFile[
       size,
       modified: modified[index],
       mode: unixMode === undefined ? undefined : unixMode & 0o7777,
+      isSymlink,
+      encrypted: folder?.coders.some(coder => coder.methodId === AES_METHOD) === true,
       crc,
       folder,
       substreamIndex,
@@ -702,37 +851,154 @@ async function decodeEncodedHeader(
   source: RandomAccessSource,
   bytes: Uint8Array,
   signal?: AbortSignal,
-  decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer']
+  decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
+  password?: string
 ): Promise<Uint8Array> {
   const reader = new ByteReader(bytes)
   if (reader.byte() !== NID.EncodedHeader) throw invalidArchive('Invalid encoded-header marker')
   const streams = parseStreamsInfo(reader)
   reader.assertFinished('encoded 7z header descriptor')
-  if (
-    streams.folders.length !== 1 ||
-    streams.packSizes.length !== 1 ||
-    streams.folders[0].substreams?.length !== 1
-  ) {
+  if (streams.folders.length !== 1 || streams.folders[0].substreams?.length !== 1) {
     throw unsupportedFeature('Only one-stream encoded 7z headers are supported')
   }
   const folder = streams.folders[0]
-  const packedSize = uint64ToSafeNumber(streams.packSizes[0], 'Encoded 7z header size')
-  if (packedSize > MAX_ENCODED_HEADER_SIZE || folder.unpackSize > BigInt(MAX_ENCODED_HEADER_SIZE)) {
+  const packedSize = streams.packSizes.reduce((total, size) => total + size, 0n)
+  if (packedSize > BigInt(MAX_ENCODED_HEADER_SIZE) || folder.unpackSize > BigInt(MAX_ENCODED_HEADER_SIZE)) {
     throw new Libera7zError('LIMIT_EXCEEDED', 'Encoded 7z header exceeds the 64 MiB limit')
   }
-  const packed = await readExactly(source, 32n + streams.packPosition, packedSize, signal)
-  let decoded: Uint8Array
-  if (folder.methodId === COPY_METHOD) decoded = packed
-  else if (folder.methodId === LZMA2_METHOD && folder.properties.length === 1) {
-    decoded = await decodeBuffer?.(packed, folder.properties[0], Number(folder.unpackSize), signal) ??
-      decodeLzma2(packed, folder.properties[0], Number(folder.unpackSize), signal)
-  } else {
-    throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported encoded-header coder: 0x${folder.methodId.toString(16)}`)
-  }
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password)
   if (folder.crc !== undefined && crc32(decoded) !== folder.crc) {
+    if (password !== undefined && folder.coders.some(coder => coder.methodId === AES_METHOD)) {
+      throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+    }
     throw new Libera7zError('CRC_MISMATCH', 'Encoded 7z header CRC does not match')
   }
   return decoded
+}
+
+function linearCoderOrder(folder: ParsedFolder): ParsedCoder[] | null {
+  if (folder.packedIndices.length !== 1 || folder.coders.some(coder => coder.inputStreams !== 1 || coder.outputStreams !== 1)) {
+    return null
+  }
+  const byInput = new Map(folder.coders.map(coder => [coder.inputStart, coder]))
+  const bindByOutput = new Map(folder.bindPairs.map(pair => [pair.outputIndex, pair.inputIndex]))
+  const order: ParsedCoder[] = []
+  const seen = new Set<ParsedCoder>()
+  let inputIndex = folder.packedIndices[0]
+  while (true) {
+    const coder = byInput.get(inputIndex)
+    if (!coder || seen.has(coder)) return null
+    order.push(coder)
+    seen.add(coder)
+    const nextInput = bindByOutput.get(coder.outputStart)
+    if (nextInput === undefined) break
+    inputIndex = nextInput
+  }
+  return seen.size === folder.coders.length && order.at(-1)!.outputStart === folder.finalOutputIndex
+    ? order
+    : null
+}
+
+async function decodeFolderBuffer(
+  source: RandomAccessSource,
+  folder: ParsedFolder,
+  signal?: AbortSignal,
+  decodeLzma2Buffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
+  password?: string
+): Promise<Uint8Array> {
+  if (!folder.packedOffsets || !folder.packedSizes) throw invalidArchive('7z folder has no packed stream')
+  const packedInputs = new Map<number, Uint8Array>()
+  for (let index = 0; index < folder.packedIndices.length; index += 1) {
+    packedInputs.set(folder.packedIndices[index], await readExactly(
+      source,
+      folder.packedOffsets[index],
+      uint64ToSafeNumber(folder.packedSizes[index], '7z packed stream size'),
+      signal
+    ))
+  }
+  const boundInputToOutput = new Map(folder.bindPairs.map(pair => [pair.inputIndex, pair.outputIndex]))
+  const coderByOutput = new Map<number, ParsedCoder>()
+  for (const coder of folder.coders) {
+    for (let index = 0; index < coder.outputStreams; index += 1) coderByOutput.set(coder.outputStart + index, coder)
+  }
+  const decodedOutputs = new Map<number, Promise<Uint8Array>>()
+  const visiting = new Set<number>()
+  const encrypted = folder.coders.some(coder => coder.methodId === AES_METHOD)
+
+  const decodeOutput = (outputIndex: number): Promise<Uint8Array> => {
+    const existing = decodedOutputs.get(outputIndex)
+    if (existing) return existing
+    const pending = (async () => {
+      if (visiting.has(outputIndex)) throw invalidArchive('7z coder graph contains a cycle')
+      visiting.add(outputIndex)
+      try {
+        const coder = coderByOutput.get(outputIndex)
+        if (!coder) throw invalidArchive('7z coder graph references a missing output')
+        if (coder.outputStreams !== 1 || outputIndex !== coder.outputStart) {
+          throw unsupportedFeature('Multi-output 7z coders are unsupported')
+        }
+        const inputs: Uint8Array[] = []
+        for (let index = 0; index < coder.inputStreams; index += 1) {
+          const inputIndex = coder.inputStart + index
+          const packed = packedInputs.get(inputIndex)
+          if (packed) {
+            inputs.push(packed)
+            continue
+          }
+          const boundOutput = boundInputToOutput.get(inputIndex)
+          if (boundOutput === undefined) throw invalidArchive('7z coder input is neither packed nor bound')
+          inputs.push(await decodeOutput(boundOutput))
+        }
+        const outputSize = uint64ToSafeNumber(folder.unpackSizes[coder.outputStart], '7z coder output size')
+        if (coder.methodId === BCJ2_METHOD) return decodeBcj2(inputs, coder.properties, outputSize, signal)
+        if (inputs.length !== 1) throw unsupportedFeature('Unsupported multi-input 7z coder')
+        let value = inputs[0]
+        if (coder.methodId === COPY_METHOD) {
+          if (value.length !== outputSize) throw invalidArchive('Copy stream size does not match the 7z folder size')
+        } else if (coder.methodId === LZMA2_METHOD && coder.properties.length === 1) {
+          value = await decodeLzma2Buffer?.(value, coder.properties[0], outputSize, signal) ??
+            decodeLzma2(value, coder.properties[0], outputSize, signal)
+        } else if (coder.methodId === LZMA_METHOD) {
+          value = decodeLzma1(value, coder.properties, outputSize, signal)
+        } else if (coder.methodId === PPMD_METHOD) {
+          value = decodePpmd7(value, coder.properties, outputSize, signal)
+        } else if (coder.methodId === DEFLATE_METHOD || coder.methodId === DEFLATE64_METHOD) {
+          value = inflateRaw(value, outputSize, coder.methodId === DEFLATE64_METHOD, signal)
+        } else if (coder.methodId === BZIP2_METHOD) {
+          value = decodeBzip2(value, outputSize, signal)
+        } else if (SIMPLE_FILTERS.has(coder.methodId)) {
+          if (value.length !== outputSize) throw invalidArchive('7z filter changed the declared stream size')
+          value = decodeSevenZipFilter(SIMPLE_FILTERS.get(coder.methodId)!, value, coder.properties, signal)
+        } else if (coder.methodId === AES_METHOD) {
+          value = await decryptSevenZipAes(value, coder.properties, password, outputSize, signal)
+        } else {
+          throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${coder.methodId.toString(16)}`)
+        }
+        return value
+      } finally {
+        visiting.delete(outputIndex)
+      }
+    })()
+    decodedOutputs.set(outputIndex, pending)
+    return pending
+  }
+
+  try {
+    const value = await decodeOutput(folder.finalOutputIndex)
+    if (value.length !== uint64ToSafeNumber(folder.unpackSize, '7z folder output size')) {
+      throw invalidArchive('7z coder graph output size does not match the folder')
+    }
+    return value
+  } catch (error) {
+    if (
+      encrypted &&
+      password !== undefined &&
+      !(error instanceof Libera7zError && ['CANCELLED', 'LIMIT_EXCEEDED', 'UNSUPPORTED_METHOD'].includes(error.code))
+    ) {
+      throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+    }
+    throw error
+  }
 }
 
 class PackedCursor {
@@ -834,13 +1100,17 @@ async function* decodeFolderFromSource(
   source: RandomAccessSource,
   folder: ParsedFolder,
   signal?: AbortSignal,
-  decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory']
+  decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
+  decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
+  password?: string
 ): AsyncGenerator<Uint8Array> {
-  if (folder.packedOffset === undefined || folder.packedSize === undefined) {
+  if (!folder.packedOffsets || !folder.packedSizes) {
     throw invalidArchive('7z folder has no packed stream')
   }
-  const cursor = new PackedCursor(source, folder.packedOffset, folder.packedSize, signal)
-  if (folder.methodId === COPY_METHOD) {
+  const order = linearCoderOrder(folder)
+  const coder = order?.length === 1 ? order[0] : undefined
+  if (coder && folder.packedOffsets.length === 1 && coder.methodId === COPY_METHOD) {
+    const cursor = new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
     let remaining = folder.unpackSize
     while (remaining > 0n) {
       throwIfCancelled(signal)
@@ -852,17 +1122,26 @@ async function* decodeFolderFromSource(
     if (cursor.remaining !== 0n) throw invalidArchive('Copy stream size does not match the 7z folder size')
     return
   }
-  if (folder.methodId === LZMA2_METHOD && folder.properties.length === 1) {
-    yield* decodeLzma2FromSource(
-      cursor,
-      folder.properties[0],
-      folder.unpackSize,
-      signal,
-      decoderFactory
-    )
+  if (coder && folder.packedOffsets.length === 1 && coder.methodId === LZMA2_METHOD && coder.properties.length === 1) {
+    const cursor = new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
+    for await (const decoded of decodeLzma2FromSource(
+        cursor,
+        coder.properties[0],
+        folder.unpackSize,
+        signal,
+        decoderFactory
+      )) {
+      for (let offset = 0; offset < decoded.length; offset += 256 * 1024) {
+        yield decoded.subarray(offset, Math.min(decoded.length, offset + 256 * 1024))
+      }
+    }
     return
   }
-  throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${folder.methodId.toString(16)}`)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password)
+  for (let offset = 0; offset < decoded.length; offset += 1024 * 1024) {
+    throwIfCancelled(signal)
+    yield decoded.subarray(offset, Math.min(decoded.length, offset + 1024 * 1024))
+  }
 }
 
 class FolderOutputReader {
@@ -944,7 +1223,9 @@ export class SevenZipArchive {
   constructor(
     private readonly source: RandomAccessSource,
     private readonly parsedFiles: readonly ParsedFile[],
-    private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory']
+    private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
+    private readonly decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
+    private readonly password?: string
   ) {
     this.entries = parsedFiles.map((file, id) => ({
       id,
@@ -952,7 +1233,8 @@ export class SevenZipArchive {
       size: file.size,
       packedSize: file.packedSize,
       isDirectory: file.isDirectory,
-      encrypted: false,
+      encrypted: file.encrypted,
+      isSymlink: file.isSymlink,
       modified: file.modified,
       mode: file.mode,
       crc: file.crc
@@ -969,6 +1251,8 @@ export class SevenZipArchive {
 
     const source = this.source
     const decoderFactory = this.decoderFactory
+    const decodeBuffer = this.decodeBuffer
+    const password = this.password
     const generator = (async function* (): AsyncGenerator<SevenZipEntryEvent> {
       let activeFolder: ParsedFolder | null = null
       let output: FolderOutputReader | null = null
@@ -986,7 +1270,7 @@ export class SevenZipArchive {
             await output?.close()
             activeFolder = file.folder
             output = new FolderOutputReader(
-              decodeFolderFromSource(source, file.folder, options.signal, decoderFactory),
+              decodeFolderFromSource(source, file.folder, options.signal, decoderFactory, decodeBuffer, password),
               file.folder
             )
             nextSubstream = 0
@@ -1020,6 +1304,16 @@ export class SevenZipArchive {
           if (nextSubstream === activeFolder.substreams!.length) await folderOutput.finish()
           yield { type: 'entry-end', entry }
         }
+      } catch (error) {
+        if (
+          password !== undefined &&
+          activeFolder?.coders.some(coder => coder.methodId === AES_METHOD) &&
+          error instanceof Libera7zError &&
+          (error.code === 'CRC_MISMATCH' || error.code === 'INVALID_ARCHIVE')
+        ) {
+          throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+        }
+        throw error
       } finally {
         await output?.close()
       }
@@ -1076,7 +1370,7 @@ export async function open7z(
   if (crc32(nextHeader) !== nextCrc) throw new Libera7zError('CRC_MISMATCH', '7z NextHeader CRC does not match')
   if (nextHeader.length === 0) throw invalidArchive('7z NextHeader is empty')
   const decoded = nextHeader[0] === NID.EncodedHeader
-    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer)
+    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, options.password)
     : nextHeader
   const files = parseHeader(decoded)
   if (options.maxEntries !== undefined && files.length > options.maxEntries) {
@@ -1084,11 +1378,15 @@ export async function open7z(
   }
   const dictionaryLimit = options.maxDictionaryBytes ?? 256 * 1024 * 1024
   for (const file of files) {
-    if (file.folder?.methodId !== LZMA2_METHOD) continue
-    const dictionarySize = dictionarySizeFromProperty(file.folder.properties[0])
-    if (dictionarySize > dictionaryLimit) {
-      throw new Libera7zError('LIMIT_EXCEEDED', `7z dictionary exceeds the ${dictionaryLimit}-byte limit`)
+    for (const coder of file.folder?.coders ?? []) {
+      let dictionarySize: number | undefined
+      if (coder.methodId === LZMA2_METHOD) dictionarySize = dictionarySizeFromProperty(coder.properties[0])
+      else if (coder.methodId === LZMA_METHOD) dictionarySize = parseLzma1Properties(coder.properties).dictionarySize
+      else if (coder.methodId === PPMD_METHOD) dictionarySize = parsePpmd7Properties(coder.properties).memorySize
+      if (dictionarySize !== undefined && dictionarySize > dictionaryLimit) {
+        throw new Libera7zError('LIMIT_EXCEEDED', `7z dictionary exceeds the ${dictionaryLimit}-byte limit`)
+      }
     }
   }
-  return new SevenZipArchive(source, files, options.lzma2DecoderFactory)
+  return new SevenZipArchive(source, files, options.lzma2DecoderFactory, options.decodeLzma2Buffer, options.password)
 }

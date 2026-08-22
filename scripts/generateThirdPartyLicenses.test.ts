@@ -6,27 +6,18 @@ import { generate, outputPath } from './generateThirdPartyLicenses.cjs'
 // same shape as the app's other parity tests: this is the guard against an
 // About screen that silently goes stale as dependencies change.
 describe('generateThirdPartyLicenses', () => {
-  it('produces one entry per runtime dependency plus the bundled 7-Zip notice', () => {
+  it('produces one entry per runtime dependency', () => {
     const entries = generate()
     const names = entries.map(entry => entry.name)
+    const dependencyNames = Object.keys(JSON.parse(fs.readFileSync('package.json', 'utf8')).dependencies)
 
-    expect(names).toContain('7-Zip')
-    expect(names).not.toContain('7zip-bin')
+    expect(names.sort()).toEqual(dependencyNames.sort())
     expect(new Set(names).size).toBe(names.length)
     for (const entry of entries) {
       expect(entry.version).toBeTruthy()
       expect(entry.license).toBeTruthy()
       expect(entry.text.length).toBeGreaterThan(0)
     }
-  })
-
-  it('includes the full LGPL text for the bundled 7-Zip binary', () => {
-    const entries = generate()
-    const sevenZip = entries.find(entry => entry.name === '7-Zip')
-
-    expect(sevenZip).toBeDefined()
-    expect(sevenZip?.license).toBe('LGPL-2.1-or-later')
-    expect(sevenZip?.text).toMatch(/GNU LESSER GENERAL PUBLIC LICENSE/)
   })
 
   it('matches the file the app actually ships, so a dependency bump cannot go unnoticed', () => {

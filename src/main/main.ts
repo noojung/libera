@@ -19,7 +19,7 @@ import {
 import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/splitZipVolumes'
 import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
-import { SevenZipError } from '../services/sevenZip'
+import { SevenZipError } from '../services/sevenZipError'
 import appInfo from '../renderer/src/generated/appInfo.json'
 
 let mainWindow: BrowserWindow | null = null
@@ -153,7 +153,6 @@ function classifyError(error: unknown, operation: Operation): string {
   }
   if (error instanceof SevenZipError) {
     const sevenZipErrorCodes: Record<string, string> = {
-      SEVEN_ZIP_UNAVAILABLE: 'sevenZipUnavailable',
       SEVEN_ZIP_PASSWORD_REQUIRED: 'passwordRequired',
       SEVEN_ZIP_WRONG_PASSWORD: 'wrongArchivePassword',
       SEVEN_ZIP_CANCELLED: operation === 'compression' ? 'compressionCancelled' : 'extractionCancelled'

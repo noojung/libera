@@ -3,7 +3,6 @@ import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { openLibera7zFile, writeLibera7z } from './libera7zNode'
-import { runSevenZip } from './sevenZip'
 
 const temporaryDirectories: string[] = []
 
@@ -58,8 +57,6 @@ describe('Libera7z Node volume I/O', () => {
     } finally {
       await archive.close()
     }
-
-    await expect(runSevenZip(['t', '--', result.outputPath], undefined)).resolves.toMatchObject({ exitCode: 0 })
   }, 60_000)
 
   it('removes every partial volume when creation is cancelled', async () => {

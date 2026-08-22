@@ -9,10 +9,8 @@ import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath } from './sevenZipVolumes'
-import { listSevenZipEntries } from './sevenZipList'
-import { classifySevenZipExit, SevenZipError, spawnSevenZip } from './sevenZip'
 import { Libera7zError } from '../lib/libera7z'
-import { canFallbackFromLibera7z, openLibera7zFile } from './libera7zNode'
+import { openLibera7zFile } from './libera7zNode'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -511,24 +509,7 @@ function validateImageDimensions(width: number, height: number): void {
   }
 }
 
-/** Restates 7-Zip's password failures as preview failures. */
-function asPreviewPasswordError(error: unknown): unknown {
-  if (error instanceof SevenZipError) {
-    if (error.code === 'SEVEN_ZIP_PASSWORD_REQUIRED') {
-      return previewError('PASSWORD_REQUIRED', 'This archive needs a password to preview')
-    }
-    if (error.code === 'SEVEN_ZIP_WRONG_PASSWORD') {
-      return previewError('WRONG_PASSWORD', 'The archive password is incorrect')
-    }
-  }
-  return error
-}
-
-/**
- * Reads one entry with `x -so`, which decompresses only the solid block that
- * entry lives in rather than the whole archive. `-bso0 -bse0` keep 7-Zip's own
- * chatter off stdout so the stream is nothing but the entry's bytes.
- */
+/** Reads one entry with Libera7z, decoding only its containing solid folder. */
 async function readSevenZipEntry(
   archivePath: string,
   entryIndex: number,
@@ -537,104 +518,59 @@ async function readSevenZipEntry(
 ): Promise<CollectedArchiveEntry> {
   let archive
   try {
-    archive = await openLibera7zFile(archivePath, { signal, maxEntries: MAX_ARCHIVE_ENTRIES })
+    archive = await openLibera7zFile(archivePath, {
+      signal,
+      maxEntries: MAX_ARCHIVE_ENTRIES,
+      password
+    })
   } catch (error) {
     if (error instanceof Libera7zError && error.code === 'CANCELLED') {
       throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
     }
-    if (!canFallbackFromLibera7z(error)) throw error
-  }
-  if (archive) {
-    try {
-      const entry = archive.entries[entryIndex]
-      if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
-      if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
-      if (archive.entries.filter(other => other.path === entry.path).length > 1) {
-        throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
-      }
-      const collector = new PreviewCollector()
-      try {
-        await pipeline(
-          Readable.fromWeb(archive.openEntry(entryIndex, { signal }) as import('stream/web').ReadableStream),
-          collector
-        )
-      } catch (error) {
-        if (!collector.truncated) {
-          if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-            throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-          }
-          if (isAbortError(error) || signal?.aborted) {
-            throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-          }
-          throw error
-        }
-      }
-      const totalBytes = Number(entry.size)
-      return collectedEntry(collector, Number.isSafeInteger(totalBytes) ? totalBytes : null)
-    } finally {
-      await archive.close()
+    if (error instanceof Libera7zError && error.code === 'PASSWORD_REQUIRED') {
+      throw previewError('PASSWORD_REQUIRED', 'This archive needs a password')
     }
+    if (error instanceof Libera7zError && error.code === 'WRONG_PASSWORD') {
+      throw previewError('WRONG_PASSWORD', 'The archive password is incorrect')
+    }
+    throw error
   }
-
-  // A header-encrypted archive fails here rather than at the read below, so
-  // the password errors have to be translated in both places.
-  const listing = await listSevenZipEntries(archivePath, { password, signal, maxEntries: MAX_ARCHIVE_ENTRIES })
-    .catch(error => {
-      throw asPreviewPasswordError(error)
-    })
-  const entry = listing.entries[entryIndex]
-  if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
-  if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
-  // 7z permits two entries to share a path; asking for it by name would then
-  // stream both, so a preview of either would be wrong.
-  if (listing.entries.filter(other => other.path === entry.path).length > 1) {
-    throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
-  }
-  if (entry.encrypted && password === undefined) {
-    throw previewError('PASSWORD_REQUIRED', 'This entry needs a password to preview')
-  }
-
-  const { child } = await spawnSevenZip(
-    ['x', '-so', '-bso0', '-bse0', '--', archivePath, entry.path],
-    password
-  )
-
-  let stderr = ''
-  child.stderr.setEncoding('utf8')
-  child.stderr.on('data', (text: string) => {
-    stderr += text
-  })
-
-  const kill = () => {
-    if (child.exitCode === null && child.signalCode === null) child.kill()
-  }
-  const onAbort = () => kill()
-  signal?.addEventListener('abort', onAbort, { once: true })
-
-  const collector = new PreviewCollector()
   try {
-    await pipeline(child.stdout, collector)
-  } catch (error) {
-    // Hitting the preview cap is the normal way a large entry ends: the
-    // collector stops the pipe once it has enough to show.
-    if (!collector.truncated) {
-      if (isAbortError(error) || signal?.aborted) {
-        throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-      }
-      throw error
+    const entry = archive.entries[entryIndex]
+    if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
+    if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
+    if (entry.isSymlink) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Symbolic links cannot be previewed')
+    if (archive.entries.filter(other => other.path === entry.path).length > 1) {
+      throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
     }
+    const collector = new PreviewCollector()
+    try {
+      await pipeline(
+        Readable.fromWeb(archive.openEntry(entryIndex, { signal }) as import('stream/web').ReadableStream),
+        collector
+      )
+    } catch (error) {
+      if (!collector.truncated) {
+        if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+          throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+        }
+        if (error instanceof Libera7zError && error.code === 'PASSWORD_REQUIRED') {
+          throw previewError('PASSWORD_REQUIRED', 'This entry needs a password to preview')
+        }
+        if (error instanceof Libera7zError && error.code === 'WRONG_PASSWORD') {
+          throw previewError('WRONG_PASSWORD', 'The archive password is incorrect')
+        }
+        if (isAbortError(error) || signal?.aborted) {
+          throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+        }
+        throw error
+      }
+    }
+    const totalBytes = Number(entry.size)
+    return collectedEntry(collector, Number.isSafeInteger(totalBytes) ? totalBytes : null)
   } finally {
-    kill()
-    signal?.removeEventListener('abort', onAbort)
+    await archive.close()
   }
-
-  const exitCode = await new Promise<number>(resolve => child.on('close', code => resolve(code ?? 0)))
-  if (!collector.truncated) {
-    const failure = classifySevenZipExit(exitCode, stderr, password !== undefined)
-    if (failure) throw asPreviewPasswordError(failure)
-  }
-
-  return collectedEntry(collector, entry.size)
 }
 
 export async function previewArchiveEntry(
