@@ -1,6 +1,7 @@
 .drop-zone {
   display: flex;
   height: 100%;
+  min-height: 0;
   flex-direction: column;
   gap: 16px;
 }
@@ -78,8 +79,10 @@
 
 .drop-zone__selection {
   display: flex;
+  min-height: 0;
   flex: 1;
   padding: 16px;
+  overflow: hidden;
   flex-direction: column;
 }
 
@@ -109,10 +112,12 @@
 
 .drop-zone__items {
   display: flex;
+  min-height: 0;
   flex: 1;
   overflow-y: auto;
   flex-direction: column;
   gap: 8px;
+  scrollbar-gutter: stable;
 }
 
 .drop-zone__item {
