@@ -173,6 +173,7 @@ describe('App orchestration', () => {
     await waitFor(() => expect(api.extractArchive).toHaveBeenCalledTimes(2))
     expect(extractArchive.mock.calls.map(call => call[0].archivePath)).toEqual(['C:\\one.zip', 'C:\\two.tar'])
     expect(extractArchive.mock.calls.map(call => call[0].targetDir)).toEqual(['C:\\output\\one', 'C:\\output\\two'])
+    expect(extractArchive.mock.calls.map(call => call[0].rejectExistingTarget)).toEqual([true, true])
   })
 
   it('queues one job for a split volume set and extracts it through the final volume', async () => {

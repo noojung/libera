@@ -90,9 +90,24 @@ describe('extractArchive security checks', () => {
     const targetDir = path.join(directory, 'output')
     await createZip(archivePath, { 'docs/readme.txt': 'safe content' })
 
-    await extractArchive({ archivePath, targetDir })
+    await extractArchive({ archivePath, targetDir, rejectExistingTarget: true })
 
     await expect(fs.readFile(path.join(targetDir, 'docs', 'readme.txt'), 'utf8')).resolves.toBe('safe content')
+  })
+
+  it('rejects an existing target root when a new per-archive subfolder is required', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'archive')
+    const sentinelPath = path.join(targetDir, 'keep.txt')
+    await createZip(archivePath, { 'archive/file.txt': 'archive content' })
+    await fs.mkdir(targetDir)
+    await fs.writeFile(sentinelPath, 'existing content')
+
+    await expect(extractArchive({ archivePath, targetDir, rejectExistingTarget: true }))
+      .rejects.toMatchObject({ code: 'DESTINATION_EXISTS' })
+    await expect(fs.readFile(sentinelPath, 'utf8')).resolves.toBe('existing content')
+    await expect(fs.access(path.join(targetDir, 'archive', 'file.txt'))).rejects.toThrow()
   })
 
   it.each(['library.jar', 'webapp.war'])('extracts %s through the ZIP reader', async archiveName => {

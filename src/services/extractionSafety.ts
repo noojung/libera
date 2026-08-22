@@ -350,11 +350,15 @@ export async function resolveThroughExistingAncestor(absolutePath: string): Prom
 
 export async function prepareTargetRoot(
   targetDir: string,
-  transaction: ExtractionTransaction
+  transaction: ExtractionTransaction,
+  rejectExistingTarget = false
 ): Promise<string> {
   const requestedTargetPath = path.resolve(targetDir)
   const requestedTargetStat = await lstatIfExists(requestedTargetPath)
   if (requestedTargetStat?.isSymbolicLink()) throw securityError('extraction target must not be a symbolic link')
+  if (rejectExistingTarget && requestedTargetStat) {
+    throw securityError(`extraction target already exists: ${requestedTargetPath}`, 'DESTINATION_EXISTS')
+  }
 
   const targetPath = await resolveThroughExistingAncestor(requestedTargetPath)
   await assertSafeExistingPathComponents(targetPath)
@@ -373,6 +377,9 @@ export async function prepareTargetRoot(
       transaction.recordDirectory(directoryPath)
     } catch (error: any) {
       if (error.code !== 'EEXIST') throw error
+      if (rejectExistingTarget && directoryPath === targetPath) {
+        throw securityError(`extraction target already exists: ${requestedTargetPath}`, 'DESTINATION_EXISTS')
+      }
       const racedStat = await fsPromises.lstat(directoryPath)
       if (racedStat.isSymbolicLink() || !racedStat.isDirectory()) {
         throw securityError(`extraction target path is not a real directory: ${directoryPath}`)

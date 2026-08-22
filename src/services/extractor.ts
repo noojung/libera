@@ -66,6 +66,8 @@ export * from './extractionSafety'
 export interface ExtractionOptions {
   archivePath: string
   targetDir: string
+  /** Require this extraction job to create targetDir itself. */
+  rejectExistingTarget?: boolean
   selectedEntries?: string[]
   password?: string
 }
@@ -387,7 +389,7 @@ export async function extractArchive(
   context: ExtractionContext = {}
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
   const startTime = Date.now()
-  const { targetDir, selectedEntries, password } = options
+  const { targetDir, rejectExistingTarget, selectedEntries, password } = options
   // Any volume of a split set identifies the set; reads start from the volume
   // that carries the central directory.
   const archivePath = canonicalArchivePath(options.archivePath)
@@ -404,7 +406,7 @@ export async function extractArchive(
       throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
     }
 
-    targetRoot = await prepareTargetRoot(targetDir, transaction)
+    targetRoot = await prepareTargetRoot(targetDir, transaction, rejectExistingTarget)
     const availableBytes = await (context.getAvailableBytes ?? defaultAvailableBytes)(targetRoot)
     const diskBudget = calculateUsableExtractionBytes(availableBytes, policy)
     if (diskBudget <= 0) {

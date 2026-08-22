@@ -355,6 +355,7 @@ export const App: React.FC = () => {
           (window as any).electronAPI.extractArchive({
             archivePath: item.path,
             targetDir: job.outputPath,
+            rejectExistingTarget: options.createSubfolder,
             password
           }, job.id)
         )
