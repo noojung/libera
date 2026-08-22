@@ -1,7 +1,7 @@
 import { runSevenZip, SevenZipError } from './sevenZip'
 import { Libera7zError } from '../lib/libera7z'
 import { canFallbackFromLibera7z, openLibera7zFile } from './libera7zNode'
-import { isSevenZipVolumePath } from './sevenZipVolumes'
+import { discoverSevenZipVolumes, isSevenZipVolumePath } from './sevenZipVolumes'
 
 // Reading `7za l -slt`. The inspector, the previewer and the extractor all go
 // through here so that an entry's position in the list means the same thing to
@@ -147,41 +147,42 @@ export async function listSevenZipEntries(
   archivePath: string,
   options: ListSevenZipOptions = {}
 ): Promise<SevenZipListing> {
-  if (!isSevenZipVolumePath(archivePath)) {
+  try {
+    const archive = await openLibera7zFile(archivePath, {
+      signal: options.signal,
+      maxEntries: options.maxEntries
+    })
     try {
-      const archive = await openLibera7zFile(archivePath, {
-        signal: options.signal,
-        maxEntries: options.maxEntries
+      const entries = archive.entries.map(entry => {
+        const size = Number(entry.size)
+        const packedSize = entry.packedSize === undefined ? undefined : Number(entry.packedSize)
+        if (!Number.isSafeInteger(size) || (packedSize !== undefined && !Number.isSafeInteger(packedSize))) {
+          throw new SevenZipError('SEVEN_ZIP_FAILED', '7z entry size exceeds JavaScript safe integer range')
+        }
+        return {
+          path: entry.path,
+          size,
+          packedSize,
+          isDirectory: entry.isDirectory,
+          isSymlink: false,
+          encrypted: false,
+          mode: entry.mode,
+          modified: entry.modified?.toISOString(),
+          crc: entry.crc?.toString(16).toUpperCase().padStart(8, '0')
+        }
       })
-      try {
-        const entries = archive.entries.map(entry => {
-          const size = Number(entry.size)
-          const packedSize = entry.packedSize === undefined ? undefined : Number(entry.packedSize)
-          if (!Number.isSafeInteger(size) || (packedSize !== undefined && !Number.isSafeInteger(packedSize))) {
-            throw new SevenZipError('SEVEN_ZIP_FAILED', '7z entry size exceeds JavaScript safe integer range')
-          }
-          return {
-            path: entry.path,
-            size,
-            packedSize,
-            isDirectory: entry.isDirectory,
-            isSymlink: false,
-            encrypted: false,
-            mode: entry.mode,
-            modified: entry.modified?.toISOString(),
-            crc: entry.crc?.toString(16).toUpperCase().padStart(8, '0')
-          }
-        })
-        return { entries, volumeCount: 1, anyEncrypted: false }
-      } finally {
-        await archive.close()
-      }
-    } catch (error) {
-      if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-        throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z listing was cancelled')
-      }
-      if (!canFallbackFromLibera7z(error)) throw error
+      const volumeCount = isSevenZipVolumePath(archivePath)
+        ? (await discoverSevenZipVolumes(archivePath)).length
+        : 1
+      return { entries, volumeCount, anyEncrypted: false }
+    } finally {
+      await archive.close()
     }
+  } catch (error) {
+    if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+      throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z listing was cancelled')
+    }
+    if (!canFallbackFromLibera7z(error)) throw error
   }
 
   const { stdout } = await runSevenZip(['l', '-slt', '--', archivePath], options.password, {

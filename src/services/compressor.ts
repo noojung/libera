@@ -200,9 +200,9 @@ export async function compressArchive(
 
   throwIfAborted(signal)
 
-  // 7z runs before the ZIP split branch below: 7-Zip handles volumes itself,
-  // through a switch, and numbers them even when the whole archive fits in
-  // one - so it has no equivalent of that branch's single-volume special case.
+  // 7z runs before the ZIP split branch below: Libera7z splits its byte stream
+  // inline and numbers it even when the whole archive fits in one, so it has
+  // no equivalent of that branch's single-volume special case.
   if (format === '7z') {
     const written = await writeSevenZipArchive(
       {

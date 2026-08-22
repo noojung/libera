@@ -9,6 +9,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { compressArchive, type ProgressData } from './compressor'
 import { runSevenZip } from './sevenZip'
+import { writeLibera7z } from './libera7zNode'
 import {
   buildExtractionPlan,
   calculateUsableExtractionBytes,
@@ -763,10 +764,15 @@ describe('7z extraction', () => {
     const sourceDir = path.join(directory, 'src')
     await fs.mkdir(sourceDir)
     await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
-    await runSevenZip(['a', '-v30k', '-mx=0', path.join(directory, 'set.7z'), sourceDir], undefined)
+    const written = await writeLibera7z({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'set.7z'),
+      level: 0,
+      splitSize: 30_000
+    })
     const targetDir = path.join(directory, 'out')
 
-    await extractArchive({ archivePath: path.join(directory, 'set.7z.003'), targetDir })
+    await extractArchive({ archivePath: written.volumePaths!.at(-1)!, targetDir })
 
     const extracted = await fs.readFile(path.join(targetDir, 'src', 'big.bin'))
     const original = await fs.readFile(path.join(sourceDir, 'big.bin'))

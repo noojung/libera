@@ -8,7 +8,7 @@ import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { openZipArchive } from './zipFileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
-import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZipVolumes'
+import { isSevenZipArchivePath } from './sevenZipVolumes'
 import { listSevenZipEntries } from './sevenZipList'
 import { classifySevenZipExit, SevenZipError, spawnSevenZip } from './sevenZip'
 import { Libera7zError } from '../lib/libera7z'
@@ -535,46 +535,44 @@ async function readSevenZipEntry(
   password: string | undefined,
   signal?: AbortSignal
 ): Promise<CollectedArchiveEntry> {
-  if (!isSevenZipVolumePath(archivePath)) {
-    let archive
-    try {
-      archive = await openLibera7zFile(archivePath, { signal, maxEntries: MAX_ARCHIVE_ENTRIES })
-    } catch (error) {
-      if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-        throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-      }
-      if (!canFallbackFromLibera7z(error)) throw error
+  let archive
+  try {
+    archive = await openLibera7zFile(archivePath, { signal, maxEntries: MAX_ARCHIVE_ENTRIES })
+  } catch (error) {
+    if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+      throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
     }
-    if (archive) {
-      try {
-        const entry = archive.entries[entryIndex]
-        if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
-        if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
-        if (archive.entries.filter(other => other.path === entry.path).length > 1) {
-          throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
-        }
-        const collector = new PreviewCollector()
-        try {
-          await pipeline(
-            Readable.fromWeb(archive.openEntry(entryIndex, { signal }) as import('stream/web').ReadableStream),
-            collector
-          )
-        } catch (error) {
-          if (!collector.truncated) {
-            if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-              throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-            }
-            if (isAbortError(error) || signal?.aborted) {
-              throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
-            }
-            throw error
-          }
-        }
-        const totalBytes = Number(entry.size)
-        return collectedEntry(collector, Number.isSafeInteger(totalBytes) ? totalBytes : null)
-      } finally {
-        await archive.close()
+    if (!canFallbackFromLibera7z(error)) throw error
+  }
+  if (archive) {
+    try {
+      const entry = archive.entries[entryIndex]
+      if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
+      if (entry.isDirectory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
+      if (archive.entries.filter(other => other.path === entry.path).length > 1) {
+        throw previewError('ENTRY_NOT_PREVIEWABLE', 'Archive contains duplicate entry paths')
       }
+      const collector = new PreviewCollector()
+      try {
+        await pipeline(
+          Readable.fromWeb(archive.openEntry(entryIndex, { signal }) as import('stream/web').ReadableStream),
+          collector
+        )
+      } catch (error) {
+        if (!collector.truncated) {
+          if (error instanceof Libera7zError && error.code === 'CANCELLED') {
+            throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+          }
+          if (isAbortError(error) || signal?.aborted) {
+            throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
+          }
+          throw error
+        }
+      }
+      const totalBytes = Number(entry.size)
+      return collectedEntry(collector, Number.isSafeInteger(totalBytes) ? totalBytes : null)
+    } finally {
+      await archive.close()
     }
   }
 

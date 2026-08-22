@@ -4,7 +4,6 @@ import { classifySevenZipExit, spawnSevenZip } from './sevenZip'
 import { listSevenZipEntries, type SevenZipEntry } from './sevenZipList'
 import { Libera7zError, type SevenZipArchive } from '../lib/libera7z'
 import { canFallbackFromLibera7z, openLibera7zFile } from './libera7zNode'
-import { isSevenZipVolumePath } from './sevenZipVolumes'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -334,31 +333,29 @@ export async function extractSevenZipArchive(
   signal?: AbortSignal,
   onProgress?: ProgressCallback
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
-  if (!isSevenZipVolumePath(archivePath)) {
-    let archive: SevenZipArchive | undefined
+  let archive: SevenZipArchive | undefined
+  try {
+    archive = await openLibera7zFile(archivePath, { signal, maxEntries: policy.maxEntries })
+  } catch (error) {
+    if (error instanceof Libera7zError && error.code === 'CANCELLED') throwIfAborted(signal)
+    if (!canFallbackFromLibera7z(error)) throw error
+  }
+  if (archive) {
     try {
-      archive = await openLibera7zFile(archivePath, { signal, maxEntries: policy.maxEntries })
-    } catch (error) {
-      if (error instanceof Libera7zError && error.code === 'CANCELLED') throwIfAborted(signal)
-      if (!canFallbackFromLibera7z(error)) throw error
-    }
-    if (archive) {
-      try {
-        return await extractWithJavaScript(
-          archive,
-          archivePath,
-          targetRoot,
-          selectedEntries,
-          startTime,
-          policy,
-          diskBudget,
-          transaction,
-          signal,
-          onProgress
-        )
-      } finally {
-        await archive.close()
-      }
+      return await extractWithJavaScript(
+        archive,
+        archivePath,
+        targetRoot,
+        selectedEntries,
+        startTime,
+        policy,
+        diskBudget,
+        transaction,
+        signal,
+        onProgress
+      )
+    } finally {
+      await archive.close()
     }
   }
 

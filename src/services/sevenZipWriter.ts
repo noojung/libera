@@ -10,9 +10,9 @@ import {
   sevenZipVolumePath
 } from './sevenZipVolumes'
 
-// Writing .7z, the counterpart to splitZipWriter.ts. Volume splitting lives
-// here rather than in the compressor because 7-Zip does it inline, with a
-// switch, rather than through a separate writer.
+// Writing .7z, the counterpart to splitZipWriter.ts. Libera7z writes ordinary
+// and split byte streams; the compatibility executable remains only for input
+// features the TypeScript writer does not model yet.
 
 export interface SevenZipWriteOptions {
   inputPaths: string[]
@@ -70,48 +70,47 @@ export async function writeSevenZipArchive(
   // behind has to go first or the two runs merge into an unreadable set.
   await removeStaleSevenZipVolumes(outputPath)
 
-  // The dependency-free writer owns the ordinary non-split path. Inputs it
-  // deliberately does not model yet (notably symbolic links) fall through to
-  // the compatibility executable without changing the UI contract.
-  if (splitSize === undefined) {
-    let currentFile: string | undefined
-    try {
-      await writeLibera7z({
-        inputPaths,
-        outputPath,
-        level: Number(sevenZipLevelArgument(level).slice('-mx='.length)),
-        signal: context.signal,
-        onProgress: (processedBytes, file) => {
-          currentFile = file ?? currentFile
-          const processed = Number(processedBytes)
-          onProgress?.({
-            processedBytes: processed,
-            totalBytes,
-            percent: totalBytes === 0 ? 99 : Math.min(99, Math.round((processed / totalBytes) * 100)),
-            phase: 'processing',
-            currentFile
-          })
-        }
-      })
-      onProgress?.({
-        processedBytes: totalBytes,
-        totalBytes,
-        percent: 100,
-        phase: 'complete',
-        currentFile
-      })
-      return { outputPath }
-    } catch (error) {
-      if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-        await removePartialOutput(outputPath)
-        throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z creation was cancelled')
+  // The dependency-free writer owns ordinary and split byte streams. Inputs
+  // it deliberately does not model yet (notably symbolic links) still fall
+  // through to the compatibility executable without changing the UI contract.
+  let currentFile: string | undefined
+  try {
+    const written = await writeLibera7z({
+      inputPaths,
+      outputPath,
+      level: Number(sevenZipLevelArgument(level).slice('-mx='.length)),
+      splitSize,
+      signal: context.signal,
+      onProgress: (processedBytes, file) => {
+        currentFile = file ?? currentFile
+        const processed = Number(processedBytes)
+        onProgress?.({
+          processedBytes: processed,
+          totalBytes,
+          percent: totalBytes === 0 ? 99 : Math.min(99, Math.round((processed / totalBytes) * 100)),
+          phase: 'processing',
+          currentFile
+        })
       }
-      if (!canFallbackFromLibera7z(error)) {
-        await removePartialOutput(outputPath)
-        throw error
-      }
+    })
+    onProgress?.({
+      processedBytes: totalBytes,
+      totalBytes,
+      percent: 100,
+      phase: 'complete',
+      currentFile
+    })
+    return written
+  } catch (error) {
+    if (error instanceof Libera7zError && error.code === 'CANCELLED') {
       await removePartialOutput(outputPath)
+      throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z creation was cancelled')
     }
+    if (!canFallbackFromLibera7z(error)) {
+      await removePartialOutput(outputPath)
+      throw error
+    }
+    await removePartialOutput(outputPath)
   }
 
   const args = [
@@ -131,7 +130,7 @@ export async function writeSevenZipArchive(
     ...inputPaths
   ]
 
-  let currentFile: string | undefined
+  currentFile = undefined
   try {
     await runSevenZip(args, undefined, {
       signal: context.signal,

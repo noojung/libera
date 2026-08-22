@@ -5,6 +5,7 @@ import path from 'path'
 import { SplitVolumeError } from './splitZipVolumes'
 import { canonicalArchivePath } from './archiveVolumes'
 import { listSevenZipEntries } from './sevenZipList'
+import { openLibera7zFile } from './libera7zNode'
 import { runSevenZip } from './sevenZip'
 import {
   discoverSevenZipVolumes,
@@ -117,10 +118,21 @@ describe('against a real split archive', () => {
     // Incompressible, so the set genuinely spans several volumes.
     await fs.writeFile(path.join(sourceDir, 'big.bin'), Buffer.alloc(200_000).map(() => Math.floor(Math.random() * 256)))
     const outputPath = path.join(directory, 'm.7z')
-    await runSevenZip(['a', '-v30k', '-mx=0', outputPath, sourceDir], undefined)
+    // Leave the header uncompressed so this test isolates multi-volume I/O;
+    // p7zip 17 otherwise uses the still-separate LZMA1 compatibility path.
+    await runSevenZip(['a', '-v30k', '-mx=0', '-mhc=off', outputPath, sourceDir], undefined)
 
     const volumes = await discoverSevenZipVolumes(path.join(directory, 'm.7z.001'))
     expect(volumes.length).toBeGreaterThan(1)
+
+    // The TypeScript reader sees the numbered files as one contiguous source,
+    // even when the caller hands it the last volume.
+    const archive = await openLibera7zFile(volumes[volumes.length - 1])
+    try {
+      expect(archive.entries.map(entry => path.basename(entry.path))).toContain('big.bin')
+    } finally {
+      await archive.close()
+    }
 
     // Opening a later volume must resolve back to the first one.
     const listing = await listSevenZipEntries(canonicalArchivePath(volumes[volumes.length - 1]))

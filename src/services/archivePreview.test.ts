@@ -8,6 +8,7 @@ import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
 import { runSevenZip } from './sevenZip'
+import { writeLibera7z } from './libera7zNode'
 import {
   ArchivePreviewError,
   MAX_ARCHIVE_PREVIEW_BYTES,
@@ -368,6 +369,25 @@ describe('7z preview', () => {
     const preview = await previewArchiveEntry(archivePath, listing.entries[0].id)
 
     expect(preview).toMatchObject({ kind: 'text', text: 'preview through the JavaScript reader' })
+  })
+
+  it('previews a pure TypeScript split archive opened from a later volume', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'split.txt')
+    const contents = 'preview across split volumes\n'.repeat(4_000)
+    await fs.writeFile(sourcePath, contents)
+    const written = await writeLibera7z({
+      inputPaths: [sourcePath],
+      outputPath: path.join(directory, 'split.7z'),
+      level: 0,
+      splitSize: 30_000
+    })
+    const archivePath = written.volumePaths!.at(-1)!
+
+    const listing = await inspectArchive(archivePath)
+    const preview = await previewArchiveEntry(archivePath, listing.entries[0].id)
+
+    expect(preview).toMatchObject({ kind: 'text', text: contents, truncated: false })
   })
 
   it('returns an entry byte for byte, so 7-Zip chatter cannot contaminate it', async () => {
