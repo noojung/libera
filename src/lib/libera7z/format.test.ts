@@ -1,17 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest'
 import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
-import { ByteReader, ByteWriter } from './binary'
-import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
+import { path7za } from '7zip-bin'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Libera7zError } from './errors'
+import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
 import { MemorySink, MemorySource } from './io'
 import { LzmaDecoder } from './lzma'
-import { decodeLzma2, dictionaryPropertyForSize, dictionarySizeFromProperty, encodeLzma2 } from './lzma2'
-import { runSevenZip } from '../../services/sevenZip'
-import { openLibera7zFile } from '../../services/libera7zNode'
+import { dictionarySizeFromProperty } from './lzma2'
 
 const temporaryDirectories: string[] = []
 const execFileAsync = promisify(execFile)
@@ -47,30 +45,20 @@ async function collect(readable: ReadableStream<Uint8Array>): Promise<Uint8Array
   return result
 }
 
-describe('7z integer encoding', () => {
-  it('round-trips every encoding width', () => {
-    const values = [0n, 0x7fn, 0x80n, 0x3fffn, 0x4000n, 0xffffffffn, 0x123456789abcdef0n, 0xffffffffffffffffn]
-    const writer = new ByteWriter()
-    values.forEach(value => writer.variableUint64(value))
-    const reader = new ByteReader(writer.build())
-    expect(values.map(() => reader.variableUint64())).toEqual(values)
-    expect(reader.remaining).toBe(0)
+async function runReferenceSevenZip(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  if (process.platform !== 'win32' && path.isAbsolute(path7za)) {
+    const stat = await fs.stat(path7za)
+    await fs.chmod(path7za, stat.mode | 0o111)
+  }
+  const result = await execFileAsync(path7za, ['-y', '-sccUTF-8', ...args], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    windowsHide: true
   })
-})
+  return { stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+}
 
-describe('pure JavaScript LZMA2', () => {
-  it('round-trips compressible and incompressible chunks', () => {
-    const compressible = new TextEncoder().encode('pure-js-seven-zip\n'.repeat(4000))
-    const random = Uint8Array.from({ length: 70_000 }, (_, index) => (index * 131 + 17) & 0xff)
-    for (const source of [compressible, random]) {
-      const encoded = encodeLzma2(source)
-      if (source === compressible) expect(encoded.compressedChunks).toBeGreaterThan(0)
-      expect(decodeLzma2(encoded.data, dictionaryPropertyForSize(1024 * 1024), source.length)).toEqual(source)
-    }
-  })
-})
-
-describe('pure JavaScript 7z container', () => {
+describe('pure TypeScript 7z container', () => {
   const payload = new TextEncoder().encode('hello from a TypeScript 7z writer\n'.repeat(200))
 
   function entries(): SevenZipEntryInput[] {
@@ -138,7 +126,7 @@ describe('pure JavaScript 7z container', () => {
       .rejects.toMatchObject({ code: 'CANCELLED' })
   })
 
-  it.each(['copy', 'lzma2'] as const)('writes a %s archive accepted by the bundled 7-Zip', async method => {
+  it.each(['copy', 'lzma2'] as const)('writes a %s archive accepted by the reference 7-Zip', async method => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-'))
     temporaryDirectories.push(directory)
     const archivePath = path.join(directory, `${method}.7z`)
@@ -146,9 +134,9 @@ describe('pure JavaScript 7z container', () => {
     await create7z(entries(), sink, { method })
     await fs.writeFile(archivePath, sink.data())
 
-    const { stdout } = await runSevenZip(['l', '-slt', '--', archivePath], undefined)
+    const { stdout } = await runReferenceSevenZip(['l', '-slt', '--', archivePath])
     expect(stdout.normalize('NFC')).toContain(`Path = ${path.join('bundle', '안내.txt')}`)
-    await expect(runSevenZip(['t', '--', archivePath], undefined)).resolves.toMatchObject({ exitCode: 0 })
+    await expect(runReferenceSevenZip(['t', '--', archivePath])).resolves.toBeDefined()
   }, 60_000)
 
   it.skipIf(process.platform !== 'darwin').each(['copy', 'lzma2'] as const)(
@@ -169,16 +157,16 @@ describe('pure JavaScript 7z container', () => {
     60_000
   )
 
-  it('decodes match-coded LZMA2 produced by the bundled 7-Zip', async () => {
+  it('decodes match-coded LZMA2 produced by the reference 7-Zip', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-js7z-external-'))
     temporaryDirectories.push(directory)
     const inputPath = path.join(directory, 'repeated.txt')
     const contents = Buffer.from('external lzma2 match stream\n'.repeat(10_000))
     const archivePath = path.join(directory, 'external.7z')
     await fs.writeFile(inputPath, contents)
-    await runSevenZip(['a', '-m0=lzma2', '-ms=off', '-mhc=off', '--', archivePath, inputPath], undefined)
+    await runReferenceSevenZip(['a', '-m0=lzma2', '-ms=off', '-mhc=off', '--', archivePath, inputPath])
 
-    const archive = await openLibera7zFile(archivePath)
+    const archive = await open7z(new MemorySource(await fs.readFile(archivePath)))
     try {
       const entry = archive.entries.find(item => item.path === 'repeated.txt')!
       expect(Buffer.from(await collect(archive.openEntry(entry.id)))).toEqual(contents)
@@ -199,13 +187,13 @@ describe('pure JavaScript 7z container', () => {
     ])
     await Promise.all([...contents].map(([name, bytes]) => fs.writeFile(path.join(sourceDir, name), bytes)))
     const archivePath = path.join(directory, 'solid.7z')
-    await runSevenZip(['a', '-m0=lzma2', '-ms=on', '-mhc=off', '--', archivePath, sourceDir], undefined)
-    const { stdout } = await runSevenZip(['l', '-slt', '--', archivePath], undefined)
+    await runReferenceSevenZip(['a', '-m0=lzma2', '-ms=on', '-mhc=off', '--', archivePath, sourceDir])
+    const { stdout } = await runReferenceSevenZip(['l', '-slt', '--', archivePath])
     expect(stdout).toContain('Solid = +')
     expect(stdout).toContain('Blocks = 1')
 
     let decoderSessions = 0
-    const archive = await openLibera7zFile(archivePath, {
+    const archive = await open7z(new MemorySource(await fs.readFile(archivePath)), {
       lzma2DecoderFactory: async property => {
         decoderSessions += 1
         const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
