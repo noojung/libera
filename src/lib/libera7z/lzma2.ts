@@ -78,6 +78,73 @@ export function encodeLzma2(input: Uint8Array, signal?: AbortSignal): Lzma2Encod
   return { data: concatBytes(parts), compressedChunks }
 }
 
+/** What one LZMA2 control byte asks the decoder to do before its payload. */
+export interface Lzma2ChunkPlan {
+  kind: 'end' | 'uncompressed' | 'lzma'
+  resetDictionary: boolean
+  readProperties: boolean
+  resetState: boolean
+}
+
+/** Reset bookkeeping carried between LZMA2 chunks. */
+export interface Lzma2ChunkState {
+  needsDictionaryReset: boolean
+  needsProperties: boolean
+  needsStateReset: boolean
+}
+
+export function initialLzma2ChunkState(): Lzma2ChunkState {
+  return { needsDictionaryReset: true, needsProperties: true, needsStateReset: true }
+}
+
+/**
+ * Reads one control byte and updates the reset bookkeeping, rejecting streams
+ * that lean on state they never established.
+ *
+ * Only a dictionary-resetting uncompressed chunk (control 1) invalidates the
+ * LZMA state and properties. Control 2 carries both across, which is what
+ * 7-Zip emits when it drops to stored chunks partway through incompressible
+ * data and then resumes with a plain 0x80 chunk. Demanding a reset after either
+ * kind rejects archives that 7-Zip and liblzma both read.
+ *
+ * Shared by the buffered and streaming decoders so the rule cannot drift.
+ */
+export function planLzma2Chunk(control: number, state: Lzma2ChunkState): Lzma2ChunkPlan {
+  if (control === 0) return { kind: 'end', resetDictionary: false, readProperties: false, resetState: false }
+
+  if (control === 1 || control === 2) {
+    const resetDictionary = control === 1
+    if (resetDictionary) {
+      state.needsDictionaryReset = false
+      state.needsProperties = true
+      state.needsStateReset = true
+    } else if (state.needsDictionaryReset) {
+      throw invalidArchive('LZMA2 stream uses the dictionary before resetting it')
+    }
+    return { kind: 'uncompressed', resetDictionary, readProperties: false, resetState: false }
+  }
+
+  if (control < 0x80) throw invalidArchive('Invalid LZMA2 control byte')
+
+  const resetDictionary = control >= 0xe0
+  const readProperties = control >= 0xc0
+  const resetState = control >= 0xa0
+
+  if (resetDictionary) state.needsDictionaryReset = false
+  else if (state.needsDictionaryReset) {
+    throw invalidArchive('LZMA2 compressed chunk appears before a dictionary reset')
+  }
+  if (readProperties) state.needsProperties = false
+  else if (state.needsProperties) {
+    throw invalidArchive('LZMA2 compressed chunk appears before coder properties')
+  }
+  if (resetState) state.needsStateReset = false
+  else if (state.needsStateReset) {
+    throw invalidArchive('LZMA2 compressed chunk appears before a state reset')
+  }
+  return { kind: 'lzma', resetDictionary, readProperties, resetState }
+}
+
 export function decodeLzma2(
   input: Uint8Array,
   dictionaryProperty: number,
@@ -89,9 +156,7 @@ export function decodeLzma2(
   const output: Uint8Array[] = []
   let outputSize = 0
   let position = 0
-  let needsDictionaryReset = true
-  let needsProperties = true
-  let needsStateReset = true
+  const state = initialLzma2ChunkState()
 
   const readByte = () => {
     if (position >= input.length) throw invalidArchive('Truncated LZMA2 stream')
@@ -107,50 +172,23 @@ export function decodeLzma2(
   while (true) {
     throwIfCancelled(signal)
     const control = readByte()
-    if (control === 0) break
+    const plan = planLzma2Chunk(control, state)
+    if (plan.kind === 'end') break
+    if (plan.resetDictionary) decoder.resetDictionary()
 
-    if (control === 1 || control === 2) {
-      if (control === 1) {
-        decoder.resetDictionary()
-        needsDictionaryReset = false
-      } else if (needsDictionaryReset) {
-        throw invalidArchive('LZMA2 stream uses the dictionary before resetting it')
-      }
+    if (plan.kind === 'uncompressed') {
       const length = ((readByte() << 8) | readByte()) + 1
       const bytes = readBytes(length).slice()
       decoder.writeUncompressed(bytes)
       output.push(bytes)
       outputSize += bytes.length
-      needsStateReset = true
       continue
-    }
-
-    if (control < 0x80) throw invalidArchive('Invalid LZMA2 control byte')
-    const resetsDictionary = control >= 0xe0
-    const resetsState = control >= 0xa0
-    const suppliesProperties = control >= 0xc0
-
-    if (resetsDictionary) {
-      decoder.resetDictionary()
-      needsDictionaryReset = false
-    } else if (needsDictionaryReset) {
-      throw invalidArchive('LZMA2 compressed chunk appears before a dictionary reset')
     }
 
     const unpackedSize = (((control & 0x1f) << 16) | (readByte() << 8) | readByte()) + 1
     const packedSize = ((readByte() << 8) | readByte()) + 1
-    if (suppliesProperties) {
-      decoder.setProperties(readByte())
-      needsProperties = false
-    } else if (needsProperties) {
-      throw invalidArchive('LZMA2 compressed chunk appears before coder properties')
-    }
-    if (resetsState) {
-      decoder.resetState()
-      needsStateReset = false
-    } else if (needsStateReset) {
-      throw invalidArchive('LZMA2 compressed chunk appears before a state reset')
-    }
+    if (plan.readProperties) decoder.setProperties(readByte())
+    if (plan.resetState) decoder.resetState()
 
     const decoded = decoder.decodeChunk(readBytes(packedSize), unpackedSize, signal)
     output.push(decoded)

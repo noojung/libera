@@ -23,6 +23,8 @@ import { decodeBcj2 } from './bcj2'
 import { inflateRaw } from './deflate'
 import { decodeSevenZipFilter, type SevenZipFilter } from './filters'
 import {
+  initialLzma2ChunkState,
+  planLzma2Chunk,
   LZMA2_ENCODE_CHUNK_SIZE,
   decodeLzma2,
   dictionaryPropertyForSize,
@@ -1303,43 +1305,30 @@ async function* decodeLzma2FromSource(
     }
   }
   let total = 0n
-  let needsDictionaryReset = true
-  let needsProperties = true
-  let needsStateReset = true
+  const state = initialLzma2ChunkState()
 
   try {
     while (true) {
       throwIfCancelled(signal)
       const control = await cursor.byte()
-      if (control === 0) break
-      if (control === 1 || control === 2) {
-        if (control === 1) {
-          await decoder.resetDictionary()
-          needsDictionaryReset = false
-        } else if (needsDictionaryReset) throw invalidArchive('LZMA2 dictionary was not reset')
+      const plan = planLzma2Chunk(control, state)
+      if (plan.kind === 'end') break
+      if (plan.resetDictionary) await decoder.resetDictionary()
+
+      if (plan.kind === 'uncompressed') {
         const length = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
         const bytes = await cursor.read(length)
         await decoder.writeUncompressed(bytes)
         total += BigInt(bytes.length)
         yield bytes
-        needsStateReset = true
         continue
       }
-      if (control < 0x80) throw invalidArchive('Invalid LZMA2 control byte')
-      if (control >= 0xe0) {
-        await decoder.resetDictionary()
-        needsDictionaryReset = false
-      } else if (needsDictionaryReset) throw invalidArchive('LZMA2 dictionary was not reset')
+
       const unpacked = (((control & 0x1f) << 16) | ((await cursor.byte()) << 8) | await cursor.byte()) + 1
       const packed = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
-      if (control >= 0xc0) {
-        await decoder.setProperties(await cursor.byte())
-        needsProperties = false
-      } else if (needsProperties) throw invalidArchive('LZMA2 properties were not supplied')
-      if (control >= 0xa0) {
-        await decoder.resetState()
-        needsStateReset = false
-      } else if (needsStateReset) throw invalidArchive('LZMA2 state was not reset')
+      if (plan.readProperties) await decoder.setProperties(await cursor.byte())
+      if (plan.resetState) await decoder.resetState()
+
       const decoded = await decoder.decodeChunk(await cursor.read(packed), unpacked, signal)
       total += BigInt(decoded.length)
       yield decoded
@@ -1635,7 +1624,7 @@ export class SevenZipArchive {
           error instanceof Libera7zError &&
           (error.code === 'CRC_MISMATCH' || error.code === 'INVALID_ARCHIVE')
         ) {
-          throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+              throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
         }
         throw error
       } finally {

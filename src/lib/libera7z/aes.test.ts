@@ -93,7 +93,9 @@ describe('7zAES primitives', () => {
         clear.length
       )
       expect(Buffer.from(decrypted)).toEqual(clear)
-    }
+    },
+    // The 2^19-round key derivation dominates each case.
+    60_000
   )
 
   it('encrypts nothing when nothing was written', async () => {
