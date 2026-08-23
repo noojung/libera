@@ -1011,8 +1011,7 @@ async function decodeEncodedHeader(
   bytes: Uint8Array,
   signal?: AbortSignal,
   decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string,
-  deriveKey?: SevenZipAesKeyDeriver
+  decryption: DecryptionContext = decryptionContext()
 ): Promise<Uint8Array> {
   const reader = new ByteReader(bytes)
   if (reader.byte() !== NID.EncodedHeader) throw invalidArchive('Invalid encoded-header marker')
@@ -1026,13 +1025,16 @@ async function decodeEncodedHeader(
   if (packedSize > BigInt(MAX_ENCODED_HEADER_SIZE) || folder.unpackSize > BigInt(MAX_ENCODED_HEADER_SIZE)) {
     throw new Libera7zError('LIMIT_EXCEEDED', 'Encoded 7z header exceeds the 64 MiB limit')
   }
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password, deriveKey)
+  const encrypted = folder.coders.some(coder => coder.methodId === AES_METHOD)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, decryption)
   if (folder.crc !== undefined && crc32(decoded) !== folder.crc) {
-    if (password !== undefined && folder.coders.some(coder => coder.methodId === AES_METHOD)) {
+    if (decryption.password !== undefined && encrypted) {
       throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
     }
     throw new Libera7zError('CRC_MISMATCH', 'Encoded 7z header CRC does not match')
   }
+  // A header that decrypted to a matching digest settles the password.
+  if (encrypted && folder.crc !== undefined) decryption.verified = true
   return decoded
 }
 
@@ -1064,8 +1066,7 @@ async function decodeFolderBuffer(
   folder: ParsedFolder,
   signal?: AbortSignal,
   decodeLzma2Buffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string,
-  deriveKey: SevenZipAesKeyDeriver = deriveSevenZipAesKey
+  decryption: DecryptionContext = decryptionContext()
 ): Promise<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) throw invalidArchive('7z folder has no packed stream')
   const packedInputs = new Map<number, Uint8Array>()
@@ -1131,7 +1132,9 @@ async function decodeFolderBuffer(
           if (value.length !== outputSize) throw invalidArchive('7z filter changed the declared stream size')
           value = decodeSevenZipFilter(SIMPLE_FILTERS.get(coder.methodId)!, value, coder.properties, signal)
         } else if (coder.methodId === AES_METHOD) {
-          value = await decryptSevenZipAes(value, coder.properties, password, outputSize, signal, deriveKey)
+          value = await decryptSevenZipAes(
+            value, coder.properties, decryption.password, outputSize, signal, decryption.deriveKey
+          )
         } else {
           throw new Libera7zError('UNSUPPORTED_METHOD', `Unsupported 7z coder: 0x${coder.methodId.toString(16)}`)
         }
@@ -1151,10 +1154,7 @@ async function decodeFolderBuffer(
     }
     return value
   } catch (error) {
-    if (encrypted && password !== undefined && isWrongPasswordFailure(error)) {
-      throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
-    }
-    throw error
+    throw asPasswordFailure(error, encrypted, decryption)
   }
 }
 
@@ -1358,24 +1358,47 @@ function memoiseKeyDerivation(): SevenZipAesKeyDeriver {
   }
 }
 
-/** Wrong passwords surface as whatever the coder above AES makes of the
- * garbage, so anything short of a deliberate stop is reported as such. */
+/**
+ * Password state for one archive's decoding.
+ *
+ * A wrong password turns ciphertext into noise, and the coder above AES fails
+ * in whatever way that noise happens to break it, so an unverified password
+ * has to absorb almost any error. `verified` flips as soon as something proves
+ * the password right - a decrypted header, or a substream whose CRC matched -
+ * after which failures are reported as themselves. Without that, a decoder bug
+ * or a corrupt archive masquerades as a bad password and sends the user
+ * retyping a password that was always correct.
+ */
+interface DecryptionContext {
+  password?: string
+  deriveKey: SevenZipAesKeyDeriver
+  verified: boolean
+}
+
+function decryptionContext(password?: string): DecryptionContext {
+  return { password, deriveKey: memoiseKeyDerivation(), verified: false }
+}
+
 function isWrongPasswordFailure(error: unknown): boolean {
   return !(error instanceof Libera7zError && ['CANCELLED', 'LIMIT_EXCEEDED', 'UNSUPPORTED_METHOD'].includes(error.code))
 }
 
+function asPasswordFailure(error: unknown, encrypted: boolean, decryption: DecryptionContext): unknown {
+  if (encrypted && decryption.password !== undefined && !decryption.verified && isWrongPasswordFailure(error)) {
+    return new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+  }
+  return error
+}
+
 async function* classifyPasswordFailures(
   encrypted: boolean,
-  password: string | undefined,
+  decryption: DecryptionContext,
   body: () => AsyncGenerator<Uint8Array>
 ): AsyncGenerator<Uint8Array> {
   try {
     yield* body()
   } catch (error) {
-    if (encrypted && password !== undefined && isWrongPasswordFailure(error)) {
-      throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
-    }
-    throw error
+    throw asPasswordFailure(error, encrypted, decryption)
   }
 }
 
@@ -1385,8 +1408,7 @@ async function* decodeFolderFromSource(
   signal?: AbortSignal,
   decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
   decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-  password?: string,
-  deriveKey: SevenZipAesKeyDeriver = deriveSevenZipAesKey
+  decryption: DecryptionContext = decryptionContext()
 ): AsyncGenerator<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) {
     throw invalidArchive('7z folder has no packed stream')
@@ -1406,14 +1428,14 @@ async function* decodeFolderFromSource(
         folder.packedSizes[0],
         aes,
         folder.unpackSizes[aes.outputStart],
-        password,
-        deriveKey,
+        decryption.password,
+        decryption.deriveKey,
         signal
       )
       : new PackedCursor(source, folder.packedOffsets[0], folder.packedSizes[0], signal)
     // The classifier decodeFolderBuffer applies, repeated here because a wrong
     // password only shows up once the coder above chokes on the garbage.
-    yield* classifyPasswordFailures(aes !== undefined, password, async function* () {
+    yield* classifyPasswordFailures(aes !== undefined, decryption, async function* () {
       if (coder.methodId === LZMA2_METHOD) {
         for await (const decoded of decodeLzma2FromSource(
             cursor,
@@ -1440,7 +1462,7 @@ async function* decodeFolderFromSource(
     })
     return
   }
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, password, deriveKey)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, decryption)
   for (let offset = 0; offset < decoded.length; offset += 1024 * 1024) {
     throwIfCancelled(signal)
     yield decoded.subarray(offset, Math.min(decoded.length, offset + 1024 * 1024))
@@ -1528,8 +1550,7 @@ export class SevenZipArchive {
     private readonly parsedFiles: readonly ParsedFile[],
     private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
     private readonly decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-    private readonly password?: string,
-    private readonly deriveKey: SevenZipAesKeyDeriver = memoiseKeyDerivation()
+    private readonly decryption: DecryptionContext = decryptionContext()
   ) {
     this.entries = parsedFiles.map((file, id) => ({
       id,
@@ -1556,8 +1577,7 @@ export class SevenZipArchive {
     const source = this.source
     const decoderFactory = this.decoderFactory
     const decodeBuffer = this.decodeBuffer
-    const password = this.password
-    const deriveKey = this.deriveKey
+    const decryption = this.decryption
     const generator = (async function* (): AsyncGenerator<SevenZipEntryEvent> {
       let activeFolder: ParsedFolder | null = null
       let output: FolderOutputReader | null = null
@@ -1581,8 +1601,7 @@ export class SevenZipArchive {
                 options.signal,
                 decoderFactory,
                 decodeBuffer,
-                password,
-                deriveKey
+                decryption
               ),
               file.folder
             )
@@ -1615,16 +1634,20 @@ export class SevenZipArchive {
           }
           nextSubstream += 1
           if (nextSubstream === activeFolder.substreams!.length) await folderOutput.finish()
+          // Reaching the end of a substream with its digest intact settles the
+          // password, so anything that fails later is a real fault.
+          if (substream.crc !== undefined) decryption.verified = true
           yield { type: 'entry-end', entry }
         }
       } catch (error) {
         if (
-          password !== undefined &&
+          !decryption.verified &&
+          decryption.password !== undefined &&
           activeFolder?.coders.some(coder => coder.methodId === AES_METHOD) &&
           error instanceof Libera7zError &&
           (error.code === 'CRC_MISMATCH' || error.code === 'INVALID_ARCHIVE')
         ) {
-              throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
+          throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
         }
         throw error
       } finally {
@@ -1682,12 +1705,13 @@ export async function open7z(
   const nextHeader = await readExactly(source, nextPosition, headerSize, options.signal)
   if (crc32(nextHeader) !== nextCrc) throw new Libera7zError('CRC_MISMATCH', '7z NextHeader CRC does not match')
   if (nextHeader.length === 0) throw invalidArchive('7z NextHeader is empty')
-  // One deriver for the header and every folder: same salt, same key, and the
-  // derivation is by far the most expensive part of opening the archive.
-  const deriveKey = memoiseKeyDerivation()
+  // One context for the header and every folder: the key derivation is by far
+  // the most expensive part of opening the archive, and whatever the header
+  // proves about the password carries over to the data.
+  const decryption = decryptionContext(options.password)
   const encodedHeader = nextHeader[0] === NID.EncodedHeader
   const decoded = encodedHeader
-    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, options.password, deriveKey)
+    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, decryption)
     : nextHeader
   // Not every writer puts a CRC on the encrypted header - py7zr omits it - so a
   // wrong password can reach this point as nonsense bytes rather than a digest
@@ -1698,13 +1722,13 @@ export async function open7z(
       try {
         return parseHeader(decoded)
       } catch (error) {
-        if (isWrongPasswordFailure(error)) {
-          throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
-        }
-        throw error
+        throw asPasswordFailure(error, true, decryption)
       }
     })()
     : parseHeader(decoded)
+  // Header bytes that parse as a 7z header are not something a wrong password
+  // produces, so the password is settled even when no digest was stored.
+  if (encodedHeader) decryption.verified = true
   if (options.maxEntries !== undefined && files.length > options.maxEntries) {
     throw new Libera7zError('LIMIT_EXCEEDED', '7z archive contains too many entries')
   }
@@ -1725,7 +1749,6 @@ export async function open7z(
     files,
     options.lzma2DecoderFactory,
     options.decodeLzma2Buffer,
-    options.password,
-    deriveKey
+    decryption
   )
 }

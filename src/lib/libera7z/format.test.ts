@@ -245,6 +245,52 @@ describe('pure TypeScript 7z container', () => {
     expect((await open7z(new MemorySource(sink.data()))).entries[1].encrypted).toBe(false)
   })
 
+  it('reports damage as damage once the password has proven itself', async () => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'copy', password: 'hunter2', encryptHeader: true })
+    const damaged = sink.data()
+    // Corrupt a data byte, well past the 32-byte signature header.
+    damaged[64] ^= 0xff
+
+    // The header decrypted and its digest matched, so the password is settled:
+    // calling this a bad password would send the user chasing the wrong fault.
+    const archive = await open7z(new MemorySource(damaged), { password: 'hunter2' })
+    await expect(collect(archive.openEntry(1))).rejects.toMatchObject({ code: 'CRC_MISMATCH' })
+    await expect(collect(archive.openEntry(1))).rejects.not.toMatchObject({ code: 'WRONG_PASSWORD' })
+  }, 60_000)
+
+  it('still blames the password while nothing has proven it', async () => {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'lzma2', password: 'hunter2' })
+    // Names are readable without the password here, so nothing has settled it
+    // and a failure really is most likely the password.
+    const archive = await open7z(new MemorySource(sink.data()), { password: 'wrong' })
+    await expect(collect(archive.openEntry(1))).rejects.toMatchObject({ code: 'WRONG_PASSWORD' })
+  }, 60_000)
+
+  it('stops blaming the password after an entry decodes intact', async () => {
+    const sink = new MemorySink()
+    await create7z(
+      [
+        { path: 'first.bin', size: 2048n, open: () => stream(new Uint8Array(2048).fill(1)) },
+        { path: 'second.bin', size: 2048n, open: () => stream(new Uint8Array(2048).fill(2)) }
+      ],
+      sink,
+      { method: 'copy', password: 'hunter2' }
+    )
+    const damaged = sink.data()
+    const archive = await open7z(new MemorySource(damaged), { password: 'hunter2' })
+    await expect(collect(archive.openEntry(0))).resolves.toHaveLength(2048)
+
+    // Damage the second entry only. The first one already decoded with a
+    // matching digest, so the password is no longer a suspect.
+    const second = await open7z(new MemorySource(damaged), { password: 'hunter2' })
+    damaged[damaged.length - 200] ^= 0xff
+    const reader = second.openEntries([0, 1]).getReader()
+    const fail = (async () => { for (;;) { const item = await reader.read(); if (item.done) return } })()
+    await expect(fail).rejects.not.toMatchObject({ code: 'WRONG_PASSWORD' })
+  }, 60_000)
+
   it('emits the AES coder chain 7-Zip writes', async () => {
     const sink = new MemorySink()
     await create7z(
