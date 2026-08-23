@@ -65,7 +65,14 @@ export const test = base.extend<Fixtures>({
       if (value !== undefined && key !== 'VITE_DEV_SERVER_URL') env[key] = value
     }
 
-    const app = await _electron.launch({ args: [mainEntry], cwd: repoRoot, env })
+    // Without its own profile the run inherits the developer's installed app -
+    // its theme, language and window state - so a preference set by hand at
+    // some point silently decides what the tests see.
+    const app = await _electron.launch({
+      args: [mainEntry, `--user-data-dir=${path.join(workDir, 'user-data')}`],
+      cwd: repoRoot,
+      env
+    })
 
     await app.evaluate(({ app: electronApp }, directory) => {
       electronApp.setPath('downloads', directory)
