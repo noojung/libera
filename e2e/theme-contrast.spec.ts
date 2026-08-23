@@ -130,9 +130,12 @@ test('repaints every main screen and keeps its text readable', async ({ page }) 
   await expectThemedAndReadable(page, 'queue', '.queue-manager')
 })
 
-// The active format chip and the primary button paint accent on accent, which
-// reads at about 2:1 in light mode. Their palette is a design decision, so only
-// the repaint is asserted here until that is settled.
+/**
+ * The accent controls paint accent on accent and sit near 2:1 in light mode -
+ * the chip at 2.05, the primary button between 2.00 and 2.69 - where the rest
+ * of the interface clears 4.5. That is the intended look, so only the repaint
+ * is asserted; raising the bar here means changing the palette, not the test.
+ */
 test('repaints the accent controls', async ({ page }) => {
   await freezeTransitions(page)
   for (const [name, selector] of [
