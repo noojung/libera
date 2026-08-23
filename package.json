@@ -101,7 +101,7 @@
     }
   },
   "dependencies": {
-    "@zip.js/zip.js": "^2.8.45",
+    "@zip.js/zip.js": "^2.8.53",
     "archiver": "7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
