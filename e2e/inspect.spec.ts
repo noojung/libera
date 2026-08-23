@@ -64,3 +64,33 @@ test('extracts a WAR into the chosen folder', async ({ app, page, workDir }) => 
   expect(await fs.readFile(path.join(extractedRoot, 'index.html'), 'utf8')).toBe('<!doctype html>')
   expect(await fs.readFile(path.join(extractedRoot, 'WEB-INF', 'web.xml'), 'utf8')).toBe('<web-app />')
 })
+
+test('previews a file inside an encrypted ZIP after asking for the password', async ({ app, page, workDir }) => {
+  const source = path.join(workDir, 'source')
+  await fs.mkdir(source, { recursive: true })
+  await fs.writeFile(path.join(source, 'secret.txt'), 'classified paragraph\n'.repeat(20))
+  const archivePath = path.join(workDir, 'secret.zip')
+
+  await stubDialogs(app, { filePaths: [source] })
+  await page.getByRole('button', { name: 'Browse folders' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+  await page.getByPlaceholder('Enter password').fill('hunter2')
+  await page.getByPlaceholder('Confirm password').fill('hunter2')
+  await page.locator('.compression-panel__destination-row .input-text').fill(archivePath)
+  await page.locator('.compression-panel__start-button').click()
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(1, { timeout: 60_000 })
+
+  // The listing needs no password; only the entry's content does.
+  await page.getByRole('button', { name: 'Inspect' }).click()
+  await stubDialogs(app, { filePaths: [archivePath] })
+  await page.getByRole('button', { name: 'Open file...' }).click()
+  // The archive wraps the folder that was compressed, so step into it first.
+  await page.getByText('source', { exact: true }).click()
+  await page.getByText('secret.txt').click()
+
+  await expect(page.locator('.password-prompt')).toBeVisible({ timeout: 30_000 })
+  await page.locator('.password-prompt input[type="password"]').fill('hunter2')
+  await page.locator('.password-prompt__submit').click()
+
+  await expect(page.locator('.archive-preview__content')).toContainText('classified paragraph', { timeout: 30_000 })
+})

@@ -357,16 +357,81 @@ describe('ArchiveInspector', () => {
     expect(await screen.findByText('Password-protected archive')).toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Enter password'), 'wrong')
-    await user.click(screen.getByRole('button', { name: 'Extract' }))
+    await user.click(screen.getByRole('button', { name: 'Open' }))
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
 
     // The field keeps the rejected value, as it does on the extract path.
     await user.clear(screen.getByPlaceholderText('Enter password'))
     await user.type(screen.getByPlaceholderText('Enter password'), 'hunter2')
-    await user.click(screen.getByRole('button', { name: 'Extract' }))
+    await user.click(screen.getByRole('button', { name: 'Open' }))
 
     expect(await screen.findByText('secret.txt')).toBeInTheDocument()
     expect(inspectArchive).toHaveBeenLastCalledWith('hidden.7z', 'hunter2')
     expect(api.inspectArchive).toHaveBeenCalledTimes(3)
+  })
+
+  it('asks for a password when previewing an encrypted entry, then shows it', async () => {
+    // A ZIP central directory lists fine without a password, so the archive
+    // opens and only the preview needs one.
+    const previewArchiveEntry = vi.fn()
+      .mockResolvedValueOnce({ success: false, code: 'PASSWORD_REQUIRED', errorCode: 'passwordRequired' })
+      .mockResolvedValueOnce({ success: false, code: 'WRONG_ZIP_PASSWORD', errorCode: 'wrongArchivePassword' })
+      .mockResolvedValue({
+        success: true,
+        result: { kind: 'text', text: 'classified', encoding: 'utf-8', truncated: false, previewedBytes: 10, totalBytes: 10 }
+      })
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['secret.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'secret.txt', name: 'secret.txt', isDirectory: false, size: 10 }
+      ])),
+      previewArchiveEntry
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(await screen.findByText('secret.txt'))
+
+    expect(await screen.findByText('Password-protected archive')).toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('Enter password'), 'wrong')
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+
+    await user.clear(screen.getByPlaceholderText('Enter password'))
+    await user.type(screen.getByPlaceholderText('Enter password'), 'hunter2')
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    expect(await screen.findByText('classified')).toBeInTheDocument()
+    expect(previewArchiveEntry).toHaveBeenLastCalledWith('secret.zip', 'entry-0', expect.any(String), 'hunter2')
+  })
+
+  it('keeps the password for later previews of the same archive', async () => {
+    const previewArchiveEntry = vi.fn()
+      .mockResolvedValueOnce({ success: false, code: 'PASSWORD_REQUIRED', errorCode: 'passwordRequired' })
+      .mockResolvedValue({
+        success: true,
+        result: { kind: 'text', text: 'body', encoding: 'utf-8', truncated: false, previewedBytes: 4, totalBytes: 4 }
+      })
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['secret.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { id: 'entry-0', path: 'one.txt', name: 'one.txt', isDirectory: false, size: 4 },
+        { id: 'entry-1', path: 'two.txt', name: 'two.txt', isDirectory: false, size: 4 }
+      ])),
+      previewArchiveEntry
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    await user.click(await screen.findByText('one.txt'))
+    await user.type(await screen.findByPlaceholderText('Enter password'), 'hunter2')
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+    expect(await screen.findByText('body')).toBeInTheDocument()
+
+    // The second entry must not prompt again.
+    await user.click(screen.getByRole('button', { name: 'Close file preview' }))
+    await user.click(await screen.findByText('two.txt'))
+    await waitFor(() => expect(previewArchiveEntry).toHaveBeenCalledTimes(3))
+    expect(previewArchiveEntry).toHaveBeenLastCalledWith('secret.zip', 'entry-1', expect.any(String), 'hunter2')
+    expect(screen.queryByText('Password-protected archive')).not.toBeInTheDocument()
   })
 })

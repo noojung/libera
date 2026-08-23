@@ -143,8 +143,9 @@ expanded size and compression ratio as unknown until extraction completes.
 
 Text previews are decoded as UTF-8 or BOM-marked UTF-16 and are read directly
 from the archive without creating temporary files. Libera stops after the first
-1 MiB of expanded content, rejects binary data, and does not preview encrypted
-ZIP entries.
+1 MiB of expanded content and rejects binary data. Encrypted entries are
+previewed too: a ZIP lists without a password, so the prompt appears when the
+entry itself is opened.
 
 PNG, JPEG, WebP, and GIF previews are detected from their file signatures rather
 than their names. Image data is limited to 10 MiB, 16,384 pixels on either axis,

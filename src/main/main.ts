@@ -138,7 +138,6 @@ function classifyError(error: unknown, operation: Operation): string {
       PASSWORD_REQUIRED: 'passwordRequired',
       WRONG_PASSWORD: 'wrongArchivePassword',
       ENTRY_NOT_PREVIEWABLE: 'entryNotPreviewable',
-      ENCRYPTED_PREVIEW_UNSUPPORTED: 'encryptedPreviewUnsupported',
       NOT_TEXT: 'notText',
       UNSUPPORTED_IMAGE: 'unsupportedImage',
       INVALID_IMAGE: 'invalidImage',

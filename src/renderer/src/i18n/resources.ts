@@ -148,7 +148,6 @@ export const resources = {
           errors: {
             entryNotFound: 'This file could not be found in the archive.',
             entryNotPreviewable: 'This archive entry cannot be previewed as text.',
-            encryptedPreviewUnsupported: 'Encrypted ZIP files cannot be previewed yet.',
             notText: 'This file does not appear to contain supported text.',
             unsupportedImage: 'This image format is not supported for preview.',
             invalidImage: 'This image is damaged or cannot be decoded.',
@@ -166,7 +165,8 @@ export const resources = {
         placeholder: 'Enter password',
         incorrect: 'The password is incorrect. Please try again.',
         cancel: 'Cancel',
-        extract: 'Extract'
+        extract: 'Extract',
+        open: 'Open'
       },
       queue: {
         title_one: 'Job queue ({{count}} job) 📋',
@@ -395,7 +395,6 @@ export const resources = {
           errors: {
             entryNotFound: '압축 파일에서 이 파일을 찾을 수 없습니다.',
             entryNotPreviewable: '이 항목은 텍스트로 미리 볼 수 없습니다.',
-            encryptedPreviewUnsupported: '암호화된 ZIP 파일은 아직 미리볼 수 없습니다.',
             notText: '지원하는 텍스트 파일로 보이지 않습니다.',
             unsupportedImage: '지원하지 않는 이미지 미리보기 형식입니다.',
             invalidImage: '손상되었거나 디코딩할 수 없는 이미지입니다.',
@@ -413,7 +412,8 @@ export const resources = {
         placeholder: '비밀번호 입력',
         incorrect: '비밀번호가 올바르지 않습니다. 다시 입력해 주세요.',
         cancel: '취소',
-        extract: '압축 해제'
+        extract: '압축 해제',
+        open: '열기'
       },
       queue: {
         title: '작업 대기열 목록 ({{count}}개) 📋',

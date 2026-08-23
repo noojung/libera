@@ -96,7 +96,13 @@ export const ArchiveInspector: React.FC = () => {
   // Held for the life of one archive: a header-encrypted 7z needs it to list,
   // and every preview of an encrypted entry needs it again.
   const [archivePassword, setArchivePassword] = useState<string | undefined>(undefined)
-  const [passwordPrompt, setPasswordPrompt] = useState<{ path: string; incorrect: boolean } | null>(null)
+  // The prompt serves two callers: an archive whose listing is encrypted, and
+  // an entry inside a ZIP whose central directory read fine without a password.
+  const [passwordPrompt, setPasswordPrompt] = useState<
+    | { target: 'listing'; path: string; incorrect: boolean }
+    | { target: 'entry'; path: string; entry: ArchiveEntry; incorrect: boolean }
+    | null
+  >(null)
   const previewRequestSequence = useRef(0)
   const activePreviewRequest = useRef<string | null>(null)
 
@@ -135,7 +141,7 @@ export const ArchiveInspector: React.FC = () => {
         // The listing itself is encrypted, so there is nothing to show until
         // a password arrives.
         setInspectData(null)
-        setPasswordPrompt({ path: filePath, incorrect: response.code === 'WRONG_ZIP_PASSWORD' })
+        setPasswordPrompt({ target: 'listing', path: filePath, incorrect: response.code === 'WRONG_ZIP_PASSWORD' })
       } else {
         setInspectData(null)
         setErrorKey(response.errorCode ? `errors.${response.errorCode}` : 'inspector.readFailed')
@@ -193,7 +199,7 @@ export const ArchiveInspector: React.FC = () => {
     event.stopPropagation()
   }
 
-  const handlePreviewEntry = async (entry: ArchiveEntry) => {
+  const handlePreviewEntry = async (entry: ArchiveEntry, password = archivePassword) => {
     const api = (window as any).electronAPI
     if (!api?.previewArchiveEntry) return
 
@@ -205,12 +211,26 @@ export const ArchiveInspector: React.FC = () => {
     setPreviewResult(null)
     setPreviewErrorKey(null)
     setPreviewLoading(true)
+    // Stays true while the prompt is up so the panel behind it shows progress
+    // rather than a blank body.
+    let awaitingPassword = false
 
     try {
-      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId, archivePassword)
+      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId, password)
       if (activePreviewRequest.current !== requestId) return
       if (response.success) {
         setPreviewResult(response.result)
+        if (password !== undefined) setArchivePassword(password)
+      } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
+        // Only this entry is encrypted, so the listing behind the prompt stays
+        // on screen and the preview resumes as soon as the password arrives.
+        awaitingPassword = true
+        setPasswordPrompt({
+          target: 'entry',
+          path: archivePath,
+          entry,
+          incorrect: response.code === 'WRONG_ZIP_PASSWORD'
+        })
       } else {
         setPreviewErrorKey(`inspector.preview.errors.${response.errorCode || 'genericPreview'}`)
       }
@@ -221,7 +241,7 @@ export const ArchiveInspector: React.FC = () => {
     } finally {
       if (activePreviewRequest.current === requestId) {
         activePreviewRequest.current = null
-        setPreviewLoading(false)
+        if (!awaitingPassword) setPreviewLoading(false)
       }
     }
   }
@@ -407,10 +427,21 @@ export const ArchiveInspector: React.FC = () => {
       )}
       {passwordPrompt && (
         <PasswordPromptModal
-          archiveName={passwordPrompt.path.split(/[/\\]/).pop() || passwordPrompt.path}
+          archiveName={passwordPrompt.target === 'entry'
+            ? passwordPrompt.entry.path
+            : passwordPrompt.path.split(/[/\\]/).pop() || passwordPrompt.path}
           hasIncorrectPassword={passwordPrompt.incorrect}
-          onConfirm={(password) => void runInspection(passwordPrompt.path, password)}
-          onCancel={() => setPasswordPrompt(null)}
+          confirmLabel={t('passwordPrompt.open')}
+          onConfirm={(password) => {
+            const prompt = passwordPrompt
+            setPasswordPrompt(null)
+            if (prompt.target === 'listing') void runInspection(prompt.path, password)
+            else void handlePreviewEntry(prompt.entry, password)
+          }}
+          onCancel={() => {
+            if (passwordPrompt.target === 'entry') closePreview()
+            setPasswordPrompt(null)
+          }}
         />
       )}
       {previewEntry && (

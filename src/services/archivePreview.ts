@@ -2,10 +2,10 @@ import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import { Readable, Writable } from 'stream'
 import { pipeline } from 'stream/promises'
-import { ERR_ENCRYPTED, type FileEntry } from '@zip.js/zip.js'
+import { type FileEntry } from '@zip.js/zip.js'
 import * as tar from 'tar'
 import zlib from 'zlib'
-import { MAX_ARCHIVE_ENTRIES } from './extractor'
+import { MAX_ARCHIVE_ENTRIES, isWrongZipPasswordError } from './extractor'
 import { openZipArchive } from './zipFileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath } from './sevenZipVolumes'
@@ -22,7 +22,6 @@ export type ArchivePreviewMediaType = 'image/png' | 'image/jpeg' | 'image/webp' 
 export type ArchivePreviewErrorCode =
   | 'ENTRY_NOT_FOUND'
   | 'ENTRY_NOT_PREVIEWABLE'
-  | 'ENCRYPTED_PREVIEW_UNSUPPORTED'
   | 'NOT_TEXT'
   | 'UNSUPPORTED_IMAGE'
   | 'INVALID_IMAGE'
@@ -56,7 +55,7 @@ export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePrevie
 
 export interface ArchivePreviewContext {
   signal?: AbortSignal
-  /** A header-encrypted 7z cannot even be listed without one. */
+  /** Needed to read encrypted entries, and for a header-encrypted 7z to list at all. */
   password?: string
 }
 
@@ -207,9 +206,10 @@ function collectedEntry(collector: PreviewCollector, totalBytes: number | null):
 async function readZipEntry(
   archivePath: string,
   entryIndex: number,
+  password: string | undefined,
   signal?: AbortSignal
 ): Promise<CollectedArchiveEntry> {
-  const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES)
+  const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES, { password })
   try {
     throwIfAborted(signal)
     if (zip.entries.length > MAX_ARCHIVE_ENTRIES) {
@@ -218,13 +218,16 @@ async function readZipEntry(
     const entry = zip.entries[entryIndex]
     if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
     if (entry.directory) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories cannot be previewed')
-    if (entry.encrypted) {
-      throw previewError('ENCRYPTED_PREVIEW_UNSUPPORTED', 'Encrypted ZIP entries cannot be previewed')
+    // A ZIP central directory is readable without the password, so the entry
+    // is listed and only its content needs one.
+    if (entry.encrypted && password === undefined) {
+      throw previewError('PASSWORD_REQUIRED', 'This archive entry needs a password')
     }
 
     const collector = new PreviewCollector()
     try {
       await (entry as FileEntry).getData(Writable.toWeb(collector), {
+        password,
         signal,
         strictness: 'strict',
         checkCrc32: true,
@@ -232,13 +235,15 @@ async function readZipEntry(
         useWebWorkers: false
       })
     } catch (error) {
-      if (collector.truncated) return collectedEntry(collector, Number(entry.uncompressedSize))
       if (isAbortError(error) || signal?.aborted) {
         throw previewError('PREVIEW_CANCELLED', 'Archive preview was cancelled')
       }
-      if (error instanceof Error && error.message === ERR_ENCRYPTED) {
-        throw previewError('ENCRYPTED_PREVIEW_UNSUPPORTED', 'Encrypted ZIP entries cannot be previewed')
+      // ZipCrypto only carries a one-byte check, so a wrong password often
+      // survives it and surfaces as a CRC mismatch on the garbage that follows.
+      if (entry.encrypted && isWrongZipPasswordError(error)) {
+        throw previewError('WRONG_PASSWORD', 'The archive password is incorrect')
       }
+      if (collector.truncated) return collectedEntry(collector, Number(entry.uncompressedSize))
       throw error
     }
     return collectedEntry(collector, Number(entry.uncompressedSize))
@@ -593,7 +598,7 @@ export async function previewArchiveEntry(
   const fullExt = archivePath.toLowerCase()
   let preview: CollectedArchiveEntry
   if (isZipFormatExtension(ext)) {
-    preview = await readZipEntry(archivePath, entryIndex, context.signal)
+    preview = await readZipEntry(archivePath, entryIndex, context.password, context.signal)
   } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
     preview = await readTarEntry(archivePath, entryIndex, context.signal)
   } else if (isSevenZipArchivePath(archivePath)) {

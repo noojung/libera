@@ -303,20 +303,50 @@ describe('previewArchiveEntry', () => {
     await expect(previewArchiveEntry(tarPath, 'entry-0')).rejects.toMatchObject({ code: 'ENTRY_NOT_PREVIEWABLE' })
   })
 
-  it('rejects encrypted ZIP entries without requesting a password', async () => {
+  it('previews an encrypted ZIP entry once given the password', async () => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')
     const archivePath = path.join(directory, 'secret.zip')
+    const contents = 'classified paragraph\n'.repeat(20)
+    await fs.writeFile(sourcePath, contents)
+    await compressArchive({
+      inputPaths: [sourcePath],
+      outputPath: archivePath,
+      format: 'zip',
+      password: 'hunter2'
+    })
+
+    // The central directory lists the entry without a password, so the prompt
+    // belongs to the preview rather than the listing.
+    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toMatchObject({
+      code: 'PASSWORD_REQUIRED'
+    })
+    await expect(previewArchiveEntry(archivePath, 'entry-0', { password: 'wrong' })).rejects.toMatchObject({
+      code: 'WRONG_PASSWORD'
+    })
+    await expect(previewArchiveEntry(archivePath, 'entry-0', { password: 'hunter2' })).resolves.toMatchObject({
+      kind: 'text',
+      text: contents
+    })
+  })
+
+  it('previews an encrypted ZIP image entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'secret.png')
+    const archivePath = path.join(directory, 'secret-image.zip')
     await fs.writeFile(sourcePath, createPng(32, 32))
     await compressArchive({
       inputPaths: [sourcePath],
       outputPath: archivePath,
       format: 'zip',
-      password: 'password'
+      password: 'hunter2'
     })
 
-    await expect(previewArchiveEntry(archivePath, 'entry-0')).rejects.toMatchObject({
-      code: 'ENCRYPTED_PREVIEW_UNSUPPORTED'
+    await expect(previewArchiveEntry(archivePath, 'entry-0', { password: 'hunter2' })).resolves.toMatchObject({
+      kind: 'image',
+      mediaType: 'image/png',
+      width: 32,
+      height: 32
     })
   })
 

@@ -6,11 +6,13 @@ import './PasswordPromptModal.css'
 interface PasswordPromptModalProps {
   archiveName: string
   hasIncorrectPassword?: boolean
+  /** Defaults to the extraction wording, which is where the prompt started. */
+  confirmLabel?: string
   onConfirm: (password: string) => void
   onCancel: () => void
 }
 
-export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, hasIncorrectPassword, onConfirm, onCancel }) => {
+export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiveName, hasIncorrectPassword, confirmLabel, onConfirm, onCancel }) => {
   const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [promptedArchive, setPromptedArchive] = useState(archiveName)
@@ -56,7 +58,7 @@ export const PasswordPromptModal: React.FC<PasswordPromptModalProps> = ({ archiv
         />
         <div className="password-prompt__actions">
           <button type="button" className="btn-secondary" onClick={onCancel}>{t('passwordPrompt.cancel')}</button>
-          <button type="submit" className="btn-primary password-prompt__submit" disabled={!password}>{t('passwordPrompt.extract')}</button>
+          <button type="submit" className="btn-primary password-prompt__submit" disabled={!password}>{confirmLabel ?? t('passwordPrompt.extract')}</button>
         </div>
       </form>
     </div>
