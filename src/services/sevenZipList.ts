@@ -16,12 +16,19 @@ export interface SevenZipEntry {
   mode?: number
   modified?: string
   crc?: string
+  codec?: string
+  dictionarySize?: number
+  solid?: boolean
 }
 
 export interface SevenZipListing {
   entries: SevenZipEntry[]
   volumeCount: number
   anyEncrypted: boolean
+  anySolid: boolean
+  formatVersion: string
+  nextHeaderOffset: number
+  nextHeaderSize: number
 }
 
 export interface ListSevenZipOptions {
@@ -57,13 +64,29 @@ export async function listSevenZipEntries(
           encrypted: entry.encrypted,
           mode: entry.mode,
           modified: entry.modified?.toISOString(),
-          crc: entry.crc?.toString(16).toUpperCase().padStart(8, '0')
+          crc: entry.crc?.toString(16).toUpperCase().padStart(8, '0'),
+          codec: entry.codec,
+          dictionarySize: entry.dictionarySize,
+          solid: entry.solid
         }
       })
       const volumeCount = isSevenZipVolumePath(archivePath)
         ? (await discoverSevenZipVolumes(archivePath)).length
         : 1
-      return { entries, volumeCount, anyEncrypted: entries.some(entry => entry.encrypted) }
+      const nextHeaderOffset = Number(archive.metadata.nextHeaderOffset)
+      const nextHeaderSize = Number(archive.metadata.nextHeaderSize)
+      if (!Number.isSafeInteger(nextHeaderOffset) || !Number.isSafeInteger(nextHeaderSize)) {
+        throw new SevenZipError('SEVEN_ZIP_FAILED', '7z header position exceeds JavaScript safe integer range')
+      }
+      return {
+        entries,
+        volumeCount,
+        anyEncrypted: entries.some(entry => entry.encrypted),
+        anySolid: entries.some(entry => entry.solid),
+        formatVersion: archive.metadata.version,
+        nextHeaderOffset,
+        nextHeaderSize
+      }
     } finally {
       await archive.close()
     }

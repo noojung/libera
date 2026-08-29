@@ -92,3 +92,45 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.extraction-panel__expert-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.extraction-panel > .expert-card {
+  margin-top: 0;
+}
+
+.extraction-panel__expert-row:last-child {
+  margin-bottom: 0;
+}
+
+.extraction-panel__expert-row--filter {
+  margin-top: 10px;
+}
+
+.extraction-panel__expert-label {
+  font-family: var(--font-cute);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.extraction-panel__expert-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.extraction-panel__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-main);
+  cursor: pointer;
+}

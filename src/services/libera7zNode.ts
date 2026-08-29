@@ -10,7 +10,8 @@ import {
   type OpenSevenZipOptions,
   type RandomAccessSource,
   type SeekableSink,
-  type SevenZipEntryInput
+  type SevenZipEntryInput,
+  type SevenZipMethod
 } from '../lib/libera7z'
 import { Libera7zWorkerCodec, Libera7zWorkerDecoder } from './libera7zWorkerCodec'
 import {
@@ -343,6 +344,11 @@ export interface WriteLibera7zOptions {
   splitSize?: number
   password?: string
   encryptFileNames?: boolean
+  dictionarySize?: number
+  method?: SevenZipMethod
+  matchFinderWordSize?: 32 | 64 | 128 | 273
+  searchCycles?: number
+  solid?: boolean
   signal?: AbortSignal
   onProgress?: CreateSevenZipOptions['onProgress']
 }
@@ -376,17 +382,23 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
     : new NodeVolumeSink(options.outputPath, options.splitSize)
   let workerCodec: Libera7zWorkerCodec | null = null
   try {
-    const encoderOptions = ENCODER_BY_LEVEL[options.level] ?? ENCODER_BY_LEVEL[5]
-    workerCodec = options.level === 0 ? null : await Libera7zWorkerCodec.create(encoderOptions)
+    const levelOptions = ENCODER_BY_LEVEL[options.level] ?? ENCODER_BY_LEVEL[5]
+    const encoderOptions = {
+      searchDepth: options.searchCycles ?? levelOptions.searchDepth,
+      niceLength: options.matchFinderWordSize ?? levelOptions.niceLength
+    }
+    const method = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
+    workerCodec = method === 'copy' || options.level === 0 ? null : await Libera7zWorkerCodec.create(encoderOptions)
     await create7z(entries, sink, {
-      method: options.level === 0 ? 'copy' : 'lzma2',
-      dictionarySize: DICTIONARY_BY_LEVEL[options.level] ?? DICTIONARY_BY_LEVEL[5],
+      method,
+      dictionarySize: options.dictionarySize ?? (DICTIONARY_BY_LEVEL[options.level] ?? DICTIONARY_BY_LEVEL[5]),
       signal: options.signal,
       onProgress: options.onProgress,
       encodeLzma2Chunk: workerCodec?.encode,
       lzmaEncoder: encoderOptions,
       password: options.password,
-      encryptHeader: options.encryptFileNames
+      encryptHeader: options.encryptFileNames,
+      solid: options.solid
     })
     if (sink instanceof NodeVolumeSink) {
       return { outputPath: sink.volumePaths[0], volumePaths: [...sink.volumePaths] }

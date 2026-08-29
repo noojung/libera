@@ -1,6 +1,6 @@
 import React from 'react'
 import { screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TitleBar } from './TitleBar'
 import { renderWithI18n } from '@/test/render'
 import { installElectronApi } from '@/test/electronApi'
@@ -9,6 +9,10 @@ import { applyLanguage } from '@/i18n'
 vi.mock('@/i18n', () => ({ applyLanguage: vi.fn() }))
 
 describe('TitleBar', () => {
+  beforeEach(() => {
+    localStorage.removeItem('libera_expert_mode')
+  })
+
   it('switches tabs, displays active jobs, and keeps English first', async () => {
     installElectronApi()
     const setMode = vi.fn()
@@ -82,5 +86,19 @@ describe('TitleBar', () => {
     expect(themeButton).toHaveAttribute('title', 'System theme (Auto)')
     expect(localStorage.getItem('libera_theme')).toBe('system')
   })
-})
 
+  it('persists and announces the expert UI toggle', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(
+      <TitleBar currentMode="compress" setMode={vi.fn()} activeQueueCount={0} onShowAbout={vi.fn()} />
+    )
+
+    const expertButton = screen.getByRole('button', { name: 'Toggle expert mode' })
+    expect(expertButton).toHaveAttribute('aria-pressed', 'false')
+    await user.click(expertButton)
+    expect(expertButton).toHaveAttribute('aria-pressed', 'true')
+    expect(expertButton).toHaveClass('is-active')
+    expect(expertButton.querySelector('.titlebar__expert-indicator')).toBeInTheDocument()
+    expect(localStorage.getItem('libera_expert_mode')).toBe('true')
+  })
+})

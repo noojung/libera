@@ -82,6 +82,53 @@ describe('pure TypeScript 7z container', () => {
     expect(lzma2.data().length).toBeLessThan(copy.data().length)
   })
 
+  it('writes and reads multiple files as one solid LZMA2 folder', async () => {
+    const alpha = new TextEncoder().encode('alpha '.repeat(10_000))
+    const bravo = new TextEncoder().encode('bravo '.repeat(8_000))
+    const sink = new MemorySink()
+    await create7z([
+      { path: 'alpha.txt', size: BigInt(alpha.length), open: () => stream(alpha) },
+      { path: 'bravo.txt', size: BigInt(bravo.length), open: () => stream(bravo) }
+    ], sink, { method: 'lzma2', dictionarySize: 4 * 1024 * 1024, solid: true })
+
+    const archive = await open7z(new MemorySource(sink.data()))
+    try {
+      expect(archive.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'alpha.txt', codec: 'LZMA2', dictionarySize: 4 * 1024 * 1024, solid: true }),
+        expect.objectContaining({ path: 'bravo.txt', codec: 'LZMA2', dictionarySize: 4 * 1024 * 1024, solid: true })
+      ]))
+      await expect(collect(archive.openEntry(0))).resolves.toEqual(alpha)
+      await expect(collect(archive.openEntry(1))).resolves.toEqual(bravo)
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
+  it.skipIf(!['darwin', 'win32'].includes(process.platform))(
+    'writes a solid archive extractable by the platform libarchive',
+    async () => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-solid7z-'))
+      temporaryDirectories.push(directory)
+      const archivePath = path.join(directory, 'solid.7z')
+      const extractionPath = path.join(directory, 'out')
+      const alpha = new TextEncoder().encode('alpha '.repeat(5_000))
+      const bravo = new TextEncoder().encode('bravo '.repeat(5_000))
+      const sink = new MemorySink()
+      await create7z([
+        { path: 'alpha.txt', size: BigInt(alpha.length), open: () => stream(alpha) },
+        { path: 'bravo.txt', size: BigInt(bravo.length), open: () => stream(bravo) }
+      ], sink, { method: 'lzma2', solid: true })
+      await fs.writeFile(archivePath, sink.data())
+      await fs.mkdir(extractionPath)
+
+      const executable = process.platform === 'darwin' ? '/usr/bin/bsdtar' : 'tar'
+      await execFileAsync(executable, ['-xf', archivePath, '-C', extractionPath])
+      await expect(fs.readFile(path.join(extractionPath, 'alpha.txt'))).resolves.toEqual(Buffer.from(alpha))
+      await expect(fs.readFile(path.join(extractionPath, 'bravo.txt'))).resolves.toEqual(Buffer.from(bravo))
+    },
+    60_000
+  )
+
   it('rejects unsafe paths, header corruption and data corruption', async () => {
     const unsafe = new MemorySink()
     await expect(create7z([{ path: '../escape.txt', size: 0n }], unsafe))

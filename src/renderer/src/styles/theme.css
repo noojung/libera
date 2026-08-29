@@ -296,11 +296,13 @@ body {
 }
 
 .titlebar__info-button,
-.titlebar__theme-button {
-  display: grid;
-  width: 28px;
+.titlebar__theme-button,
+.titlebar__expert-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 28px;
-  place-items: center;
+  padding: 0 6px;
   border: 1.5px solid var(--border-doodle);
   border-radius: 9px;
   background: var(--titlebar-control-bg);
@@ -310,8 +312,40 @@ body {
   transition: all 0.15s ease;
 }
 
+.titlebar__info-button,
+.titlebar__theme-button {
+  width: 28px;
+  padding: 0;
+}
+
+.titlebar__expert-button {
+  position: relative;
+  width: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+}
+
+.titlebar__expert-button.is-active {
+  border-color: var(--accent-warm);
+  color: var(--accent-warm);
+  background: var(--bg-secondary);
+}
+
+.titlebar__expert-indicator {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--titlebar-control-bg);
+  border-radius: 50%;
+  background: var(--accent-warm);
+  box-shadow: 0 0 0 1px var(--accent-warm);
+}
+
 .titlebar__info-button:hover,
-.titlebar__theme-button:hover {
+.titlebar__theme-button:hover,
+.titlebar__expert-button:hover {
   color: var(--accent-peach);
   background: var(--bg-card-hover);
   transform: translateY(-1px);
@@ -319,7 +353,8 @@ body {
 }
 
 .titlebar__info-button:focus-visible,
-.titlebar__theme-button:focus-visible {
+.titlebar__theme-button:focus-visible,
+.titlebar__expert-button:focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 1px;
 }
@@ -385,15 +420,19 @@ body {
   color: #FFFFFF;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .titlebar__brand-name {
     display: none;
   }
 
   .titlebar__tab {
-    gap: 4px;
-    padding-inline: 7px;
-    font-size: 13px;
+    width: 32px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  .titlebar__tab > span:not(.titlebar__queue-count) {
+    display: none;
   }
 
   .titlebar__tabs {
@@ -584,4 +623,74 @@ body {
 
 .glow-active {
   animation: cute-bounce-pulse 2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+}
+
+.input-select {
+  background: var(--bg-input);
+  border: 2px solid var(--border-doodle);
+  color: var(--text-main);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-shadow: 2px 2px 0px var(--border-shadow);
+  cursor: pointer;
+}
+
+.input-select:focus {
+  border-color: var(--accent-peach);
+  box-shadow: 3px 3px 0px var(--border-shadow);
+}
+
+.expert-card {
+  background: var(--bg-card);
+  border: 2px dashed var(--accent-peach);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 12px;
+  animation: expert-card-appear 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes expert-card-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.expert-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.expert-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-cute);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent-warm);
+}
+
+.code-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-pill);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  white-space: nowrap;
 }

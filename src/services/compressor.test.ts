@@ -132,6 +132,37 @@ describe('compressArchive', () => {
     })
   })
 
+  it('creates readable AES-128 and Store ZIP archives with accurate metadata', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.txt')
+    const encryptedPath = path.join(directory, 'aes128.zip')
+    const storedPath = path.join(directory, 'stored.zip')
+    const contents = 'expert ZIP options'
+    await fs.writeFile(inputPath, contents)
+
+    await compressArchive({
+      inputPaths: [inputPath],
+      outputPath: encryptedPath,
+      format: 'zip',
+      password: 'hunter2',
+      encryptionMethod: 'aes128'
+    })
+    const encrypted = await inspectArchive(encryptedPath)
+    expect(encrypted.entries[0]).toMatchObject({ encryptionMethod: 'AES-128', encrypted: true })
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: encryptedPath, targetDir: outputDir, password: 'hunter2' })
+    await expect(fs.readFile(path.join(outputDir, 'payload.txt'), 'utf8')).resolves.toBe(contents)
+
+    await compressArchive({
+      inputPaths: [inputPath],
+      outputPath: storedPath,
+      format: 'zip',
+      zipMethod: 'store'
+    })
+    const stored = await inspectArchive(storedPath)
+    expect(stored.entries[0]).toMatchObject({ codec: 'Store', compressedSize: Buffer.byteLength(contents) })
+  })
+
   it('rejects passwords for formats without encryption and directory input for GZ', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
@@ -263,6 +294,32 @@ describe('7z compression', () => {
 
     expect(updates.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
     expect(updates.every(update => (update.percent ?? 0) <= 100)).toBe(true)
+  }, 60_000)
+
+  it('passes expert dictionary and solid-block options to the 7Z writer', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'alpha.txt'), 'alpha '.repeat(2_000))
+    await fs.writeFile(path.join(sourceDir, 'bravo.txt'), 'bravo '.repeat(2_000))
+    const outputPath = path.join(directory, 'solid.7z')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: '7z',
+      sevenZipMethod: 'lzma2',
+      dictionarySize: 4 * 1024 * 1024,
+      matchFinderWordSize: 64,
+      searchCycles: 48,
+      solidArchive: true
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(inspected.headerInfo).toMatchObject({ solid: true, formatVersion: '0.4' })
+    expect(inspected.entries.filter(entry => !entry.isDirectory)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ codec: 'LZMA2 [4 MB]' })
+    ]))
   }, 60_000)
 
   it.each([false, true])('creates an encrypted 7z with hidden names=%s', async encryptFileNames => {

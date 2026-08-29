@@ -7,7 +7,8 @@ import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
   removeStaleVolumes,
-  writeSplitZip
+  writeSplitZip,
+  writeZipFile
 } from './splitZipWriter'
 import { writeSevenZipArchive } from './sevenZipWriter'
 
@@ -25,6 +26,11 @@ async function totalOutputSize(outputPaths: string[]): Promise<number> {
 archiver.registerFormat('zip-encrypted', zipEncrypted)
 
 export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
+export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
+export type ZipMethod = 'deflate' | 'store'
+export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
+export type SevenZipMethod = 'lzma2' | 'copy'
+export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface CompressionOptions {
   inputPaths: string[]
@@ -34,6 +40,27 @@ export interface CompressionOptions {
   password?: string
   encryptFileNames?: boolean // 7Z only, hides the file names as well
   splitSize?: number // maximum bytes per volume, ZIP and 7Z only
+  // Expert options:
+  encryptionMethod?: ZipEncryptionMethod
+  zipMethod?: ZipMethod
+  sevenZipMethod?: SevenZipMethod
+  dictionarySize?: number
+  matchFinderWordSize?: MatchFinderWordSize
+  searchCycles?: number
+  solidArchive?: boolean
+  deflateStrategy?: DeflateStrategy
+  memLevel?: number
+}
+
+export function mapDeflateStrategy(strategy?: DeflateStrategy): number | undefined {
+  switch (strategy) {
+    case 'filtered': return zlib.constants.Z_FILTERED
+    case 'huffman_only': return zlib.constants.Z_HUFFMAN_ONLY
+    case 'rle': return zlib.constants.Z_RLE
+    case 'fixed': return zlib.constants.Z_FIXED
+    case 'default': return zlib.constants.Z_DEFAULT_STRATEGY
+    default: return undefined
+  }
 }
 
 /** ZIP and 7Z are the formats whose containers define an encryption scheme. */
@@ -174,6 +201,57 @@ export async function compressArchive(
     throw new Error('Encrypting file names is currently available for 7Z archives only.')
   }
 
+  if (options.encryptionMethod !== undefined && format !== 'zip') {
+    throw new Error('ZIP encryption method can only be used with ZIP archives.')
+  }
+  if (options.encryptionMethod !== undefined && !['zip20', 'aes128', 'aes256'].includes(options.encryptionMethod)) {
+    throw new RangeError('ZIP encryption method is unsupported.')
+  }
+  if (options.zipMethod !== undefined && format !== 'zip') {
+    throw new Error('ZIP compression method can only be used with ZIP archives.')
+  }
+  if (options.zipMethod !== undefined && !['deflate', 'store'].includes(options.zipMethod)) {
+    throw new RangeError('ZIP compression method is unsupported.')
+  }
+  if (
+    format !== '7z' &&
+    (options.sevenZipMethod !== undefined || options.dictionarySize !== undefined ||
+      options.matchFinderWordSize !== undefined || options.searchCycles !== undefined ||
+      options.solidArchive !== undefined)
+  ) {
+    throw new Error('7Z codec options can only be used with 7Z archives.')
+  }
+  if (
+    !['zip', 'gz', 'tgz'].includes(format) &&
+    (options.deflateStrategy !== undefined || options.memLevel !== undefined)
+  ) {
+    throw new Error('Deflate tuning options can only be used with ZIP, GZ, or TAR.GZ archives.')
+  }
+  if (options.sevenZipMethod !== undefined && !['lzma2', 'copy'].includes(options.sevenZipMethod)) {
+    throw new RangeError('7Z compression method is unsupported.')
+  }
+  if (options.deflateStrategy !== undefined && !['default', 'filtered', 'huffman_only', 'rle', 'fixed'].includes(options.deflateStrategy)) {
+    throw new RangeError('Deflate strategy is unsupported.')
+  }
+  if (options.memLevel !== undefined && (!Number.isInteger(options.memLevel) || options.memLevel < 1 || options.memLevel > 9)) {
+    throw new RangeError('Deflate memory level must be between 1 and 9.')
+  }
+  if (options.dictionarySize !== undefined && (
+    !Number.isInteger(options.dictionarySize) ||
+    options.dictionarySize < 64 * 1024 ||
+    options.dictionarySize > 128 * 1024 * 1024
+  )) {
+    throw new RangeError('7Z dictionary size must be between 64 KiB and 128 MiB.')
+  }
+  if (options.matchFinderWordSize !== undefined && ![32, 64, 128, 273].includes(options.matchFinderWordSize)) {
+    throw new RangeError('7Z match finder word size is unsupported.')
+  }
+  if (options.searchCycles !== undefined && (
+    !Number.isInteger(options.searchCycles) || options.searchCycles < 1 || options.searchCycles > 1024
+  )) {
+    throw new RangeError('7Z search cycles must be between 1 and 1024.')
+  }
+
   if (splitSize !== undefined) {
     if (!supportsSplit(format)) {
       throw new CompressionError(
@@ -222,7 +300,12 @@ export async function compressArchive(
         level,
         splitSize,
         password: options.password,
-        encryptFileNames: options.encryptFileNames
+        encryptFileNames: options.encryptFileNames,
+        dictionarySize: options.dictionarySize,
+        method: options.sevenZipMethod,
+        matchFinderWordSize: options.matchFinderWordSize,
+        searchCycles: options.searchCycles,
+        solid: options.solidArchive
       },
       onProgress,
       { signal }
@@ -253,7 +336,12 @@ export async function compressArchive(
         {
           source: { inputPaths, totalBytes },
           volumes: { outputPath, splitSize },
-          squeeze: { level, password: options.password }
+          squeeze: {
+            level,
+            password: options.password,
+            encryptionMethod: options.encryptionMethod,
+            method: options.zipMethod
+          }
         },
         onProgress,
         { signal }
@@ -281,6 +369,27 @@ export async function compressArchive(
     }
   }
 
+  // archiver-zip-encrypted supports WinZip AES-256 but not AES-128. zip.js is
+  // already used for split ZIPs and implements the standard AES strengths.
+  if (format === 'zip' && options.password && options.encryptionMethod === 'aes128') {
+    const written = await writeZipFile({
+      source: { inputPaths, totalBytes },
+      outputPath,
+      squeeze: {
+        level,
+        password: options.password,
+        encryptionMethod: 'aes128',
+        method: options.zipMethod
+      }
+    }, onProgress, { signal })
+    return {
+      outputPath,
+      originalSize: totalBytes,
+      compressedSize: written.compressedSize,
+      durationMs: Date.now() - startTime
+    }
+  }
+
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
     const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
     for (const itemPath of inputPaths) {
@@ -303,23 +412,35 @@ export async function compressArchive(
         : format === 'zip' && options.password
           ? 'zip-encrypted'
           : format
+      const strategy = mapDeflateStrategy(options.deflateStrategy)
       const archiveOptions: archiver.ArchiverOptions = {
-        zlib: { level }
+        ...(format === 'zip' && options.zipMethod === 'store' ? { store: true } : {}),
+        zlib: {
+          level,
+          ...(strategy !== undefined ? { strategy } : {}),
+          ...(options.memLevel !== undefined ? { memLevel: options.memLevel } : {})
+        }
       }
 
       if (options.password) {
-        // ZipCrypto is intentionally used instead of AES so the archive can
-        // also be extracted by the app's current ZIP reader.
-        // The UI explains that this is for compatibility, not strong secrecy.
+        // ZipCrypto (zip20) remains the compatibility default. AES-128 uses
+        // the zip.js path above because this plugin only supports AES-256.
+        const method = options.encryptionMethod === 'aes256'
+          ? 'aes256'
+          : 'zip20'
         Object.assign(archiveOptions, {
           password: options.password,
-          encryptionMethod: 'zip20'
+          encryptionMethod: method
         })
       }
 
       if (format === 'tgz') {
         archiveOptions.gzip = true
-        archiveOptions.gzipOptions = { level }
+        archiveOptions.gzipOptions = {
+          level,
+          ...(strategy !== undefined ? { strategy } : {}),
+          ...(options.memLevel !== undefined ? { memLevel: options.memLevel } : {})
+        }
       }
 
       const archive = archiver(archiverFormat as archiver.Format, archiveOptions)
@@ -443,7 +564,12 @@ export async function compressArchive(
     throwIfAborted(signal)
 
     return new Promise((resolve, reject) => {
-      const gzip = zlib.createGzip({ level })
+      const strategy = mapDeflateStrategy(options.deflateStrategy)
+      const gzip = zlib.createGzip({
+        level,
+        ...(strategy !== undefined ? { strategy } : {}),
+        ...(options.memLevel !== undefined ? { memLevel: options.memLevel } : {})
+      })
       const readStream = fs.createReadStream(sourceFile)
       const writeStream = fs.createWriteStream(outputPath)
 

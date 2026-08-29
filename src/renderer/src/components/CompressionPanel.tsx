@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Sliders, Archive } from 'lucide-react'
+import { Sliders, Archive, Zap } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -18,18 +18,36 @@ import {
   type ArchiveFormat
 } from '@/utils/archivePaths'
 import type { AppLanguage } from '@/i18n/language'
+import { useExpertMode } from '@/utils/expertMode'
 import './CompressionPanel.css'
+
+export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
+export type ZipMethod = 'deflate' | 'store'
+export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
+export type SevenZipMethod = 'lzma2' | 'copy'
+export type MatchFinderWordSize = 32 | 64 | 128 | 273
+
+export interface StartCompressOptions {
+  format: ArchiveFormat
+  level: number
+  outputPath: string
+  password?: string
+  encryptFileNames?: boolean
+  splitSize?: number
+  encryptionMethod?: ZipEncryptionMethod
+  zipMethod?: ZipMethod
+  sevenZipMethod?: SevenZipMethod
+  dictionarySize?: number
+  matchFinderWordSize?: MatchFinderWordSize
+  searchCycles?: number
+  solidArchive?: boolean
+  deflateStrategy?: DeflateStrategy
+  memLevel?: number
+}
 
 interface CompressionPanelProps {
   items: SelectedItem[]
-  onStartCompress: (options: {
-    format: ArchiveFormat
-    level: number
-    outputPath: string
-    password?: string
-    encryptFileNames?: boolean
-    splitSize?: number
-  }) => void
+  onStartCompress: (options: StartCompressOptions) => void
 }
 
 const MIN_SPLIT_SIZE = 1024 * 1024
@@ -45,9 +63,23 @@ const SPLIT_CHOICES = [
 
 type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 
+const DICTIONARY_SIZES = [
+  { label: '64 KB', value: 64 * 1024 },
+  { label: '1 MB', value: 1024 * 1024 },
+  { label: '2 MB', value: 2 * 1024 * 1024 },
+  { label: '4 MB', value: 4 * 1024 * 1024 },
+  { label: '8 MB', value: 8 * 1024 * 1024 },
+  { label: '16 MB', value: 16 * 1024 * 1024 },
+  { label: '32 MB', value: 32 * 1024 * 1024 },
+  { label: '64 MB', value: 64 * 1024 * 1024 },
+  { label: '128 MB', value: 128 * 1024 * 1024 }
+]
+
 export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onStartCompress }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
+  const [isExpertMode] = useExpertMode()
+
   const [format, setFormat] = useState<ArchiveFormat>('zip')
   const [level, setLevel] = useState<number>(6)
   const [customName] = useState<string>('archive')
@@ -59,7 +91,18 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [splitEnabled, setSplitEnabled] = useState<boolean>(false)
   const [splitPreset, setSplitPreset] = useState<SplitPreset>('100mb')
   const [splitCustomValue, setSplitCustomValue] = useState<string>('100')
-  const [splitCustomUnit, setSplitCustomUnit] = useState<'MB' | 'GB'>('MB')
+  const [splitCustomUnit, setSplitCustomUnit] = useState<'B' | 'KB' | 'MB' | 'GB'>('MB')
+
+  // Expert options state
+  const [zipEncryptionMethod, setZipEncryptionMethod] = useState<ZipEncryptionMethod>('zip20')
+  const [zipMethod, setZipMethod] = useState<ZipMethod>('deflate')
+  const [sevenZipMethod, setSevenZipMethod] = useState<SevenZipMethod>('lzma2')
+  const [dictionarySize, setDictionarySize] = useState<number>(16 * 1024 * 1024)
+  const [matchFinderWordSize, setMatchFinderWordSize] = useState<MatchFinderWordSize>(32)
+  const [searchCycles, setSearchCycles] = useState<number>(32)
+  const [solidBlock, setSolidBlock] = useState<boolean>(false)
+  const [deflateStrategy, setDeflateStrategy] = useState<DeflateStrategy>('default')
+  const [memLevel, setMemLevel] = useState<number>(8)
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -95,7 +138,14 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     if (preset?.bytes) return preset.bytes
     const value = Number(splitCustomValue)
     if (!Number.isFinite(value) || value <= 0) return NaN
-    return Math.floor(value * (splitCustomUnit === 'GB' ? 1024 * 1024 * 1024 : 1024 * 1024))
+    const multiplier = splitCustomUnit === 'GB'
+      ? 1024 * 1024 * 1024
+      : splitCustomUnit === 'MB'
+        ? 1024 * 1024
+        : splitCustomUnit === 'KB'
+          ? 1024
+          : 1
+    return Math.floor(value * multiplier)
   })()
   const splitInvalid = supportsSplit(format) && splitEnabled && !(splitSize >= MIN_SPLIT_SIZE)
 
@@ -110,13 +160,27 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     const defaultName = `${customName}${archiveExtension(format)}`
     const fallbackPath = defaultDir ? `${defaultDir}${sep}${defaultName}` : defaultName
     const finalOutput = outputPath || fallbackPath
+
     onStartCompress({
       format,
       level,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
       encryptFileNames: supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
-      splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined
+      splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined,
+      ...(isExpertMode
+        ? {
+            encryptionMethod: format === 'zip' ? zipEncryptionMethod : undefined,
+            zipMethod: format === 'zip' ? zipMethod : undefined,
+            sevenZipMethod: format === '7z' ? sevenZipMethod : undefined,
+            dictionarySize: format === '7z' && sevenZipMethod === 'lzma2' ? dictionarySize : undefined,
+            matchFinderWordSize: format === '7z' && sevenZipMethod === 'lzma2' ? matchFinderWordSize : undefined,
+            searchCycles: format === '7z' && sevenZipMethod === 'lzma2' ? searchCycles : undefined,
+            solidArchive: format === '7z' && sevenZipMethod === 'lzma2' ? solidBlock : undefined,
+            deflateStrategy: format === 'zip' || format === 'tgz' || format === 'gz' ? deflateStrategy : undefined,
+            memLevel: format === 'zip' || format === 'tgz' || format === 'gz' ? memLevel : undefined
+          }
+        : {})
     })
   }
 
@@ -178,6 +242,143 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         </div>
       )}
 
+      {/* Expert Mode Compression Configuration Card */}
+      {isExpertMode && format !== 'tar' && (
+        <div className="expert-card">
+          <div className="expert-card__header">
+            <div className="expert-card__title">
+              <Zap size={16} />
+              {t('compression.expertTitle')}
+            </div>
+          </div>
+
+          {/* ZIP Encryption Method */}
+          {format === 'zip' && supportsPassword(format) && (
+            <div className="compression-panel__expert-row">
+              <label className="compression-panel__expert-label">
+                {t('compression.encryptionMethod')}
+              </label>
+              <select
+                className="input-select"
+                value={zipEncryptionMethod}
+                onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
+              >
+                <option value="zip20">{t('compression.zipCrypto')}</option>
+                <option value="aes256">{t('compression.aes256')}</option>
+                <option value="aes128">{t('compression.aes128')}</option>
+              </select>
+            </div>
+          )}
+
+          {format === 'zip' && (
+            <div className="compression-panel__expert-row">
+              <label className="compression-panel__expert-label">{t('compression.zipMethod')}</label>
+              <select
+                className="input-select"
+                value={zipMethod}
+                onChange={(event) => setZipMethod(event.target.value as ZipMethod)}
+              >
+                <option value="deflate">{t('compression.methodDeflate')}</option>
+                <option value="store">{t('compression.methodCopy')}</option>
+              </select>
+            </div>
+          )}
+
+          {/* 7Z Codec & Dictionary Tuning */}
+          {format === '7z' && (
+            <>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label">
+                  {t('compression.codecMethod')}
+                </label>
+                <select
+                  className="input-select"
+                  value={sevenZipMethod}
+                  onChange={(e) => setSevenZipMethod(e.target.value as SevenZipMethod)}
+                >
+                  <option value="lzma2">{t('compression.methodLzma2')}</option>
+                  <option value="copy">{t('compression.methodCopy')}</option>
+                </select>
+              </div>
+
+              {sevenZipMethod === 'lzma2' && (
+                <>
+                  <div className="compression-panel__expert-row">
+                    <label className="compression-panel__expert-label">{t('compression.dictionarySize')}</label>
+                    <select className="input-select" value={dictionarySize} onChange={(e) => setDictionarySize(Number(e.target.value))}>
+                      {DICTIONARY_SIZES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="compression-panel__expert-row">
+                    <label className="compression-panel__expert-label">{t('compression.matchFinderWordSize')}</label>
+                    <select className="input-select" value={matchFinderWordSize} onChange={(e) => setMatchFinderWordSize(Number(e.target.value) as MatchFinderWordSize)}>
+                      {[32, 64, 128, 273].map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </div>
+                  <div className="compression-panel__expert-row">
+                    <label className="compression-panel__expert-label">{t('compression.searchCycles')} ({searchCycles})</label>
+                    <input className="compression-panel__range" type="range" min="1" max="1024" value={searchCycles} onChange={(e) => setSearchCycles(Number(e.target.value))} />
+                  </div>
+                </>
+              )}
+
+              {sevenZipMethod === 'lzma2' && (
+                <label className="compression-panel__split-option compression-panel__split-option--nested">
+                  <input
+                    type="checkbox"
+                    className="compression-panel__checkbox"
+                    checked={solidBlock}
+                    onChange={(e) => setSolidBlock(e.target.checked)}
+                  />
+                  <span>
+                    <span className="compression-panel__option-title">{t('compression.solidArchive')}</span>
+                    <span className="compression-panel__option-description">
+                      {t('compression.solidArchiveHint')}
+                    </span>
+                  </span>
+                </label>
+              )}
+            </>
+          )}
+
+          {/* Deflate Strategy for ZIP/TGZ/GZ */}
+          {(format === 'zip' || format === 'tgz' || format === 'gz') && (
+            <>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label">
+                  {t('compression.deflateStrategy')}
+                </label>
+                <select
+                  className="input-select"
+                  value={deflateStrategy}
+                  onChange={(e) => setDeflateStrategy(e.target.value as DeflateStrategy)}
+                >
+                  <option value="default">{t('compression.strategyDefault')}</option>
+                  <option value="filtered">{t('compression.strategyFiltered')}</option>
+                  <option value="huffman_only">{t('compression.strategyHuffman')}</option>
+                  <option value="rle">{t('compression.strategyRle')}</option>
+                  <option value="fixed">{t('compression.strategyFixed')}</option>
+                </select>
+              </div>
+
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label">
+                  {t('compression.memLevel')} ({memLevel})
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="9"
+                  value={memLevel}
+                  onChange={(e) => setMemLevel(Number(e.target.value))}
+                  className="compression-panel__range"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {supportsPassword(format) && (
         <div className="compression-panel__field">
           <label className="compression-panel__label compression-panel__label--stacked">
@@ -192,7 +393,15 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           )}
           {password && password === passwordConfirmation && (
             <p className="compression-panel__message">
-              {t(format === '7z' ? 'compression.passwordNotice7z' : 'compression.passwordNoticeZip')}
+              {t(
+                format === '7z'
+                  ? 'compression.passwordNotice7z'
+                  : zipEncryptionMethod === 'aes256'
+                    ? 'compression.passwordNoticeZipAes'
+                    : zipEncryptionMethod === 'aes128'
+                      ? 'compression.passwordNoticeZipAes128'
+                    : 'compression.passwordNoticeZip'
+              )}
             </p>
           )}
           {supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
@@ -258,13 +467,13 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                     value={splitCustomValue}
                     onChange={(e) => setSplitCustomValue(e.target.value)}
                   />
-                  {(['MB', 'GB'] as const).map((unit) => (
+                  {(['B', 'KB', 'MB', 'GB'] as const).map((unit) => (
                     <button
                       key={unit}
                       onClick={() => setSplitCustomUnit(unit)}
                       className={`compression-panel__split-button compression-panel__split-unit${splitCustomUnit === unit ? ' is-active' : ''}`}
                     >
-                      {t(unit === 'MB' ? 'compression.splitUnitMb' : 'compression.splitUnitGb')}
+                      {unit}
                     </button>
                   ))}
                 </div>

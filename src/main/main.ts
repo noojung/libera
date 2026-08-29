@@ -18,7 +18,11 @@ import {
 } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/splitZipVolumes'
-import { ArchivePreviewError, previewArchiveEntry } from '../services/archivePreview'
+import {
+  ArchivePreviewError,
+  previewArchiveEntry,
+  type ArchivePreviewRequestOptions
+} from '../services/archivePreview'
 import { SevenZipError } from '../services/sevenZipError'
 import {
   resolveExtractionInput,
@@ -420,12 +424,16 @@ ipcMain.handle('archive:inspect', async (_, archivePath: string, password?: stri
   }
 })
 
-ipcMain.handle('archive:preview', async (_, archivePath: string, entryId: string, requestId: string, password?: string) => {
+ipcMain.handle('archive:preview', async (
+  _, archivePath: string, entryId: string, requestId: string,
+  requestOptions: ArchivePreviewRequestOptions | string = {}
+) => {
   activePreviewControllers.get(requestId)?.abort()
   const controller = new AbortController()
   activePreviewControllers.set(requestId, controller)
   try {
-    const result = await previewArchiveEntry(archivePath, entryId, { signal: controller.signal, password })
+    const options = typeof requestOptions === 'string' ? { password: requestOptions } : requestOptions
+    const result = await previewArchiveEntry(archivePath, entryId, { signal: controller.signal, ...options })
     return { success: true, result }
   } catch (err: any) {
     return {

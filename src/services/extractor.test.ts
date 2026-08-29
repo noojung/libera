@@ -141,6 +141,76 @@ describe('extractArchive security checks', () => {
     await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('original content')
   })
 
+  it('supports overwrite and skip policies while cleaning transactional backups', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { 'existing.txt': 'archive content', 'new.txt': 'new content' })
+    await fs.mkdir(targetDir)
+    await fs.writeFile(path.join(targetDir, 'existing.txt'), 'original content')
+
+    await extractArchive({ archivePath, targetDir, overwritePolicy: 'skip' })
+    await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('original content')
+    await expect(fs.readFile(path.join(targetDir, 'new.txt'), 'utf8')).resolves.toBe('new content')
+
+    await fs.rm(path.join(targetDir, 'new.txt'))
+    await extractArchive({ archivePath, targetDir, overwritePolicy: 'overwrite' })
+    await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('archive content')
+    expect((await fs.readdir(targetDir)).some(name => name.startsWith('.libera-backup-'))).toBe(false)
+  })
+
+  it('restores overwritten files when extraction fails after creating backups', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'existing.txt')
+    const archivePath = path.join(directory, 'encrypted.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(sourcePath, 'archive content')
+    await compressArchive({
+      inputPaths: [sourcePath],
+      outputPath: archivePath,
+      format: 'zip',
+      password: 'correct-password'
+    })
+    await fs.mkdir(targetDir)
+    await fs.writeFile(path.join(targetDir, 'existing.txt'), 'original content')
+
+    await expect(extractArchive({
+      archivePath,
+      targetDir,
+      overwritePolicy: 'overwrite',
+      password: 'wrong-password'
+    })).rejects.toBeTruthy()
+    await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('original content')
+    expect((await fs.readdir(targetDir)).some(name => name.startsWith('.libera-backup-'))).toBe(false)
+  })
+
+  it('filters selected archive paths and removes macOS metadata on request', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, {
+      'notes.txt': 'keep',
+      'secret.txt': 'exclude',
+      'image.bin': 'exclude',
+      '__MACOSX/notes.txt': 'metadata',
+      '.DS_Store': 'metadata'
+    })
+
+    const result = await extractArchive({
+      archivePath,
+      targetDir,
+      filterPattern: '*.txt, !secret*',
+      excludeMacMetadata: true
+    })
+
+    expect(result.extractedCount).toBe(1)
+    await expect(fs.readFile(path.join(targetDir, 'notes.txt'), 'utf8')).resolves.toBe('keep')
+    await expect(fs.access(path.join(targetDir, 'secret.txt'))).rejects.toThrow()
+    await expect(fs.access(path.join(targetDir, 'image.bin'))).rejects.toThrow()
+    await expect(fs.access(path.join(targetDir, '__MACOSX'))).rejects.toThrow()
+    await expect(fs.access(path.join(targetDir, '.DS_Store'))).rejects.toThrow()
+  })
+
   it('rejects ZIP Slip paths before writing outside the target directory', async () => {
     const directory = await createTemporaryDirectory()
     const archivePath = path.join(directory, 'archive.zip')

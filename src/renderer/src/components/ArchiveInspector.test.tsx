@@ -13,6 +13,7 @@ Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revok
 beforeEach(() => {
   createObjectUrl.mockClear()
   revokeObjectUrl.mockClear()
+  localStorage.removeItem('libera_expert_mode')
 })
 
 const inspection = (entries: any[], overrides: Record<string, unknown> = {}) => ({
@@ -21,6 +22,7 @@ const inspection = (entries: any[], overrides: Record<string, unknown> = {}) => 
     format: 'ZIP',
     totalFiles: entries.filter(entry => !entry.isDirectory).length,
     totalUncompressedSize: null,
+    totalCompressedSize: 0,
     overallRatio: null,
     ...overrides,
     entries
@@ -69,6 +71,23 @@ describe('ArchiveInspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load 1 more' }))
     expect(screen.getByText('file-500.txt')).toBeInTheDocument()
   }, 30_000)
+
+  it('shows the total compressed size and a decimal savings percentage', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['precise.7z']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([], {
+        format: '7Z',
+        totalUncompressedSize: 1000,
+        totalCompressedSize: 986,
+        overallRatio: 1.4
+      }))
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    expect(await screen.findByText('986 B')).toBeInTheDocument()
+    expect(screen.getByText('1.4% saved')).toBeInTheDocument()
+  })
 
   it('searches descendants of the current folder', async () => {
     installElectronApi({
@@ -433,5 +452,67 @@ describe('ArchiveInspector', () => {
     await waitFor(() => expect(previewArchiveEntry).toHaveBeenCalledTimes(3))
     expect(previewArchiveEntry).toHaveBeenLastCalledWith('secret.zip', 'entry-1', expect.any(String), 'hunter2')
     expect(screen.queryByText('Password-protected archive')).not.toBeInTheDocument()
+  })
+
+  it('shows technical metadata and Hex/text views in expert mode', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['expert.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        {
+          id: 'entry-0',
+          path: 'payload.bin',
+          name: 'payload.bin',
+          isDirectory: false,
+          size: 2,
+          compressedSize: 2,
+          ratio: 0,
+          codec: 'Store',
+          encryptionMethod: 'AES-256',
+          crc32: '0x4D170E0E',
+          mode: 0o100755,
+          modeString: '-rwxr-xr-x',
+          offset: 64
+        }
+      ], {
+        headerInfo: {
+          signature: '50 4B 03 04 (ZIP)',
+          formatVersion: '2.0',
+          codecSummary: 'Store',
+          encryptionAlgorithm: 'AES-256',
+          solid: false,
+          centralDirectoryOffset: 128,
+          centralDirectorySize: 48
+        }
+      })),
+      previewArchiveEntry: vi.fn().mockResolvedValue({
+        success: true,
+        result: {
+          kind: 'binary',
+          rawBytes: Uint8Array.from([0x48, 0x69]),
+          truncated: false,
+          previewedBytes: 2,
+          totalBytes: 2
+        }
+      })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    expect(await screen.findByText('50 4B 03 04 (ZIP)')).toBeInTheDocument()
+    expect(screen.getByText('0x4D170E0E')).toBeInTheDocument()
+    expect(screen.getByText('0755 / -rwxr-xr-x')).toBeInTheDocument()
+    expect(screen.getByText('0x40')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /payload\.bin/ }))
+    expect(api.previewArchiveEntry).toHaveBeenCalledWith(
+      'expert.zip',
+      'entry-0',
+      expect.stringMatching(/^archive-preview-/),
+      { password: undefined, includeRawBytes: true }
+    )
+    expect(await screen.findByText(/00000000\s+48 69/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Text View' }))
+    expect(screen.getByText('Hi')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Encoding' })).toBeInTheDocument()
   })
 })

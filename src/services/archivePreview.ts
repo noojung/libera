@@ -41,6 +41,7 @@ export interface ArchiveTextPreviewResult extends ArchivePreviewBaseResult {
   text: string
   encoding: ArchivePreviewEncoding
   truncated: boolean
+  rawBytes?: Uint8Array
 }
 
 export interface ArchiveImagePreviewResult extends ArchivePreviewBaseResult {
@@ -49,14 +50,27 @@ export interface ArchiveImagePreviewResult extends ArchivePreviewBaseResult {
   mediaType: ArchivePreviewMediaType
   width: number
   height: number
+  rawBytes?: Uint8Array
 }
 
-export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePreviewResult
+export interface ArchiveBinaryPreviewResult extends ArchivePreviewBaseResult {
+  kind: 'binary'
+  rawBytes: Uint8Array
+  truncated: boolean
+}
+
+export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePreviewResult | ArchiveBinaryPreviewResult
+
+export interface ArchivePreviewRequestOptions {
+  password?: string
+  includeRawBytes?: boolean
+}
 
 export interface ArchivePreviewContext {
   signal?: AbortSignal
   /** Needed to read encrypted entries, and for a header-encrypted 7z to list at all. */
   password?: string
+  includeRawBytes?: boolean
 }
 
 export class ArchivePreviewError extends Error {
@@ -611,6 +625,15 @@ export async function previewArchiveEntry(
 
   const truncated = preview.truncated || (preview.totalBytes !== null && preview.totalBytes > preview.data.length)
   if (preview.previewKind.kind === 'unsupported-image') {
+    if (context.includeRawBytes) {
+      return {
+        kind: 'binary',
+        rawBytes: Uint8Array.from(preview.data.subarray(0, MAX_ARCHIVE_PREVIEW_BYTES)),
+        truncated,
+        previewedBytes: Math.min(preview.data.length, MAX_ARCHIVE_PREVIEW_BYTES),
+        totalBytes: preview.totalBytes
+      }
+    }
     throw previewError('UNSUPPORTED_IMAGE', 'This image format is not supported for preview')
   }
   if (preview.previewKind.kind === 'image') {
@@ -628,12 +651,25 @@ export async function previewArchiveEntry(
     }
   }
 
-  const decoded = decodeText(preview.data, truncated)
+  let decoded: ReturnType<typeof decodeText>
+  try {
+    decoded = decodeText(preview.data, truncated)
+  } catch (error) {
+    if (!context.includeRawBytes || !(error instanceof ArchivePreviewError) || error.code !== 'NOT_TEXT') throw error
+    return {
+      kind: 'binary',
+      rawBytes: Uint8Array.from(preview.data),
+      truncated,
+      previewedBytes: preview.data.length,
+      totalBytes: preview.totalBytes
+    }
+  }
   return {
     kind: 'text',
     ...decoded,
     truncated,
     previewedBytes: preview.data.length,
-    totalBytes: preview.totalBytes
+    totalBytes: preview.totalBytes,
+    ...(context.includeRawBytes ? { rawBytes: Uint8Array.from(preview.data) } : {})
   }
 }

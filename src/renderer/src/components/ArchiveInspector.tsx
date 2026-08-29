@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Search, ShieldAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Search, ShieldAlert, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveEntry, ArchiveInspectionResult } from '@services/archiveInspector'
 import type { ArchivePreviewResult } from '@services/archivePreview'
 import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
 import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '@/utils/archivePaths'
+import { useExpertMode } from '@/utils/expertMode'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
 import { PasswordPromptModal } from './PasswordPromptModal'
 import './ArchiveInspector.css'
@@ -38,49 +39,46 @@ function formatRelativeArchivePath(entryPath: string, currentPath: string): stri
 }
 
 function getDirectChildren(entries: ArchiveEntry[], currentPath: string, language: AppLanguage): ArchiveBrowserEntry[] {
-  const children = new Map<string, ArchiveBrowserEntry>()
-  const currentPrefix = currentPath ? `${currentPath}/` : ''
+  const prefix = currentPath ? `${currentPath}/` : ''
+  const folderNames = new Set<string>()
+  const files: ArchiveBrowserEntry[] = []
 
   for (const entry of entries) {
-    const normalizedPath = normalizeArchivePath(entry.path)
-    if (!normalizedPath || (currentPrefix && !normalizedPath.startsWith(currentPrefix))) continue
+    const normalized = normalizeArchivePath(entry.path)
+    if (!normalized || normalized === currentPath) continue
+    if (prefix && !normalized.startsWith(prefix)) continue
 
-    const remainingPath = currentPrefix ? normalizedPath.slice(currentPrefix.length) : normalizedPath
-    if (!remainingPath) continue
+    const remainder = prefix ? normalized.slice(prefix.length) : normalized
+    const segments = remainder.split('/')
 
-    const [name, ...descendants] = remainingPath.split('/')
-    const childPath = currentPrefix ? `${currentPrefix}${name}` : name
-
-    if (descendants.length > 0) {
-      if (!children.has(childPath)) {
-        children.set(childPath, {
-          id: `folder-${childPath}`,
-          name,
-          path: childPath,
-          isDirectory: true,
-          size: 0,
-          isVirtual: true
-        })
-      }
-      continue
+    if (segments.length > 1) {
+      folderNames.add(segments[0])
+    } else if (entry.isDirectory) {
+      folderNames.add(segments[0])
+    } else {
+      files.push({ ...entry, name: segments[0] })
     }
-
-    children.set(childPath, {
-      ...entry,
-      name: entry.name || name,
-      path: childPath
-    })
   }
 
-  return Array.from(children.values()).sort((left, right) => {
-    if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1
-    return left.name.localeCompare(right.name, language)
-  })
+  const folders: ArchiveBrowserEntry[] = Array.from(folderNames).map(folderName => ({
+    id: `virtual-${folderName}`,
+    name: folderName,
+    path: prefix ? `${prefix}${folderName}` : folderName,
+    isDirectory: true,
+    size: 0,
+    isVirtual: true
+  }))
+
+  folders.sort((a, b) => a.name.localeCompare(b.name, language, { sensitivity: 'base' }))
+  files.sort((a, b) => a.name.localeCompare(b.name, language, { sensitivity: 'base' }))
+  return [...folders, ...files]
 }
 
 export const ArchiveInspector: React.FC = () => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
+  const [isExpertMode] = useExpertMode()
+
   const [archivePath, setArchivePath] = useState<string>('')
   const [inspectData, setInspectData] = useState<ArchiveInspectionResult | null>(null)
   const [volumesExpanded, setVolumesExpanded] = useState(false)
@@ -93,11 +91,7 @@ export const ArchiveInspector: React.FC = () => {
   const [previewResult, setPreviewResult] = useState<ArchivePreviewResult | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewErrorKey, setPreviewErrorKey] = useState<string | null>(null)
-  // Held for the life of one archive: a header-encrypted 7z needs it to list,
-  // and every preview of an encrypted entry needs it again.
   const [archivePassword, setArchivePassword] = useState<string | undefined>(undefined)
-  // The prompt serves two callers: an archive whose listing is encrypted, and
-  // an entry inside a ZIP whose central directory read fine without a password.
   const [passwordPrompt, setPasswordPrompt] = useState<
     | { target: 'listing'; path: string; incorrect: boolean }
     | { target: 'entry'; path: string; entry: ArchiveEntry; incorrect: boolean }
@@ -138,17 +132,19 @@ export const ArchiveInspector: React.FC = () => {
         setArchivePassword(password)
         setPasswordPrompt(null)
       } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
-        // The listing itself is encrypted, so there is nothing to show until
-        // a password arrives.
         setInspectData(null)
-        setPasswordPrompt({ target: 'listing', path: filePath, incorrect: response.code === 'WRONG_ZIP_PASSWORD' })
+        setPasswordPrompt({
+          target: 'listing',
+          path: filePath,
+          incorrect: response.code === 'WRONG_ZIP_PASSWORD'
+        })
       } else {
         setInspectData(null)
         setErrorKey(response.errorCode ? `errors.${response.errorCode}` : 'inspector.readFailed')
       }
-    } catch (err: any) {
+    } catch (error) {
       setInspectData(null)
-      console.error('Archive inspection failed:', err)
+      console.error('Archive inspection failed:', error)
       setErrorKey('inspector.inspectFailed')
     } finally {
       setLoading(false)
@@ -156,17 +152,17 @@ export const ArchiveInspector: React.FC = () => {
   }
 
   const handleOpenArchive = async () => {
-    if (!(window as any).electronAPI) return
-    const files = await (window as any).electronAPI.selectFiles({
+    const api = (window as any).electronAPI
+    if (!api) return
+    const files = await api.selectFiles({
       allowDirectories: false,
       extensions: EXTRACT_DIALOG_EXTENSIONS,
       title: t('dialogs.selectExtractInputs'),
       filterName: t('dialogs.supportedArchives')
     })
     if (files.length > 0) {
-      const file = files[0]
-      setArchivePath(file)
-      runInspection(file)
+      setArchivePath(files[0])
+      void runInspection(files[0])
     }
   }
 
@@ -175,55 +171,60 @@ export const ArchiveInspector: React.FC = () => {
     event.stopPropagation()
     const files = Array.from(event.dataTransfer.files)
     if (files.length === 0) return
-
     const file = files[0]
-    let filePath = (file as any).path || file.name
+    let filePath = (file as File & { path?: string }).path || file.name
     if ((window as any).electronAPI?.getPathForFile) {
       try {
         filePath = (window as any).electronAPI.getPathForFile(file) || filePath
       } catch {
-        // Use the path supplied by the browser when Electron does not provide one.
+        // Fall back to the browser-provided path/name.
       }
     }
     if (!isSupportedArchivePath(filePath)) {
       setErrorKey('dropZone.unsupportedArchive')
       return
     }
-
     setArchivePath(filePath)
-    runInspection(filePath)
+    void runInspection(filePath)
   }
 
-  const handleDragOver = (event: React.DragEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
   }
 
-  const handlePreviewEntry = async (entry: ArchiveEntry, password = archivePassword) => {
+  const handlePreviewEntry = async (entry: ArchiveEntry, passwordOverride?: string) => {
+    if (entry.isDirectory) return
     const api = (window as any).electronAPI
     if (!api?.previewArchiveEntry) return
-
     const previousRequestId = activePreviewRequest.current
     if (previousRequestId) void api.cancelArchivePreview(previousRequestId)
     const requestId = `archive-preview-${++previewRequestSequence.current}`
     activePreviewRequest.current = requestId
+    const effectivePassword = passwordOverride ?? archivePassword
     setPreviewEntry(entry)
     setPreviewResult(null)
-    setPreviewErrorKey(null)
     setPreviewLoading(true)
-    // Stays true while the prompt is up so the panel behind it shows progress
-    // rather than a blank body.
-    let awaitingPassword = false
+    setPreviewErrorKey(null)
 
+    let awaitingPassword = false
     try {
-      const response = await api.previewArchiveEntry(archivePath, entry.id, requestId, password)
+      const response = await api.previewArchiveEntry(
+        archivePath,
+        entry.id,
+        requestId,
+        isExpertMode ? { password: effectivePassword, includeRawBytes: true } : effectivePassword
+      )
       if (activePreviewRequest.current !== requestId) return
-      if (response.success) {
+
+      if (response?.success) {
+        if (passwordOverride) setArchivePassword(passwordOverride)
+        setPasswordPrompt(null)
         setPreviewResult(response.result)
-        if (password !== undefined) setArchivePassword(password)
-      } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
-        // Only this entry is encrypted, so the listing behind the prompt stays
-        // on screen and the preview resumes as soon as the password arrives.
+        return
+      }
+
+      if (response?.code === 'PASSWORD_REQUIRED' || response?.code === 'WRONG_ZIP_PASSWORD') {
         awaitingPassword = true
         setPasswordPrompt({
           target: 'entry',
@@ -231,16 +232,15 @@ export const ArchiveInspector: React.FC = () => {
           entry,
           incorrect: response.code === 'WRONG_ZIP_PASSWORD'
         })
-      } else {
-        setPreviewErrorKey(`inspector.preview.errors.${response.errorCode || 'genericPreview'}`)
+        return
       }
+
+      setPreviewErrorKey(`inspector.preview.errors.${response?.errorCode || 'genericPreview'}`)
     } catch {
-      if (activePreviewRequest.current === requestId) {
-        setPreviewErrorKey('inspector.preview.errors.genericPreview')
-      }
+      if (activePreviewRequest.current !== requestId) return
+      setPreviewErrorKey('inspector.preview.errors.genericPreview')
     } finally {
       if (activePreviewRequest.current === requestId) {
-        activePreviewRequest.current = null
         if (!awaitingPassword) setPreviewLoading(false)
       }
     }
@@ -357,10 +357,71 @@ export const ArchiveInspector: React.FC = () => {
             </section>
           )}
 
+          {/* Expert Technical Diagnostics Header Card */}
+          {isExpertMode && inspectData.headerInfo && (
+            <div className="expert-card archive-inspector__diagnostics">
+              <div className="expert-card__header">
+                <div className="expert-card__title">
+                  <Zap size={16} />
+                  {t('inspector.expertHeader')}
+                </div>
+              </div>
+              <div className="archive-inspector__diagnostics-grid">
+                <div className="archive-inspector__diag-item">
+                  <span className="archive-inspector__diag-label">{t('inspector.signature')}</span>
+                  <span className="code-badge">{inspectData.headerInfo.signature || 'N/A'}</span>
+                </div>
+                <div className="archive-inspector__diag-item">
+                  <span className="archive-inspector__diag-label">{t('inspector.codec')}</span>
+                  <span className="archive-inspector__diag-value">{inspectData.headerInfo.codecSummary || 'N/A'}</span>
+                </div>
+                <div className="archive-inspector__diag-item">
+                  <span className="archive-inspector__diag-label">{t('inspector.encryptionMethod')}</span>
+                  <span className="archive-inspector__diag-value">{inspectData.headerInfo.encryptionAlgorithm || 'None'}</span>
+                </div>
+                <div className="archive-inspector__diag-item">
+                  <span className="archive-inspector__diag-label">{t('inspector.solid')}</span>
+                  <span className="archive-inspector__diag-value">{inspectData.headerInfo.solid ? t('inspector.solidYes') : t('inspector.solidNo')}</span>
+                </div>
+                {inspectData.headerInfo.formatVersion && (
+                  <div className="archive-inspector__diag-item">
+                    <span className="archive-inspector__diag-label">{t('inspector.headerVersion')}</span>
+                    <span className="code-badge">{inspectData.headerInfo.formatVersion}</span>
+                  </div>
+                )}
+                {inspectData.headerInfo.centralDirectoryOffset !== undefined && (
+                  <div className="archive-inspector__diag-item">
+                    <span className="archive-inspector__diag-label">{t('inspector.centralDirOffset')}</span>
+                    <span className="code-badge">0x{inspectData.headerInfo.centralDirectoryOffset.toString(16).toUpperCase()}</span>
+                  </div>
+                )}
+                {inspectData.headerInfo.centralDirectorySize !== undefined && (
+                  <div className="archive-inspector__diag-item">
+                    <span className="archive-inspector__diag-label">{t('inspector.centralDirSize')}</span>
+                    <span className="archive-inspector__diag-value">{formatBytes(inspectData.headerInfo.centralDirectorySize, language)}</span>
+                  </div>
+                )}
+                {inspectData.headerInfo.nextHeaderOffset !== undefined && (
+                  <div className="archive-inspector__diag-item">
+                    <span className="archive-inspector__diag-label">{t('inspector.nextHeaderOffset')}</span>
+                    <span className="code-badge">0x{inspectData.headerInfo.nextHeaderOffset.toString(16).toUpperCase()}</span>
+                  </div>
+                )}
+                {inspectData.headerInfo.nextHeaderSize !== undefined && (
+                  <div className="archive-inspector__diag-item">
+                    <span className="archive-inspector__diag-label">{t('inspector.nextHeaderSize')}</span>
+                    <span className="archive-inspector__diag-value">{formatBytes(inspectData.headerInfo.nextHeaderSize, language)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="archive-inspector__stats">
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.format')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--accent">{inspectData.format}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.totalFiles')}</div><div className="archive-inspector__stat-value">{t('inspector.fileCount', { count: inspectData.totalFiles })}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.extractedSize')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--size">{inspectData.totalUncompressedSize === null ? t('inspector.unknown') : formatBytes(inspectData.totalUncompressedSize, language)}</div></div>
+            <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.compressedSize')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--size">{formatBytes(inspectData.totalCompressedSize, language)}</div></div>
             <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.efficiency')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--success">{inspectData.overallRatio === null ? t('inspector.unknown') : t('inspector.savings', { ratio: inspectData.overallRatio })}</div></div>
             {splitVolumes && <div className="glass-panel archive-inspector__stat"><div className="archive-inspector__stat-label">{t('inspector.volumes')}</div><div className="archive-inspector__stat-value archive-inspector__stat-value--accent">{t('inspector.volumeCount', { count: splitVolumes.length })}</div></div>}
           </div>
@@ -382,8 +443,20 @@ export const ArchiveInspector: React.FC = () => {
               <div className="archive-inspector__entry-count">{t(isSearching ? 'inspector.searchResults' : 'inspector.currentFolder', { count: allDisplayedEntries.length })}</div>
             </div>
 
-            <div className="archive-inspector__table-header">
-              <div>{t(isSearching ? 'inspector.path' : 'inspector.fileName')}</div><div className="archive-inspector__align-right">{t('inspector.originalSize')}</div><div className="archive-inspector__align-right">{t('inspector.compressedSize')}</div><div className="archive-inspector__align-right">{t('inspector.ratio')}</div>
+            <div className={`archive-inspector__table-header${isExpertMode ? ' is-expert' : ''}`}>
+              <div>{t(isSearching ? 'inspector.path' : 'inspector.fileName')}</div>
+              <div className="archive-inspector__align-right">{t('inspector.originalSize')}</div>
+              <div className="archive-inspector__align-right">{t('inspector.compressedSize')}</div>
+              <div className="archive-inspector__align-right">{t('inspector.ratio')}</div>
+              {isExpertMode && (
+                <>
+                  <div className="archive-inspector__align-center">{t('inspector.codec')}</div>
+                  <div className="archive-inspector__align-center">{t('inspector.encryptionMethod')}</div>
+                  <div className="archive-inspector__align-center">{t('inspector.crc32')}</div>
+                  <div className="archive-inspector__align-center">{t('inspector.permissions')}</div>
+                  <div className="archive-inspector__align-center">{t('inspector.offset')}</div>
+                </>
+              )}
             </div>
 
             <div className="archive-inspector__entries">
@@ -396,7 +469,7 @@ export const ArchiveInspector: React.FC = () => {
                   onClick={() => isNavigableDirectory
                     ? moveToPath(normalizeArchivePath(entry.path))
                     : handlePreviewEntry(entry)}
-                  className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ' is-previewable'}`}
+                  className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ' is-previewable'}${isExpertMode ? ' is-expert' : ''}`}
                 >
                   <div className="archive-inspector__entry-main">
                     {entry.isDirectory ? <Folder className="archive-inspector__entry-icon archive-inspector__entry-icon--folder" size={16} /> : <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={16} />}
@@ -406,6 +479,27 @@ export const ArchiveInspector: React.FC = () => {
                   <div className="archive-inspector__entry-size">{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
                   <div className="archive-inspector__entry-compressed-size">{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
                   <div className={`archive-inspector__entry-ratio${entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>{entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}</div>
+                  {isExpertMode && (
+                    <>
+                      <div className="archive-inspector__align-center">
+                        <span className="code-badge">{entry.codec || '-'}</span>
+                      </div>
+                      <div className="archive-inspector__align-center">
+                        <span className="code-badge">{entry.encryptionMethod || '-'}</span>
+                      </div>
+                      <div className="archive-inspector__align-center archive-inspector__technical-value">
+                        {entry.crc32 || '-'}
+                      </div>
+                      <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
+                        {entry.modeString
+                          ? `${entry.mode === undefined ? '' : `0${(entry.mode & 0o777).toString(8).padStart(3, '0')} / `}${entry.modeString}`
+                          : '-'}
+                      </div>
+                      <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
+                        {entry.offset === undefined ? '-' : `0x${entry.offset.toString(16).toUpperCase()}`}
+                      </div>
+                    </>
+                  )}
                 </button>
                 )
               })}
@@ -446,9 +540,11 @@ export const ArchiveInspector: React.FC = () => {
       )}
       {previewEntry && (
         <ArchivePreviewModal
+          key={`${previewEntry.id || previewEntry.path}:${previewResult?.kind ?? 'pending'}`}
           entryPath={previewEntry.path}
           loading={previewLoading}
           result={previewResult}
+          entry={previewEntry}
           errorKey={previewErrorKey}
           onClose={closePreview}
         />

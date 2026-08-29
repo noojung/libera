@@ -3,9 +3,11 @@ import type { ProgressCallback } from './compressor'
 import { SevenZipError } from './sevenZipError'
 import { Libera7zError, type SevenZipArchive } from '../lib/libera7z'
 import { openLibera7zFile } from './libera7zNode'
+import type { ExtractionOptions } from './extractor'
 import {
   archivePermissions,
   buildExtractionPlan,
+  createArchiveEntryFilter,
   createOwnedSymlink,
   createOwnedWebWriter,
   ensureSafeDirectory,
@@ -13,14 +15,15 @@ import {
   ExtractionMeter,
   ExtractionTransaction,
   extractionError,
+  isMacMetadataPath,
   matchesSelectedEntry,
+  prepareSelectedDestinations,
   propagateQuarantine,
   restoresSymbolicLinks,
   restoresUnixMode,
   securityError,
   throwIfAborted,
   topLevelSegment,
-  validateSelectedDestinations,
   type ExtractionPolicy,
   type PlannedEntry
 } from './extractionSafety'
@@ -82,12 +85,26 @@ async function extractWithJavaScript(
   diskBudget: number,
   transaction: ExtractionTransaction,
   signal?: AbortSignal,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  extractionOptions?: ExtractionOptions
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
-  const selectedPaths = selectedEntries ? new Set(selectedEntries) : null
+  const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
+  const requestedPaths = selectedEntries ? new Set(selectedEntries) : null
+  const filter = createArchiveEntryFilter(options.filterPattern)
+  const needsDerivedSelection = Boolean(
+    requestedPaths || options.filterPattern || options.excludeMacMetadata || options.restoreSymlinks === false
+  )
+  const selectedPaths = needsDerivedSelection
+    ? new Set(archive.entries
+      .filter(entry => matchesSelectedEntry(entry.path, requestedPaths))
+      .filter(entry => filter(entry.path))
+      .filter(entry => !options.excludeMacMetadata || !isMacMetadataPath(entry.path))
+      .filter(entry => options.restoreSymlinks !== false || !entry.isSymlink)
+      .map(entry => entry.path))
+    : null
   const selectedLinks = archive.entries.filter(entry =>
     entry.isSymlink && matchesSelectedEntry(entry.path, selectedPaths))
-  const linkTargets = restoresSymbolicLinks
+  const linkTargets = restoresSymbolicLinks && options.restoreSymlinks !== false
     ? await readLiberaLinkTargets(archive, selectedLinks, signal)
     : new Map<string, string>()
   const plan = buildExtractionPlan(
@@ -100,7 +117,7 @@ async function extractWithJavaScript(
         size: entry.isDirectory ? 0 : size,
         isLink: entry.isSymlink,
         linkTarget: linkTargets.get(entry.path),
-        mode: restoresUnixMode ? entry.mode : undefined,
+        mode: restoresUnixMode && options.restorePermissions !== false ? entry.mode : undefined,
         source: entry.id
       }
     }),
@@ -111,7 +128,12 @@ async function extractWithJavaScript(
   if (plan.selectedTotalBytes > diskBudget) {
     throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
   }
-  await validateSelectedDestinations(targetRoot, plan.entries)
+  await prepareSelectedDestinations(
+    targetRoot,
+    plan.entries,
+    options.overwritePolicy ?? 'reject',
+    transaction
+  )
 
   const selected = plan.entries.filter(entry => entry.shouldExtract)
   const topLevelNames = new Set(selected.map(entry => topLevelSegment(entry.archivePath)))
@@ -172,6 +194,10 @@ async function extractWithJavaScript(
         }
         const mode = currentEntry.mode !== undefined ? archivePermissions(currentEntry.mode) : undefined
         if (mode !== undefined) await fsPromises.chmod(currentEntry.outputPath, mode)
+        if (options.restoreTimestamps === true) {
+          const source = archive.entries[currentEntry.source as number]
+          if (source?.modified) await fsPromises.utimes(currentEntry.outputPath, source.modified, source.modified)
+        }
         extractedCount += 1
         currentEntry = null
       }
@@ -199,7 +225,8 @@ export async function extractSevenZipArchive(
   diskBudget: number,
   transaction: ExtractionTransaction,
   signal?: AbortSignal,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  extractionOptions?: ExtractionOptions
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
   let archive: SevenZipArchive
   try {
@@ -225,7 +252,8 @@ export async function extractSevenZipArchive(
       diskBudget,
       transaction,
       signal,
-      onProgress
+      onProgress,
+      extractionOptions
     ).catch(error => {
       if (error instanceof Libera7zError && error.code === 'PASSWORD_REQUIRED') {
         throw new SevenZipError('SEVEN_ZIP_PASSWORD_REQUIRED', 'The archive needs a password')

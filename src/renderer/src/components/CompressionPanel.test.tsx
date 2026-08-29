@@ -1,6 +1,6 @@
 import React from 'react'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CompressionPanel } from './CompressionPanel'
 import { renderWithI18n } from '@/test/render'
 import { installElectronApi } from '@/test/electronApi'
@@ -8,6 +8,10 @@ import { installElectronApi } from '@/test/electronApi'
 const item = { path: 'C:\\input.txt', name: 'input.txt', isDirectory: false, size: 2048 }
 
 describe('CompressionPanel', () => {
+  beforeEach(() => {
+    localStorage.removeItem('libera_expert_mode')
+  })
+
   it('uses default output settings and submits compression options', async () => {
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
     const onStart = vi.fn()
@@ -188,6 +192,20 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Compression level')).toBeInTheDocument()
   })
 
+  it('hides the empty expert settings card for TAR', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.TAR' }))
+    expect(screen.queryByText(/Expert compression settings/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.TAR.GZ' }))
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+  })
+
   it('shows the volume names each split format actually produces', async () => {
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
@@ -215,5 +233,55 @@ describe('CompressionPanel', () => {
     await waitFor(() => expect(api.selectSaveLocation).toHaveBeenCalledWith('archive.tar.gz', 'gz', expect.any(Object)))
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
     expect(onStart).toHaveBeenLastCalledWith(expect.objectContaining({ outputPath: 'D:\\backup.tar.gz' }))
+  })
+
+  it('submits expert ZIP encryption, storage and Deflate tuning', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    const selects = screen.getAllByRole('combobox')
+    await user.selectOptions(selects[0], 'aes128')
+    await user.selectOptions(selects[1], 'store')
+    await user.selectOptions(selects[2], 'rle')
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+    fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '9' } })
+    await user.click(screen.getByRole('button', { name: /Start compression/ }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      encryptionMethod: 'aes128',
+      zipMethod: 'store',
+      deflateStrategy: 'rle',
+      memLevel: 9,
+      password: 'secret'
+    }))
+  })
+
+  it('submits expert 7Z codec parameters and solid mode', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    const selects = screen.getAllByRole('combobox')
+    await user.selectOptions(selects[0], 'lzma2')
+    await user.selectOptions(selects[1], String(64 * 1024 * 1024))
+    await user.selectOptions(selects[2], '128')
+    fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '96' } })
+    await user.click(screen.getByRole('checkbox', { name: /Solid block compression/ }))
+    await user.click(screen.getByRole('button', { name: /Start compression/ }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: '7z',
+      sevenZipMethod: 'lzma2',
+      dictionarySize: 64 * 1024 * 1024,
+      matchFinderWordSize: 128,
+      searchCycles: 96,
+      solidArchive: true
+    }))
   })
 })

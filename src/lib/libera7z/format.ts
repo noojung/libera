@@ -111,6 +111,8 @@ export interface SevenZipEntryInput {
 export interface CreateSevenZipOptions {
   method?: SevenZipMethod
   dictionarySize?: number
+  /** Packs all non-empty files into one folder with per-file substreams. */
+  solid?: boolean
   signal?: AbortSignal
   onProgress?: (processedBytes: bigint, currentFile?: string) => void
   /** Optional off-main-thread codec hook used by the Electron adapter. */
@@ -135,6 +137,18 @@ export interface SevenZipEntry {
   modified?: Date
   mode?: number
   crc?: number
+  /** Human-readable primary compression coder, excluding encryption coders. */
+  codec?: string
+  /** Dictionary/memory size used by LZMA, LZMA2 or PPMd, when applicable. */
+  dictionarySize?: number
+  /** True when this file shares a packed folder with other file substreams. */
+  solid?: boolean
+}
+
+export interface SevenZipArchiveMetadata {
+  version: string
+  nextHeaderOffset: bigint
+  nextHeaderSize: bigint
 }
 
 interface WrittenStream {
@@ -144,6 +158,7 @@ interface WrittenStream {
   crc: number
   method: SevenZipMethod
   dictionaryProperty?: number
+  substreams?: Array<{ size: bigint; crc: number }>
   /** Present when the folder ends in an AES coder. `codedSize` is that coder's
    * declared output, so the trailing zero padding is trimmed on the way back. */
   aes?: { properties: Uint8Array; codedSize: bigint }
@@ -200,6 +215,34 @@ interface ParsedFile {
   folder?: ParsedFolder
   substreamIndex?: number
   packedSize?: bigint
+}
+
+function coderName(methodId: number): string {
+  if (methodId === COPY_METHOD) return 'Copy'
+  if (methodId === LZMA2_METHOD) return 'LZMA2'
+  if (methodId === LZMA_METHOD) return 'LZMA'
+  if (methodId === PPMD_METHOD) return 'PPMd'
+  if (methodId === DEFLATE_METHOD) return 'Deflate'
+  if (methodId === DEFLATE64_METHOD) return 'Deflate64'
+  if (methodId === BZIP2_METHOD) return 'BZip2'
+  if (methodId === BCJ2_METHOD) return 'BCJ2'
+  return SIMPLE_FILTERS.get(methodId)?.toUpperCase() ?? `0x${methodId.toString(16).toUpperCase()}`
+}
+
+function folderDictionarySize(folder?: ParsedFolder): number | undefined {
+  for (const coder of folder?.coders ?? []) {
+    if (coder.methodId === LZMA2_METHOD) return dictionarySizeFromProperty(coder.properties[0])
+    if (coder.methodId === LZMA_METHOD) return parseLzma1Properties(coder.properties).dictionarySize
+    if (coder.methodId === PPMD_METHOD) return parsePpmd7Properties(coder.properties).memorySize
+  }
+  return undefined
+}
+
+function folderCodec(folder?: ParsedFolder): string | undefined {
+  const coders = folder?.coders
+    .filter(coder => coder.methodId !== AES_METHOD)
+    .map(coder => coderName(coder.methodId))
+  return coders?.length ? [...new Set(coders)].join(' + ') : undefined
 }
 
 export interface OpenSevenZipOptions {
@@ -350,8 +393,27 @@ function buildNextHeader(entries: readonly SevenZipEntryInput[], streams: readon
     // folders without digests and describe the same CRCs as substream digests,
     // matching the layout emitted by 7-Zip itself.
     writer.byte(NID.SubStreamsInfo)
+    if (streams.some(stream => (stream.substreams?.length ?? 1) > 1)) {
+      writer.byte(NID.NumUnpackStream)
+      for (const stream of streams) writer.variableUint64(BigInt(stream.substreams?.length ?? 1))
+      writer.byte(NID.Size)
+      for (const stream of streams) {
+        const substreams = stream.substreams
+        if (!substreams) continue
+        for (let index = 0; index + 1 < substreams.length; index += 1) {
+          writer.variableUint64(substreams[index].size)
+        }
+      }
+    }
     writer.byte(NID.CRC).byte(1)
-    for (const stream of streams) writer.uint32(stream.crc)
+    for (const stream of streams) {
+      const substreams = stream.substreams
+      if (substreams) {
+        for (const substream of substreams) writer.uint32(substream.crc)
+      } else {
+        writer.uint32(stream.crc)
+      }
+    }
     writer.byte(NID.End)
     writer.byte(NID.End)
   }
@@ -519,6 +581,77 @@ async function consumeEntry(
   }
 }
 
+async function consumeSolidEntries(
+  entries: readonly SevenZipEntryInput[],
+  sink: SeekableSink,
+  dictionaryProperty: number,
+  options: CreateSevenZipOptions,
+  processed: { value: bigint },
+  encryption?: ArchiveEncryption
+): Promise<WrittenStream> {
+  const substreams: Array<{ size: bigint; crc: number }> = []
+  const totalSize = entries.reduce((total, entry) => total + entry.size, 0n)
+  let iterator: AsyncGenerator<Uint8Array> | null = null
+
+  const combined: SevenZipEntryInput = {
+    path: entries[0]?.path ?? 'solid-block',
+    size: totalSize,
+    open: () => {
+      iterator = (async function* () {
+        for (const entry of entries) {
+          if (!entry.open) throw new TypeError(`File entry has no content stream: ${entry.path}`)
+          const reader = entry.open().getReader()
+          const digest = new Crc32()
+          let size = 0n
+          try {
+            while (true) {
+              throwIfCancelled(options.signal)
+              const item = await reader.read()
+              if (item.done) break
+              if (!(item.value instanceof Uint8Array)) {
+                throw new TypeError(`Entry stream did not yield Uint8Array: ${entry.path}`)
+              }
+              digest.update(item.value)
+              size += BigInt(item.value.length)
+              yield item.value
+            }
+          } finally {
+            reader.releaseLock()
+          }
+          if (size !== entry.size) {
+            throw new Libera7zError(
+              'INVALID_ARCHIVE',
+              `Entry ${entry.path} yielded ${size} bytes but declared ${entry.size}`
+            )
+          }
+          substreams.push({ size, crc: digest.digest() })
+        }
+      })()
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          const item = await iterator!.next()
+          if (item.done) controller.close()
+          else controller.enqueue(item.value)
+        },
+        async cancel() {
+          await iterator?.return(undefined)
+        }
+      })
+    }
+  }
+
+  const written = await consumeEntry(
+    combined,
+    sink,
+    'lzma2',
+    dictionaryProperty,
+    options,
+    processed,
+    encryption
+  )
+  return { ...written, substreams }
+}
+
 /**
  * Writes the plain header as one more packed stream, encrypted, and returns the
  * EncodedHeader descriptor that replaces it. 7-Zip does the same with a single
@@ -603,10 +736,16 @@ export async function create7z(
 
   try {
     await sink.write(new Uint8Array(SIGNATURE_HEADER_SIZE), options.signal)
-    for (const entry of entries) {
-      throwIfCancelled(options.signal)
-      if (entry.isDirectory || entry.size === 0n) continue
-      streams.push(await consumeEntry(entry, sink, method, dictionaryProperty, options, processed, encryption))
+    const dataEntries = entries.filter(entry => !entry.isDirectory && entry.size > 0n)
+    if (options.solid && method === 'lzma2' && dataEntries.length > 1) {
+      streams.push(await consumeSolidEntries(
+        dataEntries, sink, dictionaryProperty, options, processed, encryption
+      ))
+    } else {
+      for (const entry of dataEntries) {
+        throwIfCancelled(options.signal)
+        streams.push(await consumeEntry(entry, sink, method, dictionaryProperty, options, processed, encryption))
+      }
     }
     const header = buildNextHeader(entries, streams)
     const nextHeader = encryption && options.encryptHeader
@@ -1550,7 +1689,12 @@ export class SevenZipArchive {
     private readonly parsedFiles: readonly ParsedFile[],
     private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
     private readonly decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
-    private readonly decryption: DecryptionContext = decryptionContext()
+    private readonly decryption: DecryptionContext = decryptionContext(),
+    readonly metadata: SevenZipArchiveMetadata = {
+      version: '0.4',
+      nextHeaderOffset: 0n,
+      nextHeaderSize: 0n
+    }
   ) {
     this.entries = parsedFiles.map((file, id) => ({
       id,
@@ -1562,7 +1706,10 @@ export class SevenZipArchive {
       isSymlink: file.isSymlink,
       modified: file.modified,
       mode: file.mode,
-      crc: file.crc
+      crc: file.crc,
+      codec: folderCodec(file.folder),
+      dictionarySize: folderDictionarySize(file.folder),
+      solid: (file.folder?.substreams?.length ?? 0) > 1
     }))
   }
 
@@ -1749,6 +1896,11 @@ export async function open7z(
     files,
     options.lzma2DecoderFactory,
     options.decodeLzma2Buffer,
-    decryption
+    decryption,
+    {
+      version: `${signature[6]}.${signature[7]}`,
+      nextHeaderOffset: nextOffset,
+      nextHeaderSize: nextSize
+    }
   )
 }

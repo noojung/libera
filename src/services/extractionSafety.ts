@@ -24,6 +24,55 @@ export interface ExtractionContext {
   policy?: Partial<ExtractionPolicy>
   getAvailableBytes?: (targetRoot: string) => Promise<bigint>
 }
+
+function globExpression(pattern: string): RegExp {
+  let expression = '^'
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index]
+    if (character === '*') {
+      if (pattern[index + 1] === '*') {
+        expression += '.*'
+        index += 1
+      } else {
+        expression += '[^/]*'
+      }
+    } else if (character === '?') {
+      expression += '[^/]'
+    } else {
+      expression += character.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+    }
+  }
+  return new RegExp(`${expression}$`, process.platform === 'win32' ? 'i' : '')
+}
+
+export function createArchiveEntryFilter(patternText?: string): (entryPath: string) => boolean {
+  const tokens = (patternText ?? '')
+    .split(/[,;\n]/)
+    .map(pattern => pattern.trim())
+    .filter(Boolean)
+    .slice(0, 100)
+    .map(pattern => ({ exclude: pattern.startsWith('!'), pattern: pattern.replace(/^!/, '').slice(0, 256) }))
+    .filter(item => item.pattern.length > 0)
+    .map(item => ({
+      exclude: item.exclude,
+      hasSlash: item.pattern.includes('/'),
+      expression: globExpression(item.pattern.replace(/\\/g, '/'))
+    }))
+  const includes = tokens.filter(token => !token.exclude)
+  const excludes = tokens.filter(token => token.exclude)
+  return entryPath => {
+    const normalized = entryPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+    const name = normalized.split('/').pop() || normalized
+    const matches = (token: typeof tokens[number]) => token.expression.test(token.hasSlash ? normalized : name)
+    return (includes.length === 0 || includes.some(matches)) && !excludes.some(matches)
+  }
+}
+
+export function isMacMetadataPath(entryPath: string): boolean {
+  const normalized = entryPath.replace(/\\/g, '/').replace(/^\.\//, '')
+  return normalized === '__MACOSX' || normalized.startsWith('__MACOSX/') ||
+    normalized === '.DS_Store' || normalized.endsWith('/.DS_Store')
+}
 export type ExtractionErrorCode =
   | 'WRONG_ZIP_PASSWORD'
   | 'EXTRACTION_CANCELLED'
@@ -86,6 +135,8 @@ export class ExtractionTransaction {
   private readonly files = new Set<string>()
   private readonly directories = new Set<string>()
   private readonly disposableTrees = new Set<string>()
+  private readonly backups = new Map<string, string>()
+  private backupRoot: string | null = null
 
   // A staging directory is filled by an external tool, so its contents are
   // never recorded file by file; rollback has to be able to drop the whole
@@ -102,6 +153,28 @@ export class ExtractionTransaction {
     this.directories.add(directoryPath)
   }
 
+  async backupExisting(filePath: string, targetRoot: string): Promise<void> {
+    if (this.backups.has(filePath)) return
+    const stat = await fsPromises.lstat(filePath)
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw securityError(`destination cannot be safely overwritten: ${filePath}`)
+    }
+    if (!this.backupRoot) {
+      this.backupRoot = await fsPromises.mkdtemp(path.join(targetRoot, '.libera-backup-'))
+    }
+    const backupPath = path.join(this.backupRoot, String(this.backups.size))
+    await fsPromises.rename(filePath, backupPath)
+    this.backups.set(filePath, backupPath)
+  }
+
+  async commit(): Promise<void> {
+    if (this.backupRoot) {
+      await this.removeWithRetries(() => fsPromises.rm(this.backupRoot!, { recursive: true, force: true }))
+    }
+    this.backups.clear()
+    this.backupRoot = null
+  }
+
   async rollback(): Promise<void> {
     // Staging trees go first: they hold nothing the user asked for, and
     // clearing them can free the directories recorded below.
@@ -113,10 +186,30 @@ export class ExtractionTransaction {
       await this.removeWithRetries(() => fsPromises.unlink(filePath))
     }
 
+    let backupRestoreError: unknown
+    for (const [filePath, backupPath] of Array.from(this.backups.entries()).reverse()) {
+      try {
+        await fsPromises.rename(backupPath, filePath)
+        this.backups.delete(filePath)
+      } catch (error) {
+        backupRestoreError ??= error
+      }
+    }
+
     const directories = Array.from(this.directories)
       .sort((left, right) => right.split(path.sep).length - left.split(path.sep).length)
     for (const directoryPath of directories) {
       await this.removeWithRetries(() => fsPromises.rmdir(directoryPath))
+    }
+    if (this.backupRoot && !backupRestoreError) {
+      await this.removeWithRetries(() => fsPromises.rm(this.backupRoot!, { recursive: true, force: true }))
+    }
+    if (!backupRestoreError) {
+      this.backups.clear()
+      this.backupRoot = null
+    }
+    if (backupRestoreError) {
+      throw new Error(`Extraction rollback could not restore a backup from ${this.backupRoot}`, { cause: backupRestoreError })
     }
   }
 
@@ -531,6 +624,31 @@ export function buildExtractionPlan(
 export async function validateSelectedDestinations(targetRoot: string, entries: PlannedEntry[]): Promise<void> {
   for (const entry of entries) {
     if (entry.shouldExtract) await assertSafeDestination(targetRoot, entry.outputPath, entry.isDirectory)
+  }
+}
+
+export async function prepareSelectedDestinations(
+  targetRoot: string,
+  entries: PlannedEntry[],
+  policy: 'reject' | 'overwrite' | 'skip',
+  transaction: ExtractionTransaction
+): Promise<void> {
+  for (const entry of entries) {
+    if (!entry.shouldExtract) continue
+    try {
+      await assertSafeDestination(targetRoot, entry.outputPath, entry.isDirectory)
+    } catch (error) {
+      if (!(error instanceof ExtractionError) || error.code !== 'DESTINATION_EXISTS') throw error
+      if (policy === 'skip') {
+        entry.shouldExtract = false
+        continue
+      }
+      if (policy === 'overwrite' && !entry.isDirectory) {
+        await transaction.backupExisting(entry.outputPath, targetRoot)
+        continue
+      }
+      throw error
+    }
   }
 }
 export const execFileAsync = promisify(execFile)

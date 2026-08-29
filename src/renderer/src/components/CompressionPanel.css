@@ -231,3 +231,25 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.compression-panel__expert-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.compression-panel > .expert-card {
+  margin-top: 0;
+}
+
+.compression-panel__expert-row:last-child {
+  margin-bottom: 0;
+}
+
+.compression-panel__expert-label {
+  font-family: var(--font-cute);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}

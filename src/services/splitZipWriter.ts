@@ -10,7 +10,7 @@ import {
   splitVolumeBase,
   volumePathForDisk
 } from './splitZipVolumes'
-import type { ProgressCallback } from './compressor'
+import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from './compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
 // alone - without it zip.js tries to spawn a Blob-URL worker under Node.
@@ -22,7 +22,20 @@ export { MAX_SPLIT_VOLUMES } from './splitZipVolumes'
 export interface SplitZipOptions {
   source: { inputPaths: string[]; totalBytes: number }
   volumes: { outputPath: string; splitSize: number }
-  squeeze: { level: number; password?: string }
+  squeeze: ZipSqueezeOptions
+}
+
+export interface ZipSqueezeOptions {
+  level: number
+  password?: string
+  encryptionMethod?: ZipEncryptionMethod
+  method?: ZipMethod
+}
+
+export interface ZipFileOptions {
+  source: { inputPaths: string[]; totalBytes: number }
+  outputPath: string
+  squeeze: ZipSqueezeOptions
 }
 
 export interface SplitZipResult {
@@ -39,7 +52,19 @@ interface ArchiveEntry {
 }
 
 interface VolumeSink extends WritableWriter {
+  initialized?: boolean
   init(): Promise<void>
+}
+
+function zipEncryptionOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
+  if (!squeeze.password) return {}
+  if (squeeze.encryptionMethod === 'aes128') {
+    return { password: squeeze.password, encryptionStrength: 1 as const }
+  }
+  if (squeeze.encryptionMethod === 'aes256') {
+    return { password: squeeze.password, encryptionStrength: 3 as const }
+  }
+  return { password: squeeze.password, zipCrypto: true }
 }
 
 /**
@@ -196,17 +221,15 @@ export async function writeSplitZip(
 ): Promise<SplitZipResult> {
   const { inputPaths, totalBytes } = options.source
   const { outputPath, splitSize } = options.volumes
-  const { level, password } = options.squeeze
+  const { level, method = 'deflate' } = options.squeeze
   const { signal } = context
 
   const entries = await collectEntries(inputPaths, createVolumePredicate(outputPath))
   const { generator, volumePaths, openHandles } = createVolumeWriters(outputPath)
   const splitWriter = new SplitDataWriter(generator, splitSize)
   const zipWriter = new ZipWriter(splitWriter, {
-    level,
-    // ZipCrypto rather than AES for the same reason as the archiver path:
-    // the app's own ZIP reader can decrypt it.
-    ...(password ? { password, zipCrypto: true } : {})
+    level: method === 'store' ? 0 : level,
+    ...zipEncryptionOptions(options.squeeze)
   })
 
   let processedBytes = 0
@@ -238,7 +261,7 @@ export async function writeSplitZip(
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
         await zipWriter.add(entry.entryName, reader, {
-          level,
+          level: method === 'store' ? 0 : level,
           lastModDate: entry.lastModDate,
           signal,
           onprogress: (progress) => report(entryStart + progress, entry.entryName)
@@ -277,4 +300,85 @@ export async function writeSplitZip(
   }
 
   return { volumePaths, compressedSize }
+}
+
+/** Writes a regular, non-split ZIP with zip.js (needed for WinZip AES-128). */
+export async function writeZipFile(
+  options: ZipFileOptions,
+  onProgress?: ProgressCallback,
+  context: { signal?: AbortSignal } = {}
+): Promise<{ outputPath: string; compressedSize: number }> {
+  const { inputPaths, totalBytes } = options.source
+  const { outputPath, squeeze } = options
+  const { signal } = context
+  const entries = await collectEntries(inputPaths, candidate => path.resolve(candidate) === path.resolve(outputPath))
+  let handle: FileHandle | null = null
+  let processedBytes = 0
+
+  const sink: VolumeSink = {
+    initialized: false,
+    async init() {
+      if (handle) return
+      handle = await fsPromises.open(outputPath, 'w')
+      sink.initialized = true
+    },
+    writable: new WritableStream<Uint8Array>({
+      async write(chunk) {
+        if (!handle) throw new Error('ZIP output is not initialized')
+        await handle.write(chunk)
+      },
+      async close() {
+        const current = handle
+        handle = null
+        await current?.close()
+      },
+      async abort() {
+        const current = handle
+        handle = null
+        await current?.close().catch(() => undefined)
+      }
+    })
+  }
+  const effectiveLevel = squeeze.method === 'store' ? 0 : squeeze.level
+  const zipWriter = new ZipWriter(sink, {
+    level: effectiveLevel,
+    ...zipEncryptionOptions(squeeze)
+  })
+  const report = (bytes: number, currentFile?: string) => onProgress?.({
+    processedBytes: bytes,
+    totalBytes,
+    percent: totalBytes > 0 ? Math.min(100, Math.round((bytes / totalBytes) * 100)) : 0,
+    phase: 'processing',
+    currentFile
+  })
+
+  try {
+    for (const entry of entries) {
+      if (entry.isDirectory) {
+        await zipWriter.add(entry.entryName, undefined, { directory: true, lastModDate: entry.lastModDate, signal })
+        continue
+      }
+      const reader = new NodeFileReader(entry.absolutePath)
+      const entryStart = processedBytes
+      try {
+        await zipWriter.add(entry.entryName, reader, {
+          level: effectiveLevel,
+          lastModDate: entry.lastModDate,
+          signal,
+          onprogress: progress => report(entryStart + progress, entry.entryName)
+        })
+        processedBytes += entry.size
+        report(processedBytes, entry.entryName)
+      } finally {
+        await reader.close().catch(() => undefined)
+      }
+    }
+    await zipWriter.close()
+  } catch (error) {
+    await sink.writable.abort(error).catch(() => undefined)
+    await fsPromises.unlink(outputPath).catch(() => undefined)
+    throw error
+  }
+
+  return { outputPath, compressedSize: (await fsPromises.stat(outputPath)).size }
 }

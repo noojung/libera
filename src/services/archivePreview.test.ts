@@ -303,6 +303,18 @@ describe('previewArchiveEntry', () => {
     await expect(previewArchiveEntry(tarPath, 'entry-0')).rejects.toMatchObject({ code: 'ENTRY_NOT_PREVIEWABLE' })
   })
 
+  it('returns bounded raw bytes for the expert Hex viewer', async () => {
+    const directory = await createTemporaryDirectory()
+    const zipPath = path.join(directory, 'binary.zip')
+    const bytes = Uint8Array.from([0, 1, 2, 3, 0xfe, 0xff])
+    await writeZip(zipPath, [{ name: 'binary.bin', contents: bytes }])
+
+    const result = await previewArchiveEntry(zipPath, 'entry-0', { includeRawBytes: true })
+    expect(result).toMatchObject({ kind: 'binary', truncated: false, previewedBytes: bytes.length })
+    if (result.kind !== 'binary') throw new Error('Expected a binary preview')
+    expect(result.rawBytes).toEqual(bytes)
+  })
+
   it('previews an encrypted ZIP entry once given the password', async () => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')

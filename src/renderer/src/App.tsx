@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { DropZone } from './components/DropZone'
-import { CompressionPanel } from './components/CompressionPanel'
-import { ExtractionPanel } from './components/ExtractionPanel'
+import { CompressionPanel, type StartCompressOptions } from './components/CompressionPanel'
+import { ExtractionPanel, type StartBatchExtractOptions } from './components/ExtractionPanel'
 import { ArchiveInspector } from './components/ArchiveInspector'
 import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
@@ -20,8 +20,7 @@ import {
   EXTRACT_DIALOG_EXTENSIONS,
   SEVEN_ZIP_VOLUME_SUFFIX,
   archiveBaseName,
-  formatFromArchiveName,
-  type ArchiveFormat,
+  formatFromArchiveName
 } from './utils/archivePaths'
 import './styles/theme.css'
 import './App.css'
@@ -266,14 +265,7 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleStartCompress = async (options: {
-    format: ArchiveFormat
-    level: number
-    outputPath: string
-    password?: string
-    encryptFileNames?: boolean
-    splitSize?: number
-  }) => {
+  const handleStartCompress = async (options: StartCompressOptions) => {
     const jobId = `job-${Date.now()}`
     const inputPaths = selectedItems.map(i => i.path)
     const newJob: ActiveJob = {
@@ -305,7 +297,16 @@ export const App: React.FC = () => {
         level: options.level,
         password: options.password,
         encryptFileNames: options.encryptFileNames,
-        splitSize: options.splitSize
+        splitSize: options.splitSize,
+        encryptionMethod: options.encryptionMethod,
+        zipMethod: options.zipMethod,
+        sevenZipMethod: options.sevenZipMethod,
+        dictionarySize: options.dictionarySize,
+        matchFinderWordSize: options.matchFinderWordSize,
+        searchCycles: options.searchCycles,
+        solidArchive: options.solidArchive,
+        deflateStrategy: options.deflateStrategy,
+        memLevel: options.memLevel
       }, jobId)
 
       if (cancelledJobIds.current.has(jobId)) return
@@ -340,7 +341,7 @@ export const App: React.FC = () => {
     }
   }
 
-  const handleStartBatchExtract = async (options: { targetDir: string; createSubfolder: boolean }) => {
+  const handleStartBatchExtract = async (options: StartBatchExtractOptions) => {
     if (extractItems.length === 0) return
 
     const newJobs: ActiveJob[] = extractItems.map((item, idx) => {
@@ -382,8 +383,16 @@ export const App: React.FC = () => {
           (window as any).electronAPI.extractArchive({
             archivePath: item.path,
             targetDir: job.outputPath,
-            rejectExistingTarget: options.createSubfolder,
-            password
+            rejectExistingTarget: options.createSubfolder && options.overwritePolicy === undefined,
+            password,
+            encoding: options.encoding,
+            overwritePolicy: options.overwritePolicy,
+            restoreTimestamps: options.restoreTimestamps,
+            restorePermissions: options.restorePermissions,
+            restoreSymlinks: options.restoreSymlinks,
+            excludeMacMetadata: options.excludeMacMetadata,
+            strictCrc: options.strictCrc,
+            filterPattern: options.filterPattern
           }, job.id)
         )
 

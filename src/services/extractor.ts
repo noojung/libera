@@ -27,9 +27,9 @@ import {
 } from './appleDouble'
 import {
   archivePermissions,
-  assertSafeDestination,
   buildExtractionPlan,
   calculateUsableExtractionBytes,
+  createArchiveEntryFilter,
   createOwnedSymlink,
   createOwnedWebWriter,
   defaultAvailableBytes,
@@ -40,10 +40,12 @@ import {
   ExtractionMeter,
   ExtractionTransaction,
   extractionError,
+  isMacMetadataPath,
   matchesSelectedEntry,
   normalizeEntryPath,
   normalizeExtractionError,
   openOwnedNodeWriteStream,
+  prepareSelectedDestinations,
   prepareTargetRoot,
   propagateQuarantine,
   resolveOutputPath,
@@ -52,7 +54,6 @@ import {
   securityError,
   throwIfAborted,
   topLevelSegment,
-  validateSelectedDestinations,
   WRONG_ZIP_PASSWORD_ERROR_CODE,
   type ArchivePlanEntry,
   type ExtractionContext,
@@ -63,6 +64,9 @@ import {
 // importer of extractor.ts keeps working unchanged.
 export * from './extractionSafety'
 
+export type FilenameEncoding = 'auto' | 'utf-8' | 'cp949' | 'shift_jis' | 'gbk' | 'big5' | 'cp437' | 'windows-1252'
+export type OverwritePolicy = 'overwrite' | 'skip'
+
 export interface ExtractionOptions {
   archivePath: string
   targetDir: string
@@ -70,6 +74,38 @@ export interface ExtractionOptions {
   rejectExistingTarget?: boolean
   selectedEntries?: string[]
   password?: string
+  // Expert options:
+  encoding?: FilenameEncoding
+  overwritePolicy?: OverwritePolicy
+  restoreTimestamps?: boolean
+  restorePermissions?: boolean
+  restoreSymlinks?: boolean
+  excludeMacMetadata?: boolean
+  strictCrc?: boolean
+  filterPattern?: string
+}
+
+function selectedPathSet(
+  entries: readonly { path: string; isLink?: boolean }[],
+  selectedEntries: string[] | undefined,
+  options: ExtractionOptions
+): Set<string> | null {
+  const selected = selectedEntries ? new Set(selectedEntries) : null
+  const filter = createArchiveEntryFilter(options.filterPattern)
+  const needsDerivedSelection = Boolean(
+    selected || options.filterPattern || options.excludeMacMetadata || options.restoreSymlinks === false
+  )
+  if (!needsDerivedSelection) return null
+  return new Set(entries
+    .filter(entry => matchesSelectedEntry(entry.path, selected))
+    .filter(entry => filter(entry.path))
+    .filter(entry => !options.excludeMacMetadata || !isMacMetadataPath(entry.path))
+    .filter(entry => options.restoreSymlinks !== false || !entry.isLink)
+    .map(entry => entry.path))
+}
+
+function destinationPolicy(options: ExtractionOptions): 'reject' | 'overwrite' | 'skip' {
+  return options.overwritePolicy ?? 'reject'
 }
 
 export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
@@ -107,27 +143,37 @@ async function extractZipArchive(
   diskBudget: number,
   transaction: ExtractionTransaction,
   signal?: AbortSignal,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  extractionOptions?: ExtractionOptions
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
-  const zip = await openZipArchive(archivePath, policy.maxEntries, { password })
+  const zipReaderOptions: any = { password }
+  if (extractionOptions?.encoding && extractionOptions.encoding !== 'auto') {
+    zipReaderOptions.filenameEncoding = extractionOptions.encoding === 'cp949'
+      ? 'euc-kr'
+      : extractionOptions.encoding
+  }
+  if (extractionOptions?.strictCrc === false) {
+    zipReaderOptions.checkCrc32 = false
+  }
+  const zip = await openZipArchive(archivePath, policy.maxEntries, zipReaderOptions)
   try {
     if (zip.entries.length > policy.maxEntries) {
       throw securityError(`archive contains more than ${policy.maxEntries.toLocaleString()} entries`, 'TOO_MANY_ENTRIES')
     }
-    const selectedPaths = selectedEntries ? new Set(selectedEntries) : null
     const archiveEntries: ArchivePlanEntry[] = []
+    const requestedPaths = selectedEntries ? new Set(selectedEntries) : null
     const entryNames = new Set(zip.entries.map(entry => entry.filename))
     // Sidecars are folded onto their subject rather than written out, keyed by
     // the archive path of the file they describe.
     const sidecars = new Map<string, AppleDoubleMetadata>()
 
     for (const entry of zip.entries) {
-      if (mergesAppleDouble) {
+      if (mergesAppleDouble && !extractionOptions?.excludeMacMetadata) {
         const subjectPath = appleDoubleSubjectPath(entry.filename)
         const foldsIntoSubject = subjectPath !== null &&
           !entry.directory &&
           entryNames.has(subjectPath) &&
-          matchesSelectedEntry(subjectPath, selectedPaths) &&
+          matchesSelectedEntry(subjectPath, requestedPaths) &&
           Number(entry.uncompressedSize) <= MAX_APPLE_DOUBLE_BYTES
         if (foldsIntoSubject) {
           const raw = await (entry as FileEntry).getData(new Uint8ArrayWriter(), { password })
@@ -146,8 +192,8 @@ async function extractZipArchive(
       // unselected, undecryptable symlink can't block the rest of the archive.
       // Leaving the target unread on Windows is what falls back to rejecting
       // the entry, since the plan treats a link without a target as unsupported.
-      const linkTarget = isLink && restoresSymbolicLinks && !entry.directory &&
-        matchesSelectedEntry(entry.filename, selectedPaths)
+      const linkTarget = isLink && restoresSymbolicLinks && extractionOptions?.restoreSymlinks !== false && !entry.directory &&
+        matchesSelectedEntry(entry.filename, requestedPaths)
         ? await (entry as FileEntry).getData(new TextWriter(), { password })
         : undefined
       archiveEntries.push({
@@ -156,15 +202,26 @@ async function extractZipArchive(
         size: entry.directory ? 0 : Number(entry.uncompressedSize),
         isLink,
         linkTarget,
-        mode: restoresUnixMode ? archivePermissions(zipUnixMode(entry)) : undefined,
+        mode: restoresUnixMode && extractionOptions?.restorePermissions !== false
+          ? archivePermissions(zipUnixMode(entry))
+          : undefined,
         source: entry
       })
     }
+    const selectedPaths = selectedPathSet(
+      archiveEntries.map(entry => ({ path: entry.archivePath, isLink: entry.isLink })),
+      selectedEntries,
+      extractionOptions ?? { archivePath, targetDir: targetRoot }
+    )
     const plan = buildExtractionPlan(archiveEntries, targetRoot, selectedPaths, policy)
     if (plan.selectedTotalBytes > diskBudget) {
       throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
     }
-    await validateSelectedDestinations(targetRoot, plan.entries)
+    await prepareSelectedDestinations(
+      targetRoot, plan.entries,
+      destinationPolicy(extractionOptions ?? { archivePath, targetDir: targetRoot }),
+      transaction
+    )
 
     const meter = new ExtractionMeter(policy, diskBudget, plan.selectedTotalBytes, onProgress)
     let extractedCount = 0
@@ -193,7 +250,7 @@ async function extractZipArchive(
           password,
           signal,
           strictness: 'strict',
-          checkCrc32: true,
+          checkCrc32: extractionOptions?.strictCrc !== false,
           checkOverlappingEntry: true,
           useWebWorkers: false
         })
@@ -202,11 +259,15 @@ async function extractZipArchive(
       }
       // Metadata goes on while the file is still owner writable, since a
       // read-only mode would block the resource fork write.
-      const sidecar = sidecars.get(entry.archivePath)
+      const sidecar = extractionOptions?.excludeMacMetadata ? undefined : sidecars.get(entry.archivePath)
       if (sidecar) await applyAppleDouble(entry.outputPath, sidecar)
       // Widened only now that the contents are complete, so a half written file
       // is never executable and never readable by anyone but the owner.
       if (entry.mode !== undefined) await fsPromises.chmod(entry.outputPath, entry.mode)
+      if (extractionOptions?.restoreTimestamps === true) {
+        const modified = (entry.source as FileEntry).lastModDate
+        if (modified) await fsPromises.utimes(entry.outputPath, modified, modified)
+      }
       extractedCount++
     }
 
@@ -224,6 +285,7 @@ async function extractZipArchive(
 async function listTarEntries(
   archivePath: string,
   policy: ExtractionPolicy,
+  options: ExtractionOptions,
   signal?: AbortSignal
 ): Promise<ArchivePlanEntry[]> {
   const entries: ArchivePlanEntry[] = []
@@ -233,11 +295,16 @@ async function listTarEntries(
     strict: true,
     onentry: (entry: any) => {
       const allowedTypes = new Set(['File', 'OldFile', 'Directory'])
+      const isLink = !allowedTypes.has(entry.type)
+      const isSymbolicLink = entry.type === 'SymbolicLink'
       entries.push({
         archivePath: entry.path,
         isDirectory: entry.type === 'Directory',
         size: Number(entry.size || 0),
-        isLink: !allowedTypes.has(entry.type)
+        isLink,
+        linkTarget: isSymbolicLink && options.restoreSymlinks === true && restoresSymbolicLinks
+          ? entry.linkpath
+          : undefined
       })
       if (entries.length > policy.maxEntries) {
         limitError = securityError(`archive contains more than ${policy.maxEntries.toLocaleString()} entries`, 'TOO_MANY_ENTRIES')
@@ -265,14 +332,21 @@ async function extractTarArchive(
   diskBudget: number,
   transaction: ExtractionTransaction,
   signal?: AbortSignal,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  extractionOptions?: ExtractionOptions
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
-  const selectedPaths = selectedEntries ? new Set(selectedEntries) : null
-  const plan = buildExtractionPlan(await listTarEntries(archivePath, policy, signal), targetRoot, selectedPaths, policy)
+  const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
+  const archiveEntries = await listTarEntries(archivePath, policy, options, signal)
+  const selectedPaths = selectedPathSet(
+    archiveEntries.map(entry => ({ path: entry.archivePath, isLink: entry.isLink })),
+    selectedEntries,
+    options
+  )
+  const plan = buildExtractionPlan(archiveEntries, targetRoot, selectedPaths, policy)
   if (plan.selectedTotalBytes > diskBudget) {
     throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
   }
-  await validateSelectedDestinations(targetRoot, plan.entries)
+  await prepareSelectedDestinations(targetRoot, plan.entries, destinationPolicy(options), transaction)
 
   const selectedPlan = plan.entries.filter(entry => entry.shouldExtract)
   for (const entry of selectedPlan) {
@@ -289,6 +363,9 @@ async function extractTarArchive(
     cwd: targetRoot,
     strict: true,
     keep: true,
+    noMtime: options.restoreTimestamps === false,
+    chmod: restoresUnixMode && options.restorePermissions !== false,
+    processUmask: 0o022,
     preservePaths: false,
     preserveOwner: false,
     filter: (entryPath: string) => plannedEntries.get(entryPath)?.shouldExtract === true,
@@ -345,11 +422,23 @@ async function extractGzArchive(
   diskBudget: number,
   transaction: ExtractionTransaction,
   signal?: AbortSignal,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  extractionOptions?: ExtractionOptions
 ): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
   const outputName = normalizeEntryPath(path.basename(archivePath, '.gz'))
   const outputPath = resolveOutputPath(targetRoot, outputName)
-  await assertSafeDestination(targetRoot, outputPath, false)
+  const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
+  if (!createArchiveEntryFilter(options.filterPattern)(outputName) ||
+      (options.excludeMacMetadata && isMacMetadataPath(outputName))) {
+    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime }
+  }
+  const plan = buildExtractionPlan([
+    { archivePath: outputName, isDirectory: false, size: 0 }
+  ], targetRoot, null, policy)
+  await prepareSelectedDestinations(targetRoot, plan.entries, destinationPolicy(options), transaction)
+  if (!plan.entries[0].shouldExtract) {
+    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime }
+  }
   await ensureSafeParentDirectories(targetRoot, outputPath, transaction)
 
   const meter = new ExtractionMeter(policy, diskBudget, null, onProgress)
@@ -378,9 +467,27 @@ async function extractGzArchive(
     await output.handle.close().catch(() => undefined)
   }
 
+  if (options.restoreTimestamps === true) {
+    const header = await readGzipModificationTime(archivePath)
+    if (header) await fsPromises.utimes(outputPath, header, header)
+  }
+
   meter.complete(outputName)
   await propagateQuarantine(archivePath, targetRoot, [outputName])
   return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime }
+}
+
+async function readGzipModificationTime(archivePath: string): Promise<Date | undefined> {
+  const handle = await fsPromises.open(archivePath, 'r')
+  try {
+    const header = Buffer.alloc(8)
+    const { bytesRead } = await handle.read(header, 0, header.length, 0)
+    if (bytesRead < 8 || header[0] !== 0x1f || header[1] !== 0x8b) return undefined
+    const seconds = header.readUInt32LE(4)
+    return seconds === 0 ? undefined : new Date(seconds * 1_000)
+  } finally {
+    await handle.close()
+  }
 }
 
 export async function extractArchive(
@@ -416,28 +523,36 @@ export async function extractArchive(
     const ext = path.extname(archivePath).toLowerCase()
     const fullExt = archivePath.toLowerCase()
     if (isZipFormatExtension(ext)) {
-      return await extractZipArchive(
+      const result = await extractZipArchive(
         archivePath, targetRoot, selectedEntries, password, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress
+        diskBudget, transaction, context.signal, onProgress, options
       )
+      await transaction.commit()
+      return result
     }
     if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
-      return await extractTarArchive(
+      const result = await extractTarArchive(
         archivePath, targetRoot, selectedEntries, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress
+        diskBudget, transaction, context.signal, onProgress, options
       )
+      await transaction.commit()
+      return result
     }
     if (isSevenZipArchivePath(archivePath)) {
-      return await extractSevenZipArchive(
+      const result = await extractSevenZipArchive(
         archivePath, targetRoot, selectedEntries, password, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress
+        diskBudget, transaction, context.signal, onProgress, options
       )
+      await transaction.commit()
+      return result
     }
     if (ext === '.gz') {
-      return await extractGzArchive(
+      const result = await extractGzArchive(
         archivePath, targetRoot, startTime, policy, diskBudget,
-        transaction, context.signal, onProgress
+        transaction, context.signal, onProgress, options
       )
+      await transaction.commit()
+      return result
     }
     throw new Error(`Unsupported archive format for extraction: ${ext}`)
   } catch (error) {

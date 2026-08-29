@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Archive, Contrast, Info, Layers, ListTodo, Minus, Moon, Search, Square, Sun, X } from 'lucide-react'
+import { Archive, Contrast, Info, Layers, ListTodo, Minus, Moon, Search, SlidersHorizontal, Square, Sun, X } from 'lucide-react'
 import { AppMode } from '@/types'
 import logoImg from '@/assets/logo.png'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +10,7 @@ import {
   applyTheme,
   type ThemePreference
 } from '@/utils/theme'
+import { useExpertMode } from '@/utils/expertMode'
 
 interface TitleBarProps {
   currentMode: AppMode
@@ -31,6 +32,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
   const { t, i18n } = useTranslation()
   const currentLanguage: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => getStoredThemePreference())
+  const [isExpertMode, setExpertMode] = useExpertMode()
   const electronAPI = (window as any).electronAPI
   const platform = electronAPI?.platform as DesktopPlatform | undefined
   const isWindows = platform === 'windows'
@@ -94,6 +96,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
               key={mode}
               type="button"
               className={`titlebar__tab titlebar__tab--${mode}${isActive ? ' is-active' : ''}`}
+              aria-label={t(labelKey)}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => setMode(mode)}
             >
@@ -110,6 +113,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({ currentMode, setMode, active
       </nav>
 
       <div className={`titlebar__actions${isWindows ? ' titlebar__actions--windows' : ''}`}>
+        <button
+          type="button"
+          className={`titlebar__expert-button${isExpertMode ? ' is-active' : ''}`}
+          aria-label={t('titleBar.expertModeToggle')}
+          aria-pressed={isExpertMode}
+          title={isExpertMode ? t('titleBar.expertModeOn') : t('titleBar.expertModeOff')}
+          onClick={() => setExpertMode(!isExpertMode)}
+        >
+          <SlidersHorizontal size={14} aria-hidden="true" />
+          {isExpertMode && <span className="titlebar__expert-indicator" aria-hidden="true" />}
+        </button>
         <button
           type="button"
           className="titlebar__theme-button"

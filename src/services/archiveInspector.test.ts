@@ -48,8 +48,20 @@ describe('inspectArchive', () => {
       path: 'secret.txt',
       name: 'secret.txt',
       isDirectory: false,
-      size: Buffer.byteLength(contents)
+      size: Buffer.byteLength(contents),
+      codec: 'Deflate',
+      encryptionMethod: 'ZipCrypto',
+      crc32: expect.stringMatching(/^0x[0-9A-F]{8}$/),
+      offset: expect.any(Number)
     }))
+    expect(result.headerInfo).toMatchObject({
+      signature: expect.stringContaining('(ZIP)'),
+      formatVersion: expect.any(String),
+      encryptionAlgorithm: 'ZipCrypto',
+      solid: false,
+      centralDirectoryOffset: expect.any(Number),
+      centralDirectorySize: expect.any(Number)
+    })
   })
 
   it.each([
@@ -170,8 +182,26 @@ describe('inspectArchive for 7z', () => {
     )
     expect(result.entries.find(entry => entry.path.endsWith('guide.txt'))).toMatchObject({
       isDirectory: false,
-      size: 5
+      size: 5,
+      compressedSize: expect.any(Number),
+      ratio: expect.any(Number),
+      codec: expect.stringMatching(/^LZMA2 \[/)
     })
+    expect(result.headerInfo).toMatchObject({ formatVersion: '0.4', solid: false })
+  }, 60_000)
+
+  it('detects codec and solid-block metadata from an external 7Z archive', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'solid.7z')
+    await fs.writeFile(archivePath, referenceSevenZipFixture('solid'))
+
+    const result = await inspectArchive(archivePath)
+    expect(result.headerInfo).toMatchObject({ solid: true })
+    const files = result.entries.filter(entry => !entry.isDirectory)
+    expect(files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ codec: expect.stringMatching(/^LZMA2 \[/) })
+    ]))
+    expect(files.every(entry => entry.compressedSize === undefined && entry.ratio === null)).toBe(true)
   }, 60_000)
 
   it('assigns positional ids in listing order, which preview resolves against', async () => {
