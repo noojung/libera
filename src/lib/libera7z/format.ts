@@ -1673,7 +1673,16 @@ async function* readFolderSubstream(
   }
 }
 
-export class SevenZipArchive {
+/** The reading surface the services consume, in-process or over a worker. */
+export interface SevenZipReader {
+  readonly entries: readonly SevenZipEntry[]
+  readonly metadata: SevenZipArchiveMetadata
+  openEntries(ids: readonly number[], options?: OpenEntryOptions): ReadableStream<SevenZipEntryEvent>
+  openEntry(id: number, options?: OpenEntryOptions): ReadableStream<Uint8Array>
+  close(): Promise<void>
+}
+
+export class SevenZipArchive implements SevenZipReader {
   readonly entries: readonly SevenZipEntry[]
 
   constructor(

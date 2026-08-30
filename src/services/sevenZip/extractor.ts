@@ -1,6 +1,6 @@
 import { promises as fsPromises } from 'fs'
 import { SevenZipError } from './error'
-import { Libera7zError, type SevenZipArchive } from '../../lib/libera7z'
+import { Libera7zError, type SevenZipReader } from '../../lib/libera7z'
 import { openLibera7zFile } from './node'
 import {
   archivePermissions,
@@ -31,7 +31,7 @@ import {
 // layer remains responsible for paths, links, quotas, permissions and cleanup.
 
 async function readLiberaLinkTargets(
-  archive: SevenZipArchive,
+  archive: SevenZipReader,
   links: readonly { id: number; path: string; size: bigint }[],
   signal?: AbortSignal
 ): Promise<Map<string, string>> {
@@ -75,7 +75,7 @@ async function readLiberaLinkTargets(
 }
 
 async function extractWithJavaScript(
-  archive: SevenZipArchive,
+  archive: SevenZipReader,
   {
     archivePath,
     targetRoot,
@@ -218,7 +218,7 @@ async function extractWithJavaScript(
 
 export const extractSevenZipArchive: FormatExtractor = async request => {
   const { archivePath, password, policy, signal } = request
-  let archive: SevenZipArchive
+  let archive: SevenZipReader
   try {
     archive = await openLibera7zFile(archivePath, { signal, maxEntries: policy.maxEntries, password })
   } catch (error) {

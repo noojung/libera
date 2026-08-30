@@ -37,14 +37,14 @@ export default defineConfig({
         }
       },
       {
-        entry: path.resolve(__dirname, 'src/services/sevenZip/codecWorker.ts'),
+        entry: path.resolve(__dirname, 'src/services/sevenZip/readWorker.ts'),
         vite: {
           build: {
             outDir: path.resolve(__dirname, 'dist/worker'),
             emptyOutDir: true,
             rollupOptions: {
               external: ['worker_threads'],
-              output: { entryFileNames: 'sevenZipCodecWorker.js' }
+              output: { entryFileNames: 'sevenZipReadWorker.js' }
             }
           }
         }

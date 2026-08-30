@@ -11,9 +11,10 @@ import {
   type RandomAccessSource,
   type SeekableSink,
   type SevenZipEntryInput,
-  type SevenZipMethod
+  type SevenZipMethod,
+  type SevenZipReader
 } from '../../lib/libera7z'
-import { Libera7zWorkerDecoder } from './workerCodec'
+import { openLibera7zFileInWorker } from './readWorkerClient'
 import { runLibera7zWriteInWorker } from './writeWorkerClient'
 import {
   discoverSevenZipVolumes,
@@ -418,18 +419,25 @@ export async function writeLibera7zInline(options: WriteLibera7zOptions): Promis
 export async function openLibera7zFile(
   archivePath: string,
   options: OpenSevenZipOptions = {}
+): Promise<SevenZipReader> {
+  const opened = await openLibera7zFileInWorker(archivePath, {
+    maxEntries: options.maxEntries,
+    password: options.password,
+    signal: options.signal
+  })
+  return opened ?? await openLibera7zFileInline(archivePath, options)
+}
+
+/** The reader itself. Runs on whichever thread called it, worker or main. */
+export async function openLibera7zFileInline(
+  archivePath: string,
+  options: OpenSevenZipOptions = {}
 ): Promise<SevenZipArchive> {
   const source = isSevenZipVolumePath(archivePath)
     ? await NodeVolumeSource.open(await discoverSevenZipVolumes(archivePath))
     : await NodeFileSource.open(archivePath)
   try {
-    return await open7z(source, {
-      ...options,
-      lzma2DecoderFactory: options.lzma2DecoderFactory ?? ((property, signal) =>
-        Libera7zWorkerDecoder.create(property, signal)),
-      decodeLzma2Buffer: options.decodeLzma2Buffer ?? ((input, property, size, signal) =>
-        Libera7zWorkerDecoder.decodeAll(input, property, size, signal))
-    })
+    return await open7z(source, options)
   } catch (error) {
     await source.close().catch(() => undefined)
     throw error
