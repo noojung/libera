@@ -1,9 +1,7 @@
 import { promises as fsPromises } from 'fs'
-import type { ProgressCallback } from '../compressor'
 import { SevenZipError } from './error'
 import { Libera7zError, type SevenZipArchive } from '../../lib/libera7z'
 import { openLibera7zFile } from './node'
-import type { ExtractionOptions } from '../extractor'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -13,7 +11,6 @@ import {
   ensureSafeDirectory,
   ensureSafeParentDirectories,
   ExtractionMeter,
-  ExtractionTransaction,
   extractionError,
   isMacMetadataPath,
   matchesSelectedEntry,
@@ -24,7 +21,9 @@ import {
   securityError,
   throwIfAborted,
   topLevelSegment,
-  type ExtractionPolicy,
+  type ExtractionResult,
+  type FormatExtraction,
+  type FormatExtractor,
   type PlannedEntry
 } from '../extractionSafety'
 
@@ -77,17 +76,19 @@ async function readLiberaLinkTargets(
 
 async function extractWithJavaScript(
   archive: SevenZipArchive,
-  archivePath: string,
-  targetRoot: string,
-  selectedEntries: string[] | undefined,
-  startTime: number,
-  policy: ExtractionPolicy,
-  diskBudget: number,
-  transaction: ExtractionTransaction,
-  signal?: AbortSignal,
-  onProgress?: ProgressCallback,
-  extractionOptions?: ExtractionOptions
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+  {
+    archivePath,
+    targetRoot,
+    selectedEntries,
+    startTime,
+    policy,
+    diskBudget,
+    transaction,
+    signal,
+    onProgress,
+    options: extractionOptions
+  }: FormatExtraction
+): Promise<ExtractionResult> {
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   const requestedPaths = selectedEntries ? new Set(selectedEntries) : null
   const filter = createArchiveEntryFilter(options.filterPattern)
@@ -215,19 +216,8 @@ async function extractWithJavaScript(
   return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime }
 }
 
-export async function extractSevenZipArchive(
-  archivePath: string,
-  targetRoot: string,
-  selectedEntries: string[] | undefined,
-  password: string | undefined,
-  startTime: number,
-  policy: ExtractionPolicy,
-  diskBudget: number,
-  transaction: ExtractionTransaction,
-  signal?: AbortSignal,
-  onProgress?: ProgressCallback,
-  extractionOptions?: ExtractionOptions
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+export const extractSevenZipArchive: FormatExtractor = async request => {
+  const { archivePath, password, policy, signal } = request
   let archive: SevenZipArchive
   try {
     archive = await openLibera7zFile(archivePath, { signal, maxEntries: policy.maxEntries, password })
@@ -242,19 +232,7 @@ export async function extractSevenZipArchive(
     throw error
   }
   try {
-    return await extractWithJavaScript(
-      archive,
-      archivePath,
-      targetRoot,
-      selectedEntries,
-      startTime,
-      policy,
-      diskBudget,
-      transaction,
-      signal,
-      onProgress,
-      extractionOptions
-    ).catch(error => {
+    return await extractWithJavaScript(archive, request).catch(error => {
       if (error instanceof Libera7zError && error.code === 'PASSWORD_REQUIRED') {
         throw new SevenZipError('SEVEN_ZIP_PASSWORD_REQUIRED', 'The archive needs a password')
       }

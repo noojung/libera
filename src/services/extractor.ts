@@ -57,7 +57,9 @@ import {
   WRONG_ZIP_PASSWORD_ERROR_CODE,
   type ArchivePlanEntry,
   type ExtractionContext,
-  type ExtractionPolicy
+  type ExtractionPolicy,
+  type ExtractionResult,
+  type FormatExtractor
 } from './extractionSafety'
 
 // The safety core moved out of this file; re-exported so every existing
@@ -133,19 +135,19 @@ function isZipSymbolicLink(entry: Entry): boolean {
   return (zipUnixMode(entry) & 0o170000) === 0o120000
 }
 
-async function extractZipArchive(
-  archivePath: string,
-  targetRoot: string,
-  selectedEntries: string[] | undefined,
-  password: string | undefined,
-  startTime: number,
-  policy: ExtractionPolicy,
-  diskBudget: number,
-  transaction: ExtractionTransaction,
-  signal?: AbortSignal,
-  onProgress?: ProgressCallback,
-  extractionOptions?: ExtractionOptions
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+const extractZipArchive: FormatExtractor = async ({
+  archivePath,
+  targetRoot,
+  selectedEntries,
+  password,
+  startTime,
+  policy,
+  diskBudget,
+  transaction,
+  signal,
+  onProgress,
+  options: extractionOptions
+}) => {
   const zipReaderOptions: any = { password }
   if (extractionOptions?.encoding && extractionOptions.encoding !== 'auto') {
     zipReaderOptions.filenameEncoding = extractionOptions.encoding === 'cp949'
@@ -323,18 +325,18 @@ async function listTarEntries(
   return entries
 }
 
-async function extractTarArchive(
-  archivePath: string,
-  targetRoot: string,
-  selectedEntries: string[] | undefined,
-  startTime: number,
-  policy: ExtractionPolicy,
-  diskBudget: number,
-  transaction: ExtractionTransaction,
-  signal?: AbortSignal,
-  onProgress?: ProgressCallback,
-  extractionOptions?: ExtractionOptions
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+const extractTarArchive: FormatExtractor = async ({
+  archivePath,
+  targetRoot,
+  selectedEntries,
+  startTime,
+  policy,
+  diskBudget,
+  transaction,
+  signal,
+  onProgress,
+  options: extractionOptions
+}) => {
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   const archiveEntries = await listTarEntries(archivePath, policy, options, signal)
   const selectedPaths = selectedPathSet(
@@ -414,17 +416,17 @@ async function extractTarArchive(
   }
 }
 
-async function extractGzArchive(
-  archivePath: string,
-  targetRoot: string,
-  startTime: number,
-  policy: ExtractionPolicy,
-  diskBudget: number,
-  transaction: ExtractionTransaction,
-  signal?: AbortSignal,
-  onProgress?: ProgressCallback,
-  extractionOptions?: ExtractionOptions
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+const extractGzArchive: FormatExtractor = async ({
+  archivePath,
+  targetRoot,
+  startTime,
+  policy,
+  diskBudget,
+  transaction,
+  signal,
+  onProgress,
+  options: extractionOptions
+}) => {
   const outputName = normalizeEntryPath(path.basename(archivePath, '.gz'))
   const outputPath = resolveOutputPath(targetRoot, outputName)
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
@@ -490,11 +492,31 @@ async function readGzipModificationTime(archivePath: string): Promise<Date | und
   }
 }
 
+function isTarArchivePath(archivePath: string): boolean {
+  const normalizedPath = archivePath.toLowerCase()
+  return path.extname(normalizedPath) === '.tar' ||
+    normalizedPath.endsWith('.tgz') ||
+    normalizedPath.endsWith('.tar.gz')
+}
+
+function isGzArchivePath(archivePath: string): boolean {
+  return path.extname(archivePath).toLowerCase() === '.gz'
+}
+
+// Order matters: a `.tar.gz` is a tar before it is a gz, so the tar handler has
+// to be offered the archive first.
+const FORMAT_EXTRACTORS: readonly { claims: (archivePath: string) => boolean; extract: FormatExtractor }[] = [
+  { claims: archivePath => isZipFormatExtension(path.extname(archivePath).toLowerCase()), extract: extractZipArchive },
+  { claims: isTarArchivePath, extract: extractTarArchive },
+  { claims: isSevenZipArchivePath, extract: extractSevenZipArchive },
+  { claims: isGzArchivePath, extract: extractGzArchive }
+]
+
 export async function extractArchive(
   options: ExtractionOptions,
   onProgress?: ProgressCallback,
   context: ExtractionContext = {}
-): Promise<{ targetDir: string; extractedCount: number; durationMs: number }> {
+): Promise<ExtractionResult> {
   const startTime = Date.now()
   const { targetDir, rejectExistingTarget, selectedEntries, password } = options
   // Any volume of a split set identifies the set; reads start from the volume
@@ -520,41 +542,25 @@ export async function extractArchive(
       throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space to preserve the configured reserve')
     }
 
-    const ext = path.extname(archivePath).toLowerCase()
-    const fullExt = archivePath.toLowerCase()
-    if (isZipFormatExtension(ext)) {
-      const result = await extractZipArchive(
-        archivePath, targetRoot, selectedEntries, password, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress, options
-      )
-      await transaction.commit()
-      return result
+    const handler = FORMAT_EXTRACTORS.find(candidate => candidate.claims(archivePath))
+    if (!handler) {
+      throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
     }
-    if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
-      const result = await extractTarArchive(
-        archivePath, targetRoot, selectedEntries, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress, options
-      )
-      await transaction.commit()
-      return result
-    }
-    if (isSevenZipArchivePath(archivePath)) {
-      const result = await extractSevenZipArchive(
-        archivePath, targetRoot, selectedEntries, password, startTime, policy,
-        diskBudget, transaction, context.signal, onProgress, options
-      )
-      await transaction.commit()
-      return result
-    }
-    if (ext === '.gz') {
-      const result = await extractGzArchive(
-        archivePath, targetRoot, startTime, policy, diskBudget,
-        transaction, context.signal, onProgress, options
-      )
-      await transaction.commit()
-      return result
-    }
-    throw new Error(`Unsupported archive format for extraction: ${ext}`)
+    const result = await handler.extract({
+      archivePath,
+      targetRoot,
+      selectedEntries,
+      password,
+      startTime,
+      policy,
+      diskBudget,
+      transaction,
+      signal: context.signal,
+      onProgress,
+      options
+    })
+    await transaction.commit()
+    return result
   } catch (error) {
     await transaction.rollback()
     throw normalizeExtractionError(error, context.signal, isWrongZipPasswordError)

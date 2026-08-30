@@ -4,6 +4,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { ProgressCallback } from './compressor'
+import type { ExtractionOptions } from './extractor'
 
 // The format-agnostic core of extraction: the safety checks every archive
 // format has to pass, the transaction that undoes a failed job, and the meter
@@ -24,6 +25,36 @@ export interface ExtractionContext {
   policy?: Partial<ExtractionPolicy>
   getAvailableBytes?: (targetRoot: string) => Promise<bigint>
 }
+
+/** What every format handler reports back once its archive is on disk. */
+export interface ExtractionResult {
+  targetDir: string
+  extractedCount: number
+  durationMs: number
+}
+
+/**
+ * One extraction job, handed to whichever format handler claims the archive.
+ * Passing it as a record is what lets the four handlers share a signature, so
+ * extractor.ts can dispatch through a table instead of a chain of calls that
+ * each thread eleven positional arguments through in a fixed order.
+ */
+export interface FormatExtraction {
+  archivePath: string
+  targetRoot: string
+  selectedEntries?: string[]
+  password?: string
+  startTime: number
+  policy: ExtractionPolicy
+  diskBudget: number
+  transaction: ExtractionTransaction
+  signal?: AbortSignal
+  onProgress?: ProgressCallback
+  options?: ExtractionOptions
+}
+
+/** A format's entry point. Registered in the table in extractor.ts. */
+export type FormatExtractor = (request: FormatExtraction) => Promise<ExtractionResult>
 
 function globExpression(pattern: string): RegExp {
   let expression = '^'
