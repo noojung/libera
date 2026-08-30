@@ -249,16 +249,6 @@ export interface OpenSevenZipOptions {
   maxHeaderBytes?: number
   maxDictionaryBytes?: number
   password?: string
-  lzma2DecoderFactory?: (
-    dictionaryProperty: number,
-    signal?: AbortSignal
-  ) => Promise<Lzma2DecoderSession | null>
-  decodeLzma2Buffer?: (
-    input: Uint8Array,
-    dictionaryProperty: number,
-    expectedSize: number,
-    signal?: AbortSignal
-  ) => Promise<Uint8Array | null>
 }
 
 export interface OpenEntryOptions {
@@ -269,15 +259,6 @@ export type SevenZipEntryEvent =
   | { type: 'entry-start'; entry: SevenZipEntry }
   | { type: 'data'; entryId: number; bytes: Uint8Array }
   | { type: 'entry-end'; entry: SevenZipEntry }
-
-export interface Lzma2DecoderSession {
-  resetDictionary(): Promise<void>
-  setProperties(value: number): Promise<void>
-  resetState(): Promise<void>
-  writeUncompressed(bytes: Uint8Array): Promise<void>
-  decodeChunk(bytes: Uint8Array, outputSize: number, signal?: AbortSignal): Promise<Uint8Array>
-  close(): Promise<void>
-}
 
 function assertArchivePath(value: string): void {
   if (!value || value.includes('\0') || value.startsWith('/') || /^[A-Za-z]:/.test(value)) {
@@ -1141,7 +1122,6 @@ async function decodeEncodedHeader(
   source: RandomAccessSource,
   bytes: Uint8Array,
   signal?: AbortSignal,
-  decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
   decryption: DecryptionContext = decryptionContext()
 ): Promise<Uint8Array> {
   const reader = new ByteReader(bytes)
@@ -1157,7 +1137,7 @@ async function decodeEncodedHeader(
     throw new Libera7zError('LIMIT_EXCEEDED', 'Encoded 7z header exceeds the 64 MiB limit')
   }
   const encrypted = folder.coders.some(coder => coder.methodId === AES_METHOD)
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, decryption)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decryption)
   if (folder.crc !== undefined && crc32(decoded) !== folder.crc) {
     if (decryption.password !== undefined && encrypted) {
       throw new Libera7zError('WRONG_PASSWORD', 'The 7z archive password is incorrect')
@@ -1196,7 +1176,6 @@ async function decodeFolderBuffer(
   source: RandomAccessSource,
   folder: ParsedFolder,
   signal?: AbortSignal,
-  decodeLzma2Buffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
   decryption: DecryptionContext = decryptionContext()
 ): Promise<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) throw invalidArchive('7z folder has no packed stream')
@@ -1249,8 +1228,7 @@ async function decodeFolderBuffer(
         if (coder.methodId === COPY_METHOD) {
           if (value.length !== outputSize) throw invalidArchive('Copy stream size does not match the 7z folder size')
         } else if (coder.methodId === LZMA2_METHOD && coder.properties.length === 1) {
-          value = await decodeLzma2Buffer?.(value, coder.properties[0], outputSize, signal) ??
-            decodeLzma2(value, coder.properties[0], outputSize, signal)
+          value = decodeLzma2(value, coder.properties[0], outputSize, signal)
         } else if (coder.methodId === LZMA_METHOD) {
           value = decodeLzma1(value, coder.properties, outputSize, signal)
         } else if (coder.methodId === PPMD_METHOD) {
@@ -1419,53 +1397,36 @@ async function* decodeLzma2FromSource(
   cursor: PackedByteCursor,
   property: number,
   expectedSize: bigint,
-  signal?: AbortSignal,
-  decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory']
+  signal?: AbortSignal
 ): AsyncGenerator<Uint8Array> {
-  let decoder = await decoderFactory?.(property, signal)
-  if (!decoder) {
-    const localDecoder = new LzmaDecoder(dictionarySizeFromProperty(property))
-    decoder = {
-      resetDictionary: async () => localDecoder.resetDictionary(),
-      setProperties: async (value: number) => localDecoder.setProperties(value),
-      resetState: async () => localDecoder.resetState(),
-      writeUncompressed: async (bytes: Uint8Array) => localDecoder.writeUncompressed(bytes),
-      decodeChunk: async (bytes: Uint8Array, size: number, operationSignal?: AbortSignal) =>
-        localDecoder.decodeChunk(bytes, size, operationSignal),
-      close: async () => undefined
-    }
-  }
+  const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
   let total = 0n
   const state = initialLzma2ChunkState()
 
-  try {
-    while (true) {
-      throwIfCancelled(signal)
-      const control = await cursor.byte()
-      const plan = planLzma2Chunk(control, state)
-      if (plan.kind === 'end') break
-      if (plan.resetDictionary) await decoder.resetDictionary()
+  while (true) {
+    throwIfCancelled(signal)
+    const control = await cursor.byte()
+    const plan = planLzma2Chunk(control, state)
+    if (plan.kind === 'end') break
+    if (plan.resetDictionary) decoder.resetDictionary()
 
-      if (plan.kind === 'uncompressed') {
-        const length = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
-        const bytes = await cursor.read(length)
-        await decoder.writeUncompressed(bytes)
-        total += BigInt(bytes.length)
-        yield bytes
-        continue
-      }
-
-      const unpacked = (((control & 0x1f) << 16) | ((await cursor.byte()) << 8) | await cursor.byte()) + 1
-      const packed = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
-      if (plan.readProperties) await decoder.setProperties(await cursor.byte())
-      if (plan.resetState) await decoder.resetState()
-
-      const decoded = await decoder.decodeChunk(await cursor.read(packed), unpacked, signal)
-      total += BigInt(decoded.length)
-      yield decoded
+    if (plan.kind === 'uncompressed') {
+      const length = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
+      const bytes = await cursor.read(length)
+      decoder.writeUncompressed(bytes)
+      total += BigInt(bytes.length)
+      yield bytes
+      continue
     }
-  } finally {
-    await decoder.close()
+
+    const unpacked = (((control & 0x1f) << 16) | ((await cursor.byte()) << 8) | await cursor.byte()) + 1
+    const packed = (((await cursor.byte()) << 8) | await cursor.byte()) + 1
+    if (plan.readProperties) decoder.setProperties(await cursor.byte())
+    if (plan.resetState) decoder.resetState()
+
+    const decoded = decoder.decodeChunk(await cursor.read(packed), unpacked, signal)
+    total += BigInt(decoded.length)
+    yield decoded
   }
   if (cursor.remaining !== 0n) throw invalidArchive('LZMA2 packed stream contains trailing bytes')
   if (total !== expectedSize) throw invalidArchive('LZMA2 output size does not match the 7z header')
@@ -1537,8 +1498,6 @@ async function* decodeFolderFromSource(
   source: RandomAccessSource,
   folder: ParsedFolder,
   signal?: AbortSignal,
-  decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
-  decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
   decryption: DecryptionContext = decryptionContext()
 ): AsyncGenerator<Uint8Array> {
   if (!folder.packedOffsets || !folder.packedSizes) {
@@ -1572,8 +1531,7 @@ async function* decodeFolderFromSource(
             cursor,
             coder.properties[0],
             folder.unpackSize,
-            signal,
-            decoderFactory
+            signal
           )) {
           for (let offset = 0; offset < decoded.length; offset += 256 * 1024) {
             yield decoded.subarray(offset, Math.min(decoded.length, offset + 256 * 1024))
@@ -1593,7 +1551,7 @@ async function* decodeFolderFromSource(
     })
     return
   }
-  const decoded = await decodeFolderBuffer(source, folder, signal, decodeBuffer, decryption)
+  const decoded = await decodeFolderBuffer(source, folder, signal, decryption)
   for (let offset = 0; offset < decoded.length; offset += 1024 * 1024) {
     throwIfCancelled(signal)
     yield decoded.subarray(offset, Math.min(decoded.length, offset + 1024 * 1024))
@@ -1688,8 +1646,6 @@ export class SevenZipArchive implements SevenZipReader {
   constructor(
     private readonly source: RandomAccessSource,
     private readonly parsedFiles: readonly ParsedFile[],
-    private readonly decoderFactory?: OpenSevenZipOptions['lzma2DecoderFactory'],
-    private readonly decodeBuffer?: OpenSevenZipOptions['decodeLzma2Buffer'],
     private readonly decryption: DecryptionContext = decryptionContext(),
     readonly metadata: SevenZipArchiveMetadata = {
       version: '0.4',
@@ -1723,8 +1679,6 @@ export class SevenZipArchive implements SevenZipReader {
     }).sort((left, right) => left.id - right.id)
 
     const source = this.source
-    const decoderFactory = this.decoderFactory
-    const decodeBuffer = this.decodeBuffer
     const decryption = this.decryption
     const generator = (async function* (): AsyncGenerator<SevenZipEntryEvent> {
       let activeFolder: ParsedFolder | null = null
@@ -1747,8 +1701,6 @@ export class SevenZipArchive implements SevenZipReader {
                 source,
                 file.folder,
                 options.signal,
-                decoderFactory,
-                decodeBuffer,
                 decryption
               ),
               file.folder
@@ -1859,7 +1811,7 @@ export async function open7z(
   const decryption = decryptionContext(options.password)
   const encodedHeader = nextHeader[0] === NID.EncodedHeader
   const decoded = encodedHeader
-    ? await decodeEncodedHeader(source, nextHeader, options.signal, options.decodeLzma2Buffer, decryption)
+    ? await decodeEncodedHeader(source, nextHeader, options.signal, decryption)
     : nextHeader
   // Not every writer puts a CRC on the encrypted header - py7zr omits it - so a
   // wrong password can reach this point as nonsense bytes rather than a digest
@@ -1895,8 +1847,6 @@ export async function open7z(
   return new SevenZipArchive(
     source,
     files,
-    options.lzma2DecoderFactory,
-    options.decodeLzma2Buffer,
     decryption,
     {
       version: `${signature[6]}.${signature[7]}`,

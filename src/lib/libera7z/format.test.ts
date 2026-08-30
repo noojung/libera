@@ -5,10 +5,8 @@ import path from 'path'
 import { promisify } from 'util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Libera7zError } from './errors'
-import { create7z, open7z, type Lzma2DecoderSession, type SevenZipEntryInput } from './format'
-import { MemorySink, MemorySource } from './io'
-import { LzmaDecoder } from './lzma'
-import { dictionarySizeFromProperty } from './lzma2'
+import { create7z, open7z, type SevenZipEntryInput } from './format'
+import { MemorySink, MemorySource, type RandomAccessSource } from './io'
 import { referenceSevenZipFixture } from './referenceFixtures.testData'
 
 const temporaryDirectories: string[] = []
@@ -43,6 +41,34 @@ async function collect(readable: ReadableStream<Uint8Array>): Promise<Uint8Array
     offset += chunk.length
   }
   return result
+}
+
+/** Records every read length so a test can tell streaming from buffering: the
+ * buffering path pulls a folder's whole packed stream in one read. */
+function countingSource(bytes: Uint8Array): { source: RandomAccessSource; reads: number[] } {
+  const inner = new MemorySource(bytes)
+  const reads: number[] = []
+  return {
+    source: {
+      size: inner.size,
+      read: (offset, length, signal) => {
+        reads.push(length)
+        return inner.read(offset, length, signal)
+      }
+    },
+    reads
+  }
+}
+
+/** Incompressible bytes, so a packed stream stays larger than one read run. */
+function pseudoRandomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length)
+  let state = 0x2545f491
+  for (let index = 0; index < length; index += 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    bytes[index] = state >>> 24
+  }
+  return bytes
 }
 
 describe('pure TypeScript 7z container', () => {
@@ -403,36 +429,23 @@ describe('pure TypeScript 7z container', () => {
   }, 120_000)
 
   it('decrypts encrypted folders without buffering the whole entry', async () => {
+    // Incompressible, so the packed stream stays well above the 256 KiB the
+    // decrypting cursor reads at a time.
+    const large = pseudoRandomBytes(400_000)
     const sink = new MemorySink()
-    await create7z(entries(), sink, { method: 'lzma2', password: 'hunter2' })
-
-    // The streaming path is the only one that asks for a decoder session; the
-    // buffering fallback goes through decodeLzma2Buffer instead.
-    let sessions = 0
-    let buffered = 0
-    const archive = await open7z(new MemorySource(sink.data()), {
-      password: 'hunter2',
-      decodeLzma2Buffer: async () => {
-        buffered += 1
-        return undefined as unknown as Uint8Array
-      },
-      lzma2DecoderFactory: async property => {
-        sessions += 1
-        const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
-        return {
-          resetDictionary: async () => decoder.resetDictionary(),
-          setProperties: async value => decoder.setProperties(value),
-          resetState: async () => decoder.resetState(),
-          writeUncompressed: async bytes => decoder.writeUncompressed(bytes),
-          decodeChunk: async (bytes, size, signal) => decoder.decodeChunk(bytes, size, signal),
-          close: async () => undefined
-        } satisfies Lzma2DecoderSession
-      }
+    await create7z([{ path: 'large.bin', size: BigInt(large.length), open: () => stream(large) }], sink, {
+      method: 'lzma2',
+      password: 'hunter2'
     })
 
-    await expect(collect(archive.openEntry(1))).resolves.toEqual(payload)
-    expect(sessions).toBe(1)
-    expect(buffered).toBe(0)
+    const { source, reads } = countingSource(sink.data())
+    const archive = await open7z(source, { password: 'hunter2' })
+    const packedSize = Number(archive.entries[0].packedSize)
+    expect(packedSize).toBeGreaterThan(256 * 1024)
+    reads.length = 0
+    await expect(collect(archive.openEntry(0))).resolves.toEqual(large)
+    // Buffering would pull the packed stream in a single read.
+    expect(Math.max(...reads)).toBeLessThan(packedSize)
   }, 60_000)
 
   it('gives every folder its own IV', async () => {
@@ -500,28 +513,16 @@ describe('pure TypeScript 7z container', () => {
     }
   }, 60_000)
 
-  it('streams selected files from one solid LZMA2 folder with one decoder session', async () => {
+  it('streams selected files from one solid LZMA2 folder in a single pass', async () => {
     const contents = new Map([
       ['a.txt', Buffer.from('alpha '.repeat(400_000))],
       ['b.txt', Buffer.from('bravo '.repeat(20_000))],
       ['c.txt', Buffer.from('charlie '.repeat(20_000))]
     ])
 
-    let decoderSessions = 0
-    const archive = await open7z(new MemorySource(referenceSevenZipFixture('solid')), {
-      lzma2DecoderFactory: async property => {
-        decoderSessions += 1
-        const decoder = new LzmaDecoder(dictionarySizeFromProperty(property))
-        return {
-          resetDictionary: async () => decoder.resetDictionary(),
-          setProperties: async value => decoder.setProperties(value),
-          resetState: async () => decoder.resetState(),
-          writeUncompressed: async bytes => decoder.writeUncompressed(bytes),
-          decodeChunk: async (bytes, size, signal) => decoder.decodeChunk(bytes, size, signal),
-          close: async () => undefined
-        } satisfies Lzma2DecoderSession
-      }
-    })
+    const { source, reads } = countingSource(referenceSevenZipFixture('solid'))
+    const archive = await open7z(source)
+    reads.length = 0
     try {
       const files = archive.entries.filter(entry => contents.has(path.basename(entry.path)))
       expect(files).toHaveLength(3)
@@ -539,7 +540,12 @@ describe('pure TypeScript 7z container', () => {
         const actual = Buffer.concat(collected.get(entry.id)!.map(bytes => Buffer.from(bytes)))
         expect(actual).toEqual(contents.get(path.basename(entry.path)))
       }
-      expect(decoderSessions).toBe(1)
+      // One pass over the folder: decoding per entry would re-read its packed
+      // stream, and buffering would pull it all in a single read.
+      const packedSize = Number(archive.entries[files[0].id].packedSize)
+      expect(reads).toContain(1)
+      expect(Math.max(...reads)).toBeLessThan(packedSize)
+      expect(reads.reduce((total, length) => total + length, 0)).toBeLessThan(packedSize * 1.5)
 
       const controller = new AbortController()
       const cancelled = archive.openEntries([files[0].id], { signal: controller.signal }).getReader()
