@@ -207,6 +207,7 @@ body {
 
 .titlebar__tab {
   --titlebar-tab-accent: transparent;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -260,9 +261,14 @@ body {
   outline-offset: -2px;
 }
 
+.titlebar__tab > svg {
+  flex-shrink: 0;
+}
+
 .titlebar__queue-count {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -433,6 +439,15 @@ body {
 
   .titlebar__tab > span:not(.titlebar__queue-count) {
     display: none;
+  }
+
+  .titlebar__queue-count {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 15px;
+    height: 15px;
+    font-size: 9px;
   }
 
   .titlebar__tabs {
