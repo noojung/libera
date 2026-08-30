@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SUPPORTED_ARCHIVE_EXTENSIONS, isSupportedArchivePath } from './extractor'
-import { terminalVolumePath } from './splitZipVolumes'
+import { terminalVolumePath } from './zip/volumes'
 import {
   compressionLevels,
   nearestLevel,

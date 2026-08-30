@@ -1,9 +1,9 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { isMainThread, parentPort, Worker, type MessagePort } from 'worker_threads'
-import { Libera7zError, type Lzma2DecoderSession } from '../lib/libera7z'
-import { LzmaDecoder, type LzmaEncoderOptions } from '../lib/libera7z/lzma'
-import { decodeLzma2, dictionarySizeFromProperty, encodeLzma2Block } from '../lib/libera7z/lzma2'
+import { Libera7zError, type Lzma2DecoderSession } from '../../lib/libera7z'
+import { LzmaDecoder, type LzmaEncoderOptions } from '../../lib/libera7z/lzma'
+import { decodeLzma2, dictionarySizeFromProperty, encodeLzma2Block } from '../../lib/libera7z/lzma2'
 
 // This module is both the main-thread client and the worker entry point: the
 // bundled copy in dist/worker is built from this same file, so the request
@@ -60,7 +60,7 @@ export class Libera7zWorkerCodec {
     // Vitest executes source modules directly and cannot launch the bundled JS
     // worker. Electron builds always place the dedicated entry beside main.
     if (!process.versions.electron) return null
-    const workerPath = path.resolve(__dirname, '../worker/libera7zWorkerCodec.js')
+    const workerPath = path.resolve(__dirname, '../worker/sevenZipCodecWorker.js')
     const exists = await fsPromises.stat(workerPath).then(stat => stat.isFile(), () => false)
     if (!exists) return null
     try {
@@ -134,7 +134,7 @@ export class Libera7zWorkerDecoder implements Lzma2DecoderSession {
 
   private static async spawn(): Promise<Libera7zWorkerDecoder | null> {
     if (!process.versions.electron) return null
-    const workerPath = path.resolve(__dirname, '../worker/libera7zWorkerCodec.js')
+    const workerPath = path.resolve(__dirname, '../worker/sevenZipCodecWorker.js')
     const exists = await fsPromises.stat(workerPath).then(stat => stat.isFile(), () => false)
     if (!exists) return null
     try {

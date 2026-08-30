@@ -1,5 +1,5 @@
 // Mirrors the archive path rules in src/services (extractor.ts and
-// splitZipVolumes.ts). The services reach for fs and path, which cannot be
+// zip/volumes.ts). The services reach for fs and path, which cannot be
 // bundled into the renderer, so the rules are restated here and pinned by a
 // test that compares the two.
 

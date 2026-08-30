@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { openLibera7zFile, writeLibera7z } from './libera7zNode'
+import { openLibera7zFile, writeLibera7z } from './node'
 
 const temporaryDirectories: string[] = []
 

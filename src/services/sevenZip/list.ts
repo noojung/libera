@@ -1,7 +1,7 @@
-import { SevenZipError } from './sevenZipError'
-import { Libera7zError } from '../lib/libera7z'
-import { openLibera7zFile } from './libera7zNode'
-import { discoverSevenZipVolumes, isSevenZipVolumePath } from './sevenZipVolumes'
+import { SevenZipError } from './error'
+import { Libera7zError } from '../../lib/libera7z'
+import { openLibera7zFile } from './node'
+import { discoverSevenZipVolumes, isSevenZipVolumePath } from './volumes'
 
 // The inspector, previewer and extractor all use this Libera7z-backed listing,
 // keeping positional preview ids aligned with the reader's entry order.

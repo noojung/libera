@@ -12,15 +12,15 @@ import {
   type SeekableSink,
   type SevenZipEntryInput,
   type SevenZipMethod
-} from '../lib/libera7z'
-import { Libera7zWorkerCodec, Libera7zWorkerDecoder } from './libera7zWorkerCodec'
+} from '../../lib/libera7z'
+import { Libera7zWorkerCodec, Libera7zWorkerDecoder } from './workerCodec'
 import {
   discoverSevenZipVolumes,
   isSevenZipVolumePath,
   MAX_SEVEN_ZIP_VOLUMES,
   removeStaleSevenZipVolumes,
   sevenZipVolumePath
-} from './sevenZipVolumes'
+} from './volumes'
 
 async function writeFully(
   handle: fsPromises.FileHandle,

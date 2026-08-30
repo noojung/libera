@@ -1,9 +1,9 @@
 import { promises as fsPromises } from 'fs'
-import type { ProgressCallback } from './compressor'
-import { SevenZipError } from './sevenZipError'
-import { Libera7zError, type SevenZipArchive } from '../lib/libera7z'
-import { openLibera7zFile } from './libera7zNode'
-import type { ExtractionOptions } from './extractor'
+import type { ProgressCallback } from '../compressor'
+import { SevenZipError } from './error'
+import { Libera7zError, type SevenZipArchive } from '../../lib/libera7z'
+import { openLibera7zFile } from './node'
+import type { ExtractionOptions } from '../extractor'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -26,7 +26,7 @@ import {
   topLevelSegment,
   type ExtractionPolicy,
   type PlannedEntry
-} from './extractionSafety'
+} from '../extractionSafety'
 
 // Libera7z yields bounded entry streams, while the ordinary extraction safety
 // layer remains responsible for paths, links, quotas, permissions and cleanup.

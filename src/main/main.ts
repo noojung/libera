@@ -17,13 +17,13 @@ import {
   WRONG_ZIP_PASSWORD_ERROR_CODE
 } from '../services/extractor'
 import { inspectArchive } from '../services/archiveInspector'
-import { SplitVolumeError } from '../services/splitZipVolumes'
+import { SplitVolumeError } from '../services/zip/volumes'
 import {
   ArchivePreviewError,
   previewArchiveEntry,
   type ArchivePreviewRequestOptions
 } from '../services/archivePreview'
-import { SevenZipError } from '../services/sevenZipError'
+import { SevenZipError } from '../services/sevenZip/error'
 import {
   resolveExtractionInput,
   type ResolveExtractionInputsResult

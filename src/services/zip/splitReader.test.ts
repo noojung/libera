@@ -3,12 +3,12 @@ import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { compressArchive } from './compressor'
-import { openZipArchive } from './zipFileReader'
-import { discoverSplitVolumes } from './splitZipVolumes'
-import { extractArchive } from './extractor'
-import { inspectArchive } from './archiveInspector'
-import { previewArchiveEntry } from './archivePreview'
+import { compressArchive } from '../compressor'
+import { openZipArchive } from './fileReader'
+import { discoverSplitVolumes } from './volumes'
+import { extractArchive } from '../extractor'
+import { inspectArchive } from '../archiveInspector'
+import { previewArchiveEntry } from '../archivePreview'
 
 const temporaryDirectories: string[] = []
 

@@ -6,11 +6,11 @@ import { type FileEntry } from '@zip.js/zip.js'
 import * as tar from 'tar'
 import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES, isWrongZipPasswordError } from './extractor'
-import { openZipArchive } from './zipFileReader'
+import { openZipArchive } from './zip/fileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
-import { isSevenZipArchivePath } from './sevenZipVolumes'
+import { isSevenZipArchivePath } from './sevenZip/volumes'
 import { Libera7zError } from '../lib/libera7z'
-import { openLibera7zFile } from './libera7zNode'
+import { openLibera7zFile } from './sevenZip/node'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024

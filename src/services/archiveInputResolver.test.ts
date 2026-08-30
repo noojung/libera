@@ -5,7 +5,7 @@ import os from 'os'
 import path from 'path'
 import { resolveExtractionInput } from './archiveInputResolver'
 import { compressArchive } from './compressor'
-import { writeLibera7z } from './libera7zNode'
+import { writeLibera7z } from './sevenZip/node'
 
 const temporaryDirectories: string[] = []
 

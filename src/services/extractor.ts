@@ -13,11 +13,11 @@ import {
 import * as tar from 'tar'
 import zlib from 'zlib'
 import type { ProgressCallback } from './compressor'
-import { openZipArchive } from './zipFileReader'
-import { isNumberedVolumePath } from './splitZipVolumes'
+import { openZipArchive } from './zip/fileReader'
+import { isNumberedVolumePath } from './zip/volumes'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
-import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZipVolumes'
-import { extractSevenZipArchive } from './sevenZipExtractor'
+import { isSevenZipArchivePath, isSevenZipVolumePath } from './sevenZip/volumes'
+import { extractSevenZipArchive } from './sevenZip/extractor'
 import {
   applyAppleDouble,
   appleDoubleSubjectPath,

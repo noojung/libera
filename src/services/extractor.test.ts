@@ -9,7 +9,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive, type ProgressData } from './compressor'
-import { writeLibera7z } from './libera7zNode'
+import { writeLibera7z } from './sevenZip/node'
 import {
   buildExtractionPlan,
   calculateUsableExtractionBytes,

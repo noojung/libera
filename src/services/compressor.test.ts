@@ -14,7 +14,7 @@ import {
 } from './compressor'
 import { inspectArchive } from './archiveInspector'
 import { extractArchive } from './extractor'
-import { MIN_SPLIT_SIZE } from './splitZipWriter'
+import { MIN_SPLIT_SIZE } from './zip/splitWriter'
 
 const temporaryDirectories: string[] = []
 

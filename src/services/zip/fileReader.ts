@@ -13,7 +13,7 @@ import {
   splitVolumeBase,
   terminalVolumePath,
   volumePathForDisk
-} from './splitZipVolumes'
+} from './volumes'
 
 configure({ useWebWorkers: false })
 

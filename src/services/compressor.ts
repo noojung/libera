@@ -9,8 +9,8 @@ import {
   removeStaleVolumes,
   writeSplitZip,
   writeZipFile
-} from './splitZipWriter'
-import { writeSevenZipArchive } from './sevenZipWriter'
+} from './zip/splitWriter'
+import { writeSevenZipArchive } from './sevenZip/writer'
 
 /** A split set's compressed size is the whole set, not the volume opened. */
 async function totalOutputSize(outputPaths: string[]): Promise<number> {

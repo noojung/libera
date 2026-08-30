@@ -2,22 +2,22 @@ import { promises as fsPromises } from 'fs'
 import type { FileHandle } from 'fs/promises'
 import path from 'path'
 import { SplitDataWriter, ZipWriter, configure, type WritableWriter } from '@zip.js/zip.js'
-import { NodeFileReader } from './zipFileReader'
+import { NodeFileReader } from './fileReader'
 import {
   createVolumePredicate,
   isSplitVolumeName,
   normalizeName,
   splitVolumeBase,
   volumePathForDisk
-} from './splitZipVolumes'
-import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from './compressor'
+} from './volumes'
+import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from '../compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
 // alone - without it zip.js tries to spawn a Blob-URL worker under Node.
 configure({ useWebWorkers: false })
 
 export const MIN_SPLIT_SIZE = 1024 * 1024
-export { MAX_SPLIT_VOLUMES } from './splitZipVolumes'
+export { MAX_SPLIT_VOLUMES } from './volumes'
 
 export interface SplitZipOptions {
   source: { inputPaths: string[]; totalBytes: number }

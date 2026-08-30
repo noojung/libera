@@ -8,7 +8,7 @@ import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
 import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
-import { writeLibera7z } from './libera7zNode'
+import { writeLibera7z } from './sevenZip/node'
 
 const temporaryDirectories: string[] = []
 

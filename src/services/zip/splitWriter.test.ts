@@ -4,8 +4,8 @@ import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { SplitDataReader, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, type Entry } from '@zip.js/zip.js'
-import { compressArchive, CompressionError, type ProgressData } from './compressor'
-import { inspectArchive } from './archiveInspector'
+import { compressArchive, CompressionError, type ProgressData } from '../compressor'
+import { inspectArchive } from '../archiveInspector'
 
 const temporaryDirectories: string[] = []
 

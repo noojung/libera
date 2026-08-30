@@ -3,11 +3,11 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
 import { ExtractionError, MAX_ARCHIVE_ENTRIES } from './extractor'
-import { openZipArchive } from './zipFileReader'
+import { openZipArchive } from './zip/fileReader'
 import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './archiveVolumes'
 import type { ArchiveVolumeInfo } from './archiveInputResolver'
-import { listSevenZipEntries } from './sevenZipList'
-import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZipVolumes'
+import { listSevenZipEntries } from './sevenZip/list'
+import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZip/volumes'
 
 export interface ArchiveEntry {
   id: string

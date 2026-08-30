@@ -2,9 +2,9 @@ import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { MAX_ARCHIVE_ENTRIES } from './extractor'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
-import { isNumberedVolumePath } from './splitZipVolumes'
-import { discoverSevenZipVolumes, isSevenZipVolumePath } from './sevenZipVolumes'
-import { openZipArchive } from './zipFileReader'
+import { isNumberedVolumePath } from './zip/volumes'
+import { discoverSevenZipVolumes, isSevenZipVolumePath } from './sevenZip/volumes'
+import { openZipArchive } from './zip/fileReader'
 
 export interface ArchiveVolumeInfo {
   path: string

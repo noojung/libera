@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { SplitVolumeError } from './splitZipVolumes'
-import { canonicalArchivePath } from './archiveVolumes'
-import { listSevenZipEntries } from './sevenZipList'
-import { openLibera7zFile, writeLibera7z } from './libera7zNode'
+import { SplitVolumeError } from '../zip/volumes'
+import { canonicalArchivePath } from '../archiveVolumes'
+import { listSevenZipEntries } from './list'
+import { openLibera7zFile, writeLibera7z } from './node'
 import {
   discoverSevenZipVolumes,
   firstVolumePath,
@@ -13,7 +13,7 @@ import {
   isSevenZipVolumePath,
   removeStaleSevenZipVolumes,
   sevenZipVolumeBase
-} from './sevenZipVolumes'
+} from './volumes'
 
 const temporaryDirectories: string[] = []
 

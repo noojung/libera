@@ -8,7 +8,7 @@ import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from '@zip.
 import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
 import { compressArchive } from './compressor'
 import { inspectArchive } from './archiveInspector'
-import { writeLibera7z } from './libera7zNode'
+import { writeLibera7z } from './sevenZip/node'
 import {
   ArchivePreviewError,
   MAX_ARCHIVE_PREVIEW_BYTES,

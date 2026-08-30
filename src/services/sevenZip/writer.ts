@@ -1,13 +1,13 @@
-import type { ProgressCallback } from './compressor'
-import { SevenZipError } from './sevenZipError'
-import { Libera7zError } from '../lib/libera7z'
-import { writeLibera7z } from './libera7zNode'
+import type { ProgressCallback } from '../compressor'
+import { SevenZipError } from './error'
+import { Libera7zError } from '../../lib/libera7z'
+import { writeLibera7z } from './node'
 import {
   MAX_SEVEN_ZIP_VOLUMES,
   removeStaleSevenZipVolumes
-} from './sevenZipVolumes'
+} from './volumes'
 
-// Writing .7z, the counterpart to splitZipWriter.ts. Libera7z owns both
+// Writing .7z, the counterpart to zip/splitWriter.ts. Libera7z owns both
 // ordinary archives and numbered volume sets without invoking another tool.
 
 export interface SevenZipWriteOptions {

@@ -37,13 +37,16 @@ export default defineConfig({
         }
       },
       {
-        entry: path.resolve(__dirname, 'src/services/libera7zWorkerCodec.ts'),
+        entry: path.resolve(__dirname, 'src/services/sevenZip/workerCodec.ts'),
         vite: {
           build: {
             outDir: path.resolve(__dirname, 'dist/worker'),
             emptyOutDir: true,
             rollupOptions: {
-              external: ['worker_threads']
+              external: ['worker_threads'],
+              // The entry is named for its folder, so the bundle is renamed to
+              // say what it is: the codec worker the 7z services spawn.
+              output: { entryFileNames: 'sevenZipCodecWorker.js' }
             }
           }
         }

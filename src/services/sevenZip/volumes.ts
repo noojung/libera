@@ -1,10 +1,10 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
-import { crc32 } from '../lib/libera7z/crc32'
-import { normalizeName, SplitVolumeError } from './splitZipVolumes'
+import { crc32 } from '../../lib/libera7z/crc32'
+import { normalizeName, SplitVolumeError } from '../zip/volumes'
 
 // Naming and discovery for split 7z sets. Deliberately separate from
-// splitZipVolumes.ts because the two formats number their volumes from
+// zip/volumes.ts because the two formats number their volumes from
 // opposite ends: a ZIP set is read from the terminal `.zip` that carries the
 // central directory, a 7z set from `.7z.001`. Only the error type is shared,
 // so the main process and the translations already handle these failures.

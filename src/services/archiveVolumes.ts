@@ -1,5 +1,5 @@
-import { terminalVolumePath } from './splitZipVolumes'
-import { firstVolumePath, isSevenZipVolumePath } from './sevenZipVolumes'
+import { terminalVolumePath } from './zip/volumes'
+import { firstVolumePath, isSevenZipVolumePath } from './sevenZip/volumes'
 
 /**
  * The one volume of a set that can actually be opened, whichever volume the
