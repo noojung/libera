@@ -67,19 +67,31 @@ export const test = base.extend<Fixtures>({
 
     // Without its own profile the run inherits the developer's installed app -
     // its theme, language and window state - so a preference set by hand at
-    // some point silently decides what the tests see.
-    const app = await _electron.launch({
-      args: [mainEntry, `--user-data-dir=${path.join(workDir, 'user-data')}`],
-      cwd: repoRoot,
-      env
-    })
+    // some point silently decides what the tests see. Keep the profile outside
+    // workDir because some tests compress that entire directory; on Windows,
+    // Electron's live profile contains locked files that cannot be archived.
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-e2e-profile-'))
+    let app: ElectronApplication | undefined
 
-    await app.evaluate(({ app: electronApp }, directory) => {
-      electronApp.setPath('downloads', directory)
-    }, workDir)
+    try {
+      app = await _electron.launch({
+        args: [mainEntry, `--user-data-dir=${userDataDir}`],
+        cwd: repoRoot,
+        env
+      })
 
-    await use(app)
-    await app.close()
+      await app.evaluate(({ app: electronApp }, directory) => {
+        electronApp.setPath('downloads', directory)
+      }, workDir)
+
+      await use(app)
+    } finally {
+      try {
+        await app?.close()
+      } finally {
+        await fs.rm(userDataDir, { recursive: true, force: true })
+      }
+    }
   },
 
   page: async ({ app }, use) => {
