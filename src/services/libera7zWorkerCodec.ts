@@ -1,8 +1,23 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
-import { Worker } from 'worker_threads'
+import { isMainThread, parentPort, Worker, type MessagePort } from 'worker_threads'
 import { Libera7zError, type Lzma2DecoderSession } from '../lib/libera7z'
-import type { LzmaEncoderOptions } from '../lib/libera7z/lzma'
+import { LzmaDecoder, type LzmaEncoderOptions } from '../lib/libera7z/lzma'
+import { decodeLzma2, dictionarySizeFromProperty, encodeLzma2Block } from '../lib/libera7z/lzma2'
+
+// This module is both the main-thread client and the worker entry point: the
+// bundled copy in dist/worker is built from this same file, so the request
+// protocol below only has to be described once.
+interface CodecRequest {
+  id: number
+  type: 'encode' | 'decode-all' | 'decoder-init' | 'decoder-reset-dictionary' |
+    'decoder-set-properties' | 'decoder-reset-state' | 'decoder-write-uncompressed' | 'decoder-chunk'
+  bytes?: ArrayBuffer
+  options?: LzmaEncoderOptions
+  dictionaryProperty?: number
+  property?: number
+  outputSize?: number
+}
 
 interface WorkerReply {
   id: number
@@ -45,7 +60,7 @@ export class Libera7zWorkerCodec {
     // Vitest executes source modules directly and cannot launch the bundled JS
     // worker. Electron builds always place the dedicated entry beside main.
     if (!process.versions.electron) return null
-    const workerPath = path.resolve(__dirname, '../worker/libera7zCodecWorker.js')
+    const workerPath = path.resolve(__dirname, '../worker/libera7zWorkerCodec.js')
     const exists = await fsPromises.stat(workerPath).then(stat => stat.isFile(), () => false)
     if (!exists) return null
     try {
@@ -119,7 +134,7 @@ export class Libera7zWorkerDecoder implements Lzma2DecoderSession {
 
   private static async spawn(): Promise<Libera7zWorkerDecoder | null> {
     if (!process.versions.electron) return null
-    const workerPath = path.resolve(__dirname, '../worker/libera7zCodecWorker.js')
+    const workerPath = path.resolve(__dirname, '../worker/libera7zWorkerCodec.js')
     const exists = await fsPromises.stat(workerPath).then(stat => stat.isFile(), () => false)
     if (!exists) return null
     try {
@@ -224,3 +239,56 @@ export class Libera7zWorkerDecoder implements Lzma2DecoderSession {
     await this.worker.terminate()
   }
 }
+
+function installCodecWorker(port: MessagePort): void {
+  let decoder: LzmaDecoder | null = null
+
+  const requireBytes = (request: CodecRequest): Uint8Array => {
+    if (!request.bytes) throw new Error(`7z worker request ${request.type} has no bytes`)
+    return new Uint8Array(request.bytes)
+  }
+
+  const transferResult = (id: number, data: Uint8Array, compressed?: boolean): void => {
+    const transferable = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+    port.postMessage({ id, bytes: transferable, compressed }, [transferable])
+  }
+
+  port.on('message', (request: CodecRequest) => {
+    try {
+      if (request.type === 'encode') {
+        const result = encodeLzma2Block(requireBytes(request), request.options)
+        transferResult(request.id, result.data, result.compressed)
+        return
+      }
+      if (request.type === 'decode-all') {
+        transferResult(request.id, decodeLzma2(
+          requireBytes(request),
+          request.dictionaryProperty!,
+          request.outputSize
+        ))
+        return
+      }
+      if (request.type === 'decoder-init') {
+        decoder = new LzmaDecoder(dictionarySizeFromProperty(request.dictionaryProperty!))
+      } else {
+        if (!decoder) throw new Error('7z decoder worker was not initialized')
+        if (request.type === 'decoder-reset-dictionary') decoder.resetDictionary()
+        else if (request.type === 'decoder-set-properties') decoder.setProperties(request.property!)
+        else if (request.type === 'decoder-reset-state') decoder.resetState()
+        else if (request.type === 'decoder-write-uncompressed') decoder.writeUncompressed(requireBytes(request))
+        else if (request.type === 'decoder-chunk') {
+          transferResult(request.id, decoder.decodeChunk(requireBytes(request), request.outputSize!))
+          return
+        }
+      }
+      port.postMessage({ id: request.id, ok: true })
+    } catch (error) {
+      port.postMessage({
+        id: request.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+}
+
+if (!isMainThread && parentPort) installCodecWorker(parentPort)

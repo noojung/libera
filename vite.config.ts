@@ -37,7 +37,7 @@ export default defineConfig({
         }
       },
       {
-        entry: path.resolve(__dirname, 'src/main/libera7zCodecWorker.ts'),
+        entry: path.resolve(__dirname, 'src/services/libera7zWorkerCodec.ts'),
         vite: {
           build: {
             outDir: path.resolve(__dirname, 'dist/worker'),
