@@ -13,7 +13,7 @@ import {
   type SevenZipEntryInput,
   type SevenZipMethod
 } from '../../lib/libera7z'
-import { Libera7zWorkerCodec, Libera7zWorkerDecoder } from './workerCodec'
+import { createLibera7zWorkerEncoder, Libera7zWorkerDecoder, type Libera7zWorkerEncoder } from './workerCodec'
 import {
   discoverSevenZipVolumes,
   isSevenZipVolumePath,
@@ -380,7 +380,7 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
   const sink = options.splitSize === undefined
     ? await NodeFileSink.open(options.outputPath)
     : new NodeVolumeSink(options.outputPath, options.splitSize)
-  let workerCodec: Libera7zWorkerCodec | null = null
+  let workerCodec: Libera7zWorkerEncoder | null = null
   try {
     const levelOptions = ENCODER_BY_LEVEL[options.level] ?? ENCODER_BY_LEVEL[5]
     const encoderOptions = {
@@ -388,7 +388,7 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
       niceLength: options.matchFinderWordSize ?? levelOptions.niceLength
     }
     const method = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
-    workerCodec = method === 'copy' || options.level === 0 ? null : await Libera7zWorkerCodec.create(encoderOptions)
+    workerCodec = method === 'copy' || options.level === 0 ? null : await createLibera7zWorkerEncoder(encoderOptions)
     await create7z(entries, sink, {
       method,
       dictionarySize: options.dictionarySize ?? (DICTIONARY_BY_LEVEL[options.level] ?? DICTIONARY_BY_LEVEL[5]),
