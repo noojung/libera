@@ -115,8 +115,6 @@ export interface CreateSevenZipOptions {
   solid?: boolean
   signal?: AbortSignal
   onProgress?: (processedBytes: bigint, currentFile?: string) => void
-  /** Optional off-main-thread codec hook used by the Electron adapter. */
-  encodeLzma2Chunk?: (chunk: Uint8Array, signal?: AbortSignal) => Promise<{ data: Uint8Array; compressed: boolean }>
   lzmaEncoder?: LzmaEncoderOptions
   /** Encrypts every entry with AES-256. An empty string counts as no password. */
   password?: string
@@ -527,10 +525,7 @@ async function consumeEntry(
     let offset = 0
     while (joined.length - offset >= LZMA2_ENCODE_CHUNK_SIZE) {
       const chunk = joined.subarray(offset, offset + LZMA2_ENCODE_CHUNK_SIZE)
-      const encoded = options.encodeLzma2Chunk
-        ? await options.encodeLzma2Chunk(chunk, options.signal)
-        : encodeLzma2Block(chunk, options.lzmaEncoder)
-      await emit(encoded.data)
+      await emit(encodeLzma2Block(chunk, options.lzmaEncoder).data)
       offset += LZMA2_ENCODE_CHUNK_SIZE
     }
     pending = joined.slice(offset)
@@ -557,10 +552,7 @@ async function consumeEntry(
 
   if (method === 'lzma2') {
     if (pending.length > 0) {
-      const encoded = options.encodeLzma2Chunk
-        ? await options.encodeLzma2Chunk(pending, options.signal)
-        : encodeLzma2Block(pending, options.lzmaEncoder)
-      await emit(encoded.data)
+      await emit(encodeLzma2Block(pending, options.lzmaEncoder).data)
     }
     await emit(Uint8Array.of(0))
   }

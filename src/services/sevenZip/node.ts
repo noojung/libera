@@ -13,7 +13,8 @@ import {
   type SevenZipEntryInput,
   type SevenZipMethod
 } from '../../lib/libera7z'
-import { createLibera7zWorkerEncoder, Libera7zWorkerDecoder, type Libera7zWorkerEncoder } from './workerCodec'
+import { Libera7zWorkerDecoder } from './workerCodec'
+import { runLibera7zWriteInWorker } from './writeWorkerClient'
 import {
   discoverSevenZipVolumes,
   isSevenZipVolumePath,
@@ -375,26 +376,28 @@ const ENCODER_BY_LEVEL: Record<number, { searchDepth: number; niceLength: number
 }
 
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
+  const written = await runLibera7zWriteInWorker(options)
+  return written ?? await writeLibera7zInline(options)
+}
+
+/** The write itself. Runs on whichever thread called it, worker or main. */
+export async function writeLibera7zInline(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
   const entries = await collectSevenZipInputs(options.inputPaths, options.outputPath)
   const sink = options.splitSize === undefined
     ? await NodeFileSink.open(options.outputPath)
     : new NodeVolumeSink(options.outputPath, options.splitSize)
-  let workerCodec: Libera7zWorkerEncoder | null = null
   try {
     const levelOptions = ENCODER_BY_LEVEL[options.level] ?? ENCODER_BY_LEVEL[5]
     const encoderOptions = {
       searchDepth: options.searchCycles ?? levelOptions.searchDepth,
       niceLength: options.matchFinderWordSize ?? levelOptions.niceLength
     }
-    const method = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
-    workerCodec = method === 'copy' || options.level === 0 ? null : await createLibera7zWorkerEncoder(encoderOptions)
     await create7z(entries, sink, {
-      method,
+      method: options.method ?? (options.level === 0 ? 'copy' : 'lzma2'),
       dictionarySize: options.dictionarySize ?? (DICTIONARY_BY_LEVEL[options.level] ?? DICTIONARY_BY_LEVEL[5]),
       signal: options.signal,
       onProgress: options.onProgress,
-      encodeLzma2Chunk: workerCodec?.encode,
       lzmaEncoder: encoderOptions,
       password: options.password,
       encryptHeader: options.encryptFileNames,
@@ -409,8 +412,6 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
     if (sink instanceof NodeVolumeSink) await sink.remove().catch(() => undefined)
     else await fsPromises.rm(options.outputPath, { force: true }).catch(() => undefined)
     throw error
-  } finally {
-    await workerCodec?.close().catch(() => undefined)
   }
 }
 

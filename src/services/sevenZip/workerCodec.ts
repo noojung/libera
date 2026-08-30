@@ -1,19 +1,18 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
-import { isMainThread, parentPort, Worker, type MessagePort } from 'worker_threads'
+import { Worker, type MessagePort } from 'worker_threads'
 import { Libera7zError, type Lzma2DecoderSession } from '../../lib/libera7z'
-import { LzmaDecoder, type LzmaEncoderOptions } from '../../lib/libera7z/lzma'
-import { decodeLzma2, dictionarySizeFromProperty, encodeLzma2Block } from '../../lib/libera7z/lzma2'
+import { LzmaDecoder } from '../../lib/libera7z/lzma'
+import { decodeLzma2, dictionarySizeFromProperty } from '../../lib/libera7z/lzma2'
 
-// This module is both the main-thread client and the worker entry point: the
-// bundled copy in dist/worker is built from this same file, so the request
-// protocol below only has to be described once.
+// The main-thread client and the worker-side handler live together so the
+// request protocol below only has to be described once. The bundled entry that
+// installs the handler is codecWorker.ts.
 interface CodecRequest {
   id: number
-  type: 'encode' | 'decode-all' | 'decoder-init' | 'decoder-reset-dictionary' |
+  type: 'decode-all' | 'decoder-init' | 'decoder-reset-dictionary' |
     'decoder-set-properties' | 'decoder-reset-state' | 'decoder-write-uncompressed' | 'decoder-chunk'
   bytes?: ArrayBuffer
-  options?: LzmaEncoderOptions
   dictionaryProperty?: number
   property?: number
   outputSize?: number
@@ -22,7 +21,6 @@ interface CodecRequest {
 interface WorkerReply {
   id: number
   bytes?: ArrayBuffer
-  compressed?: boolean
   error?: string
   ok?: boolean
 }
@@ -35,7 +33,6 @@ interface PendingRequest {
 
 interface CallValues {
   bytes?: Uint8Array
-  options?: LzmaEncoderOptions
   dictionaryProperty?: number
   property?: number
   outputSize?: number
@@ -102,7 +99,6 @@ class Libera7zWorkerClient {
       const request: CodecRequest = {
         id,
         type,
-        options: values.options,
         dictionaryProperty: values.dictionaryProperty,
         property: values.property,
         outputSize: values.outputSize,
@@ -116,26 +112,6 @@ class Libera7zWorkerClient {
   async close(): Promise<void> {
     if (this.pending.size > 0) this.rejectAll(new Error(`${this.label} closed with pending work`))
     await this.worker.terminate()
-  }
-}
-
-export interface Libera7zWorkerEncoder {
-  encode: (chunk: Uint8Array, signal?: AbortSignal) => Promise<{ data: Uint8Array; compressed: boolean }>
-  close: () => Promise<void>
-}
-
-export async function createLibera7zWorkerEncoder(
-  options: LzmaEncoderOptions
-): Promise<Libera7zWorkerEncoder | null> {
-  const client = await Libera7zWorkerClient.spawn('7z codec worker')
-  if (!client) return null
-  return {
-    encode: async (chunk, signal) => {
-      const reply = await client.call('encode', { bytes: chunk, options }, signal)
-      if (!reply.bytes) throw new Error('7z codec worker returned no data')
-      return { data: new Uint8Array(reply.bytes), compressed: reply.compressed === true }
-    },
-    close: () => client.close()
   }
 }
 
@@ -201,7 +177,7 @@ export class Libera7zWorkerDecoder implements Lzma2DecoderSession {
   }
 }
 
-function installCodecWorker(port: MessagePort): void {
+export function installCodecWorker(port: MessagePort): void {
   let decoder: LzmaDecoder | null = null
 
   const requireBytes = (request: CodecRequest): Uint8Array => {
@@ -209,18 +185,13 @@ function installCodecWorker(port: MessagePort): void {
     return new Uint8Array(request.bytes)
   }
 
-  const transferResult = (id: number, data: Uint8Array, compressed?: boolean): void => {
+  const transferResult = (id: number, data: Uint8Array): void => {
     const transferable = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-    port.postMessage({ id, bytes: transferable, compressed }, [transferable])
+    port.postMessage({ id, bytes: transferable }, [transferable])
   }
 
   port.on('message', (request: CodecRequest) => {
     try {
-      if (request.type === 'encode') {
-        const result = encodeLzma2Block(requireBytes(request), request.options)
-        transferResult(request.id, result.data, result.compressed)
-        return
-      }
       if (request.type === 'decode-all') {
         transferResult(request.id, decodeLzma2(
           requireBytes(request),
@@ -251,5 +222,3 @@ function installCodecWorker(port: MessagePort): void {
     }
   })
 }
-
-if (!isMainThread && parentPort) installCodecWorker(parentPort)
