@@ -14,6 +14,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        'index.node': path.resolve(__dirname, 'src/index.node.ts'),
         node: path.resolve(__dirname, 'src/node.ts'),
         testing: path.resolve(__dirname, 'src/testing.ts')
       },

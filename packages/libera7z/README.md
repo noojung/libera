@@ -36,10 +36,13 @@ and `create7z` move the whole operation off-thread:
 
 ```ts
 import { configure } from 'libera7z'
-import 'libera7z/node' // Node only; browsers use the global Worker
 
 configure({ workerScript: '/path/to/libera7z/dist/worker.js' })
 ```
+
+Node gets a `worker_threads` worker and browsers the global `Worker`, chosen by
+the package's export conditions. A bundler that ignores those can import
+`libera7z/node` to register the Node factory explicitly.
 
 Nothing else changes. Your source and sink stay on the calling thread and the
 worker calls back into them, so the same objects work either way. Without a

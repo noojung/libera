@@ -1,9 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { configure } from 'libera7z'
-// Teaches libera7z to start a worker_threads worker; a browser would not need
-// this import. The bundle itself is copied beside main by the Vite build.
-import 'libera7z/node'
+// The package's node export condition brings the worker_threads factory with
+// it. The bundle itself is copied beside main by the Vite build.
 
 // Vitest runs these modules from source, where no bundle has been built, so the
 // library is told to stay in process there. Electron builds always have one.
