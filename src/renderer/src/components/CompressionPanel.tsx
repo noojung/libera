@@ -75,6 +75,26 @@ const DICTIONARY_SIZES = [
   { label: '128 MB', value: 128 * 1024 * 1024 }
 ]
 
+/** Wraps expert-only controls in the dashed frame, or renders them bare. */
+const ExpertFrame: React.FC<{ enabled: boolean; title: string; children: React.ReactNode }> = ({
+  enabled,
+  title,
+  children
+}) => {
+  if (!enabled) return <>{children}</>
+  return (
+    <div className="expert-card expert-card--inline">
+      <div className="expert-card__header">
+        <div className="expert-card__title">
+          <Zap size={16} />
+          {title}
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onStartCompress }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
@@ -370,63 +390,65 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
       {supportsPassword(format) && (
         <div className="compression-panel__field">
-          <label className="compression-panel__label compression-panel__label--stacked">
-            {t('compression.password')} <span className="compression-panel__optional">{t('compression.optional')}</span>
-          </label>
-          <div className="compression-panel__password-grid">
-            <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-            <input type="password" className="input-text" placeholder={t('compression.confirmPasswordPlaceholder')} value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
-          </div>
-          {password && password !== passwordConfirmation && (
-            <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
-          )}
-          {/* The algorithm belongs with the password it protects, so it sits
-              here rather than in the expert compression card above. */}
-          {isExpertMode && format === 'zip' && password && (
-            <div className="compression-panel__expert-row">
-              <label className="compression-panel__expert-label">
-                {t('compression.encryptionMethod')}
-              </label>
-              <select
-                className="input-select"
-                value={zipEncryptionMethod}
-                onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
-              >
-                <option value="zip20">{t('compression.zipCrypto')}</option>
-                <option value="aes256">{t('compression.aes256')}</option>
-                <option value="aes128">{t('compression.aes128')}</option>
-              </select>
-            </div>
-          )}
-          {password && password === passwordConfirmation && (
-            <p className="compression-panel__message">
-              {t(
-                format === '7z'
-                  ? 'compression.passwordNotice7z'
-                  : zipEncryptionMethod === 'aes256'
-                    ? 'compression.passwordNoticeZipAes'
-                    : zipEncryptionMethod === 'aes128'
-                      ? 'compression.passwordNoticeZipAes128'
-                    : 'compression.passwordNoticeZip'
-              )}
-            </p>
-          )}
-          {supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
-            <label className="compression-panel__split-option compression-panel__split-option--nested">
-              <input
-                type="checkbox"
-                className="compression-panel__checkbox"
-                checked={encryptFileNames}
-                onChange={(e) => setEncryptFileNames(e.target.checked)}
-              />
-              <span>
-                <span className="compression-panel__option-title">{t('compression.encryptFileNames')}</span>
-                <span className="compression-panel__option-description">
-                  {t('compression.encryptFileNamesHint')}
-                </span>
-              </span>
+          {/* In expert mode the whole password section moves inside the dashed
+              frame, so the algorithm sits with the password it protects. */}
+          <ExpertFrame enabled={isExpertMode} title={t('compression.expertEncryptionTitle')}>
+            <label className="compression-panel__label compression-panel__label--stacked">
+              {t('compression.password')} <span className="compression-panel__optional">{t('compression.optional')}</span>
             </label>
-          )}
+            <div className="compression-panel__password-grid">
+              <input type="password" className="input-text" placeholder={t('compression.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+              <input type="password" className="input-text" placeholder={t('compression.confirmPasswordPlaceholder')} value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} autoComplete="new-password" />
+            </div>
+            {password && password !== passwordConfirmation && (
+              <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
+            )}
+            {isExpertMode && format === 'zip' && password && (
+              <div className="compression-panel__expert-row compression-panel__expert-row--spaced">
+                <label className="compression-panel__expert-label">
+                  {t('compression.encryptionMethod')}
+                </label>
+                <select
+                  className="input-select"
+                  value={zipEncryptionMethod}
+                  onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
+                >
+                  <option value="zip20">{t('compression.zipCrypto')}</option>
+                  <option value="aes256">{t('compression.aes256')}</option>
+                  <option value="aes128">{t('compression.aes128')}</option>
+                </select>
+              </div>
+            )}
+            {password && password === passwordConfirmation && (
+              <p className="compression-panel__message">
+                {t(
+                  format === '7z'
+                    ? 'compression.passwordNotice7z'
+                    : zipEncryptionMethod === 'aes256'
+                      ? 'compression.passwordNoticeZipAes'
+                      : zipEncryptionMethod === 'aes128'
+                        ? 'compression.passwordNoticeZipAes128'
+                      : 'compression.passwordNoticeZip'
+                )}
+              </p>
+            )}
+            {supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
+              <label className="compression-panel__split-option compression-panel__split-option--nested">
+                <input
+                  type="checkbox"
+                  className="compression-panel__checkbox"
+                  checked={encryptFileNames}
+                  onChange={(e) => setEncryptFileNames(e.target.checked)}
+                />
+                <span>
+                  <span className="compression-panel__option-title">{t('compression.encryptFileNames')}</span>
+                  <span className="compression-panel__option-description">
+                    {t('compression.encryptFileNamesHint')}
+                  </span>
+                </span>
+              </label>
+            )}
+          </ExpertFrame>
         </div>
       )}
 

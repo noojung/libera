@@ -243,6 +243,29 @@
   margin-top: 0;
 }
 
+/* Frames the password section rather than standing on its own, so it sits
+   tighter and picks up its own accent instead of the compression card's. */
+.compression-panel .expert-card--inline {
+  margin-top: 0;
+  padding: 12px;
+  border-color: var(--accent-mint);
+}
+
+/* The algorithm follows the password inputs, which bring their own spacing. */
+.compression-panel__expert-row--spaced {
+  margin-top: 12px;
+}
+
+.compression-panel .expert-card--inline .expert-card__header {
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+}
+
+.compression-panel .expert-card--inline .expert-card__title {
+  font-size: 14px;
+  color: var(--accent-mint);
+}
+
 .compression-panel__expert-row:last-child {
   margin-bottom: 0;
 }
