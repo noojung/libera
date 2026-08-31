@@ -192,7 +192,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       level: effectiveLevel,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
-      encryptFileNames: supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
+      encryptFileNames: isExpertMode && supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
       splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined,
       ...(isExpertMode
         ? {
@@ -403,7 +403,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             {password && password !== passwordConfirmation && (
               <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
             )}
-            {isExpertMode && format === 'zip' && password && (
+            {isExpertMode && format === 'zip' && (
               <div className="compression-panel__expert-row compression-panel__expert-row--spaced">
                 <label className="compression-panel__expert-label">
                   {t('compression.encryptionMethod')}
@@ -432,7 +432,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                 )}
               </p>
             )}
-            {supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
+            {isExpertMode && supportsHeaderEncryption(format) && password !== '' && password === passwordConfirmation && (
               <label className="compression-panel__split-option compression-panel__split-option--nested">
                 <input
                   type="checkbox"

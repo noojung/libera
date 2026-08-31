@@ -107,6 +107,9 @@ describe('CompressionPanel', () => {
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
 
     expect(screen.getByText(/AES-256 encryption will be used/)).toBeInTheDocument()
+    // ... and only in expert mode, which is off until now.
+    expect(screen.queryByText('Hide the file names too')).not.toBeInTheDocument()
+    fireEvent(window, new CustomEvent('libera-expert-mode-change', { detail: { enabled: true } }))
     await user.click(screen.getByText('Hide the file names too'))
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
 
@@ -118,6 +121,7 @@ describe('CompressionPanel', () => {
   })
 
   it('drops the name-hiding option when switching away from 7z', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi()
     const onStart = vi.fn()
     const { user } = renderWithI18n(
@@ -249,8 +253,6 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('0 - Store')).toBeInTheDocument()
     expect(screen.getAllByRole('slider')[0]).toBeDisabled()
 
-    // The encryption algorithm only appears once a password is being set.
-    expect(screen.queryByRole('option', { name: /AES-128/ })).not.toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
     await user.selectOptions(screen.getAllByRole('combobox').at(-1)!, 'aes128')
