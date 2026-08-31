@@ -6,6 +6,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # archiver-zip-encrypted, which supplies the encrypted-ZIP format, depends
+      # on archiver ^7 and zip-stream ^6. On archiver 8 npm installs a second
+      # archiver and registerFormat is not even on the export any more, so the
+      # encrypted-ZIP path breaks on import. Revisit when that plugin supports 8.
+      - dependency-name: archiver
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/archiver'
+        update-types: [version-update:semver-major]
     groups:
       production-dependencies:
         dependency-type: production
