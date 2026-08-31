@@ -75,6 +75,7 @@
 
 .archive-preview__header-actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 10px;
 }
@@ -95,8 +96,10 @@
 
 .archive-preview__toggle-btn {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   height: 26px;
   padding: 0 8px;
   border: 0;
@@ -116,18 +119,32 @@
 }
 
 .input-select.archive-preview__encoding-select {
+  /* Fixed, because a select is as wide as the option it shows: picking
+     CP949 over Auto would otherwise widen it and squeeze the header. */
+  width: 128px;
   height: 30px;
+  flex-shrink: 0;
   padding: 2px 24px 2px 8px;
   font-size: 11px;
 }
 
 .archive-preview__copy-btn {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
   height: 30px;
   padding: 0 10px;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Flex shrinks an svg before it wraps any text, which is what turns these
+   icons into slivers when the header runs out of room. */
+.archive-preview__toggle-btn svg,
+.archive-preview__copy-btn svg,
+.archive-preview__icon svg {
+  flex-shrink: 0;
 }
 
 .archive-preview__close {

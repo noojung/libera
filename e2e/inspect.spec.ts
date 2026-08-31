@@ -26,6 +26,42 @@ test('lists a JAR under its own format and previews an entry', async ({ app, pag
   await expect(page.locator('.archive-preview__path')).toHaveText('META-INF/MANIFEST.MF')
 })
 
+test('keeps the preview header whole when the window is narrow', async ({ app, page, workDir }) => {
+  const archivePath = path.join(workDir, 'notes.zip')
+  await writeZipArchive(archivePath, { 'notes.txt': 'first line\r\nsecond line\r\n' })
+
+  // The encoding picker is an expert control, so the app has to be in that
+  // mode before it is on screen.
+  await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
+  await page.reload()
+
+  await stubDialogs(app, { filePaths: [archivePath] })
+  await page.locator('.titlebar__tab--inspect').click()
+  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.locator('.archive-inspector__entry', { hasText: 'notes.txt' }).click()
+
+  const select = page.locator('.archive-preview__encoding-select')
+  await expect(select).toBeVisible()
+  await select.selectOption('cp949')
+  await expect(page.locator('.archive-preview__footer')).toContainText('CP949')
+
+  const size = async (selector: string) => {
+    const box = await page.locator(selector).first().boundingBox()
+    return { width: box?.width, height: box?.height }
+  }
+
+  // Narrow enough that the header has to give somewhere. It used to give in
+  // the two places that show: the select collapsed to a stub, and flex shrank
+  // the button icons - an svg goes before any text wraps - into slivers.
+  for (const width of [720, 560, 460]) {
+    await page.setViewportSize({ width, height: 640 })
+    expect(await size('.archive-preview__encoding-select')).toEqual({ width: 128, height: 30 })
+    expect(await size('.archive-preview__toggle-btn svg')).toEqual({ width: 13, height: 13 })
+    expect(await size('.archive-preview__copy-btn svg')).toEqual({ width: 14, height: 14 })
+    expect(await size('.archive-preview__icon')).toEqual({ width: 40, height: 40 })
+  }
+})
+
 test('lists a WAR under its own format', async ({ app, page, workDir }) => {
   const archivePath = path.join(workDir, 'webapp.war')
   await writeZipArchive(archivePath, {

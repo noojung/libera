@@ -511,7 +511,7 @@ describe('ArchiveInspector', () => {
       { password: undefined, includeRawBytes: true }
     )
     expect(await screen.findByText(/00000000\s+48 69/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Text View' }))
+    await user.click(screen.getByRole('button', { name: 'Text' }))
     expect(screen.getByText('Hi')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Encoding' })).toBeInTheDocument()
   })

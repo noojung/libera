@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Copy, Check, FileText, Image as ImageIcon, X, Binary } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import type { ArchivePreviewMediaType, ArchivePreviewResult } from '@services/archivePreview'
 import type { ArchiveEntry } from '@services/archiveInspector'
 import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
+import { detectLineEnding, type LineEnding } from '@/utils/lineEndings'
 import './ArchivePreviewModal.css'
 
 interface ArchivePreviewModalProps {
@@ -15,6 +17,12 @@ interface ArchivePreviewModalProps {
   entry?: ArchiveEntry
   errorKey: string | null
   onClose: () => void
+}
+
+function formatLineEnding(ending: LineEnding, t: TFunction): string {
+  if (ending === 'mixed') return t('inspector.preview.lineEndingMixed')
+  if (ending === 'none') return t('inspector.preview.lineEndingNone')
+  return ending.toUpperCase()
 }
 
 function formatImageType(mediaType: ArchivePreviewMediaType): string {
@@ -116,6 +124,11 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
     }
     return result.kind === 'text' ? result.text : ''
   }, [result, viewMode, encodingOverride, rawBytes])
+
+  const lineEnding = useMemo(
+    () => viewMode === 'text' ? detectLineEnding(displayedText) : null,
+    [viewMode, displayedText]
+  )
 
   const handleCopy = async () => {
     if (!displayedText) return
@@ -290,6 +303,9 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
                       : result.kind === 'text' ? result.encoding : 'utf-8').toUpperCase()
                   })}
             </span>
+            {lineEnding && (
+              <span>{t('inspector.preview.lineEnding', { ending: formatLineEnding(lineEnding, t) })}</span>
+            )}
             {result.truncated && (
               <span role="status" className="archive-preview__notice">
                 {result.totalBytes === null
