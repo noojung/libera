@@ -143,6 +143,16 @@
   margin-top: 10px;
 }
 
+/* Nothing to hide until a password is set, so the option waits its turn. */
+.compression-panel__split-option.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.compression-panel__split-option.is-disabled .compression-panel__checkbox {
+  cursor: not-allowed;
+}
+
 .compression-panel__checkbox {
   width: 18px;
   height: 18px;
