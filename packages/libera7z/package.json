@@ -72,6 +72,7 @@
     "node": ">=18"
   },
   "scripts": {
+    "prepack": "npm run build",
     "build": "vite build && vite build -c vite.worker.config.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "vitest run",
