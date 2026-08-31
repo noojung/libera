@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Sliders, Archive, Zap } from 'lucide-react'
+import { Sliders, Archive, Zap, Lock } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -76,17 +76,18 @@ const DICTIONARY_SIZES = [
 ]
 
 /** Wraps expert-only controls in the dashed frame, or renders them bare. */
-const ExpertFrame: React.FC<{ enabled: boolean; title: string; children: React.ReactNode }> = ({
-  enabled,
-  title,
-  children
-}) => {
+const ExpertFrame: React.FC<{
+  enabled: boolean
+  title: string
+  icon: React.ReactNode
+  children: React.ReactNode
+}> = ({ enabled, title, icon, children }) => {
   if (!enabled) return <>{children}</>
   return (
     <div className="expert-card expert-card--inline">
       <div className="expert-card__header">
         <div className="expert-card__title">
-          <Zap size={16} />
+          {icon}
           {title}
         </div>
       </div>
@@ -392,7 +393,11 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         <div className="compression-panel__field">
           {/* In expert mode the whole password section moves inside the dashed
               frame, so the algorithm sits with the password it protects. */}
-          <ExpertFrame enabled={isExpertMode} title={t('compression.expertEncryptionTitle')}>
+          <ExpertFrame
+            enabled={isExpertMode}
+            title={t('compression.expertEncryptionTitle')}
+            icon={<Lock size={16} />}
+          >
             <label className="compression-panel__label compression-panel__label--stacked">
               {t('compression.password')} <span className="compression-panel__optional">{t('compression.optional')}</span>
             </label>

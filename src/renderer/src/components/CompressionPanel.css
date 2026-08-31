@@ -244,11 +244,10 @@
 }
 
 /* Frames the password section rather than standing on its own, so it sits
-   tighter and picks up its own accent instead of the compression card's. */
+   tighter than the compression card while keeping its accent. */
 .compression-panel .expert-card--inline {
   margin-top: 0;
   padding: 12px;
-  border-color: var(--accent-mint);
 }
 
 /* The algorithm follows the password inputs, which bring their own spacing. */
@@ -263,7 +262,6 @@
 
 .compression-panel .expert-card--inline .expert-card__title {
   font-size: 14px;
-  color: var(--accent-mint);
 }
 
 .compression-panel__expert-row:last-child {
