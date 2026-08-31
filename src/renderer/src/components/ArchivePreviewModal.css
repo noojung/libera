@@ -252,6 +252,19 @@
   font-size: 12px;
 }
 
+.archive-preview__meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The same middle dot the image footer joins its details with. */
+.archive-preview__meta span + span::before {
+  margin-right: 10px;
+  content: '·';
+}
+
 .archive-preview__notice {
   color: var(--status-warning);
   font-weight: 600;

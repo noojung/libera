@@ -73,6 +73,16 @@ describe('ArchivePreviewModal', () => {
     expect(screen.getByText('Line endings: CRLF')).toBeInTheDocument()
   })
 
+  // The footer spaces its children apart to keep the truncation notice on the
+  // right, which would strand the line endings there too.
+  it('keeps the line endings beside the encoding', () => {
+    show('first\r\nsecond\r\n')
+
+    const meta = screen.getByText('Encoding: UTF-8').parentElement
+    expect(meta).toHaveClass('archive-preview__meta')
+    expect(meta).toContainElement(screen.getByText('Line endings: CRLF'))
+  })
+
   it('spells out a file that mixes them', () => {
     show('first\r\nsecond\n')
 

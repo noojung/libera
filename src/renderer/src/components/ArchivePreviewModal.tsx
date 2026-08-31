@@ -294,18 +294,22 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
 
         {(result?.kind === 'text' || result?.kind === 'binary') && (
           <footer className="archive-preview__footer">
-            <span>
-              {viewMode === 'hex'
-                ? t('inspector.preview.hexView')
-                : t('inspector.preview.encoding', {
-                    encoding: (encodingOverride !== 'auto'
-                      ? encodingOverride
-                      : result.kind === 'text' ? result.encoding : 'utf-8').toUpperCase()
-                  })}
-            </span>
-            {lineEnding && (
-              <span>{t('inspector.preview.lineEnding', { ending: formatLineEnding(lineEnding, t) })}</span>
-            )}
+            {/* Grouped, because the footer spaces its children apart and the
+                line endings belong with the encoding, not across from it. */}
+            <div className="archive-preview__meta">
+              <span>
+                {viewMode === 'hex'
+                  ? t('inspector.preview.hexView')
+                  : t('inspector.preview.encoding', {
+                      encoding: (encodingOverride !== 'auto'
+                        ? encodingOverride
+                        : result.kind === 'text' ? result.encoding : 'utf-8').toUpperCase()
+                    })}
+              </span>
+              {lineEnding && (
+                <span>{t('inspector.preview.lineEnding', { ending: formatLineEnding(lineEnding, t) })}</span>
+              )}
+            </div>
             {result.truncated && (
               <span role="status" className="archive-preview__notice">
                 {result.totalBytes === null
