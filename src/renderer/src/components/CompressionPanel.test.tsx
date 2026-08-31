@@ -274,6 +274,24 @@ describe('CompressionPanel', () => {
     }))
   })
 
+  it('submits an LZMA ZIP without the deflate tuning it cannot use', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+
+    await user.selectOptions(screen.getAllByRole('combobox')[0], 'lzma')
+    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Memory level/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Start compression/ }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      zipMethod: 'lzma',
+      deflateStrategy: undefined,
+      memLevel: undefined
+    }))
+  })
+
   it('submits expert 7Z codec parameters and solid mode', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })

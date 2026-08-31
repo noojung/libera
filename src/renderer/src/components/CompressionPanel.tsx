@@ -22,7 +22,7 @@ import { useExpertMode } from '@/utils/expertMode'
 import './CompressionPanel.css'
 
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
-export type ZipMethod = 'deflate' | 'store'
+export type ZipMethod = 'deflate' | 'store' | 'lzma' | 'zstd'
 export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
 export type SevenZipMethod = 'lzma2' | 'copy'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
@@ -160,7 +160,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const storeSelected = isExpertMode && format === 'zip' && zipMethod === 'store'
   const effectiveLevel = storeSelected ? 0 : level
   // Deflate tuning only means something where a deflate pass actually runs.
-  const deflateTuned = (format === 'zip' && zipMethod !== 'store') || format === 'tgz' || format === 'gz'
+  const deflateTuned = (format === 'zip' && zipMethod === 'deflate') || format === 'tgz' || format === 'gz'
 
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
@@ -292,6 +292,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               >
                 <option value="deflate">{t('compression.methodDeflate')}</option>
                 <option value="store">{t('compression.methodStore')}</option>
+                <option value="lzma">{t('compression.methodZipLzma')}</option>
+                <option value="zstd">{t('compression.methodZipZstd')}</option>
               </select>
             </div>
           )}

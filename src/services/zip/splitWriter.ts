@@ -10,11 +10,13 @@ import {
   splitVolumeBase,
   volumePathForDisk
 } from './volumes'
+import { registerZipCodecs, ZIP_LZMA_METHOD, ZIP_ZSTD_METHOD } from './codecs'
 import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from '../compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
 // alone - without it zip.js tries to spawn a Blob-URL worker under Node.
 configure({ useWebWorkers: false })
+registerZipCodecs()
 
 export const MIN_SPLIT_SIZE = 1024 * 1024
 export { MAX_SPLIT_VOLUMES } from './volumes'
@@ -54,6 +56,18 @@ interface ArchiveEntry {
 interface VolumeSink extends WritableWriter {
   initialized?: boolean
   init(): Promise<void>
+}
+
+/**
+ * The entry options that carry the chosen method. Store rides on level 0, the
+ * two registered codecs name their method number, and Deflate is the default
+ * zip.js already writes.
+ */
+function zipMethodOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
+  const level = squeeze.method === 'store' ? 0 : squeeze.level
+  if (squeeze.method === 'lzma') return { level, compressionMethod: ZIP_LZMA_METHOD }
+  if (squeeze.method === 'zstd') return { level, compressionMethod: ZIP_ZSTD_METHOD }
+  return { level }
 }
 
 function zipEncryptionOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
@@ -221,14 +235,14 @@ export async function writeSplitZip(
 ): Promise<SplitZipResult> {
   const { inputPaths, totalBytes } = options.source
   const { outputPath, splitSize } = options.volumes
-  const { level, method = 'deflate' } = options.squeeze
+  const methodOptions = zipMethodOptions(options.squeeze)
   const { signal } = context
 
   const entries = await collectEntries(inputPaths, createVolumePredicate(outputPath))
   const { generator, volumePaths, openHandles } = createVolumeWriters(outputPath)
   const splitWriter = new SplitDataWriter(generator, splitSize)
   const zipWriter = new ZipWriter(splitWriter, {
-    level: method === 'store' ? 0 : level,
+    ...methodOptions,
     ...zipEncryptionOptions(options.squeeze)
   })
 
@@ -261,7 +275,7 @@ export async function writeSplitZip(
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
         await zipWriter.add(entry.entryName, reader, {
-          level: method === 'store' ? 0 : level,
+          ...methodOptions,
           lastModDate: entry.lastModDate,
           signal,
           onprogress: (progress) => report(entryStart + progress, entry.entryName)
@@ -339,9 +353,9 @@ export async function writeZipFile(
       }
     })
   }
-  const effectiveLevel = squeeze.method === 'store' ? 0 : squeeze.level
+  const methodOptions = zipMethodOptions(squeeze)
   const zipWriter = new ZipWriter(sink, {
-    level: effectiveLevel,
+    ...methodOptions,
     ...zipEncryptionOptions(squeeze)
   })
   const report = (bytes: number, currentFile?: string) => onProgress?.({
@@ -362,7 +376,7 @@ export async function writeZipFile(
       const entryStart = processedBytes
       try {
         await zipWriter.add(entry.entryName, reader, {
-          level: effectiveLevel,
+          ...methodOptions,
           lastModDate: entry.lastModDate,
           signal,
           onprogress: progress => report(entryStart + progress, entry.entryName)

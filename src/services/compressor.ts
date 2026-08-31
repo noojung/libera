@@ -3,6 +3,7 @@ import path from 'path'
 import archiver from 'archiver'
 import zipEncrypted from 'archiver-zip-encrypted'
 import zlib from 'zlib'
+import { supportsZstd } from './zip/codecs'
 import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
@@ -27,7 +28,7 @@ archiver.registerFormat('zip-encrypted', zipEncrypted)
 
 export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
-export type ZipMethod = 'deflate' | 'store'
+export type ZipMethod = 'deflate' | 'store' | 'lzma' | 'zstd'
 export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
 export type SevenZipMethod = 'lzma2' | 'copy'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
@@ -210,8 +211,11 @@ export async function compressArchive(
   if (options.zipMethod !== undefined && format !== 'zip') {
     throw new Error('ZIP compression method can only be used with ZIP archives.')
   }
-  if (options.zipMethod !== undefined && !['deflate', 'store'].includes(options.zipMethod)) {
+  if (options.zipMethod !== undefined && !['deflate', 'store', 'lzma', 'zstd'].includes(options.zipMethod)) {
     throw new RangeError('ZIP compression method is unsupported.')
+  }
+  if (options.zipMethod === 'zstd' && !supportsZstd()) {
+    throw new Error('Zstandard is unavailable in this runtime.')
   }
   if (
     format !== '7z' &&
@@ -226,6 +230,12 @@ export async function compressArchive(
     (options.deflateStrategy !== undefined || options.memLevel !== undefined)
   ) {
     throw new Error('Deflate tuning options can only be used with ZIP, GZ, or TAR.GZ archives.')
+  }
+  if (
+    format === 'zip' && options.zipMethod !== undefined && options.zipMethod !== 'deflate' &&
+    (options.deflateStrategy !== undefined || options.memLevel !== undefined)
+  ) {
+    throw new Error('Deflate tuning options can only be used with the Deflate method.')
   }
   if (options.sevenZipMethod !== undefined && !['lzma2', 'copy'].includes(options.sevenZipMethod)) {
     throw new RangeError('7Z compression method is unsupported.')
@@ -369,16 +379,23 @@ export async function compressArchive(
     }
   }
 
-  // archiver-zip-encrypted supports WinZip AES-256 but not AES-128. zip.js is
-  // already used for split ZIPs and implements the standard AES strengths.
-  if (format === 'zip' && options.password && options.encryptionMethod === 'aes128') {
+  // Two things archiver cannot write: WinZip AES-128, which its encryption
+  // plugin has no support for, and the LZMA and Zstandard methods, which ride
+  // on the codecs registered with zip.js. Both take the zip.js writer that
+  // split sets already use.
+  const needsZipJsWriter = format === 'zip' && (
+    (options.password !== undefined && options.encryptionMethod === 'aes128') ||
+    options.zipMethod === 'lzma' ||
+    options.zipMethod === 'zstd'
+  )
+  if (needsZipJsWriter) {
     const written = await writeZipFile({
       source: { inputPaths, totalBytes },
       outputPath,
       squeeze: {
         level,
         password: options.password,
-        encryptionMethod: 'aes128',
+        encryptionMethod: options.encryptionMethod,
         method: options.zipMethod
       }
     }, onProgress, { signal })

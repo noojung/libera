@@ -14,8 +14,10 @@ import {
   terminalVolumePath,
   volumePathForDisk
 } from './volumes'
+import { registerZipCodecs } from './codecs'
 
 configure({ useWebWorkers: false })
+registerZipCodecs()
 
 // APPNOTE's spanning marker, written at the very start of a split set's first
 // volume. Its 4 bytes shift every recorded offset, which is why a split set can

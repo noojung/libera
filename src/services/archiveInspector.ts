@@ -76,6 +76,7 @@ function getZipCodecName(method?: number): string {
   if (method === 9) return 'Deflate64'
   if (method === 12) return 'BZip2'
   if (method === 14) return 'LZMA'
+  if (method === 93) return 'Zstd'
   if (method === 98) return 'PPMd'
   return method !== undefined ? `Method ${method}` : 'Deflate'
 }
