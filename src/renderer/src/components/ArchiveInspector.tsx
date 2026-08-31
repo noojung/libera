@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Search, ShieldAlert, Zap } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Microscope, Search, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveEntry, ArchiveInspectionResult } from '@services/archiveInspector'
 import type { ArchivePreviewResult } from '@services/archivePreview'
@@ -362,7 +362,7 @@ export const ArchiveInspector: React.FC = () => {
             <div className="expert-card archive-inspector__diagnostics">
               <div className="expert-card__header">
                 <div className="expert-card__title">
-                  <Zap size={16} />
+                  <Microscope size={16} />
                   {t('inspector.expertHeader')}
                 </div>
               </div>
