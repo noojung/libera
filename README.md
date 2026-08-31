@@ -111,7 +111,7 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 | Format | Supported features | Codec support | Notes |
 | --- | --- | --- | --- |
-| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate<br>Read: Store, Deflate, Deflate64 | Password creation uses ZipCrypto. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
+| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate<br>Read: Store, Deflate, Deflate64<br>Encryption: ZipCrypto, AES-128, AES-256 | Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
 | 7Z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2, AES-256<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2, AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
 | TAR | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
 | TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
