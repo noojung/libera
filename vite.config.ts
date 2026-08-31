@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import electron from 'vite-plugin-electron'
+import electron, { type ElectronOptions } from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import fs from 'fs'
@@ -22,17 +22,33 @@ function copyLibera7zWorker(): Plugin {
   }
 }
 
+type ElectronStartup = Parameters<NonNullable<ElectronOptions['onstart']>>[0]['startup']
+
+// vite-plugin-electron spawns Electron with the cwd set to Vite's `root`,
+// which here is src/renderer - a directory with no package.json, so Electron
+// comes up with nothing loaded. The app is started from the project root.
+function launchElectron(startup: ElectronStartup): Promise<boolean> {
+  return startup(['.', '--no-sandbox'], { cwd: __dirname })
+}
+
 export default defineConfig({
   plugins: [
     react(),
     electron([
+      // The preload script is built first because vite-plugin-electron only
+      // starts Electron once every entry's first build has finished, and it
+      // does so through the last entry to complete.
       {
-        // Main-process entrypoint of the Electron App.
-        entry: path.resolve(__dirname, 'src/main/main.ts'),
+        entry: path.resolve(__dirname, 'src/preload/preload.ts'),
+        onstart({ startup, reload }) {
+          // Reload the renderer once the preload build lands - unless Electron
+          // is not up yet, in which case it has to be launched instead.
+          if (process.electronApp) reload()
+          else launchElectron(startup)
+        },
         vite: {
-          plugins: [copyLibera7zWorker()],
           build: {
-            outDir: path.resolve(__dirname, 'dist/main'),
+            outDir: path.resolve(__dirname, 'dist/preload'),
             rollupOptions: {
               external: ['electron']
             }
@@ -40,14 +56,15 @@ export default defineConfig({
         }
       },
       {
-        entry: path.resolve(__dirname, 'src/preload/preload.ts'),
-        onstart(options) {
-          // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete
-          options.reload()
+        // Main-process entrypoint of the Electron App.
+        entry: path.resolve(__dirname, 'src/main/main.ts'),
+        onstart({ startup }) {
+          launchElectron(startup)
         },
         vite: {
+          plugins: [copyLibera7zWorker()],
           build: {
-            outDir: path.resolve(__dirname, 'dist/preload'),
+            outDir: path.resolve(__dirname, 'dist/main'),
             rollupOptions: {
               external: ['electron']
             }
