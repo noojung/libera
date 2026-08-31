@@ -15,9 +15,18 @@ function readLicenseFile(packageDir) {
   return fs.readFileSync(path.join(packageDir, licenseFile), 'utf8').trim()
 }
 
+// A workspace package is this repo's own code, so it belongs in the app's
+// own licence rather than in the third-party list.
+function isWorkspacePackage(packageDir) {
+  const workspaceRoot = path.join(repoRoot, 'packages')
+  const resolved = fs.realpathSync(packageDir)
+  return resolved === workspaceRoot || resolved.startsWith(`${workspaceRoot}${path.sep}`)
+}
+
 function collectNpmDependencies() {
   const rootPackageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
   const dependencyNames = Object.keys(rootPackageJson.dependencies || {})
+    .filter(name => !isWorkspacePackage(path.join(repoRoot, 'node_modules', name)))
 
   return dependencyNames.map(name => {
     const packageDir = path.join(repoRoot, 'node_modules', name)

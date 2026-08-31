@@ -29,5 +29,10 @@ export const REFERENCE_SEVEN_ZIP_FIXTURES = {
 export type ReferenceSevenZipFixture = keyof typeof REFERENCE_SEVEN_ZIP_FIXTURES
 
 export function referenceSevenZipFixture(name: ReferenceSevenZipFixture): Uint8Array {
-  return Uint8Array.from(Buffer.from(REFERENCE_SEVEN_ZIP_FIXTURES[name], 'base64'))
+  // atob rather than Buffer: this file ships as `libera7z/testing`, so it has
+  // to stay as portable as the rest of the package.
+  const binary = atob(REFERENCE_SEVEN_ZIP_FIXTURES[name])
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

@@ -1,5 +1,5 @@
 import { isMainThread, parentPort, type MessagePort } from 'worker_threads'
-import { Libera7zError } from '../../lib/libera7z'
+import { Libera7zError } from 'libera7z'
 import { writeLibera7zInline } from './node'
 import type { WriteWorkerMessage, WriteWorkerRequest } from './writeWorkerClient'
 

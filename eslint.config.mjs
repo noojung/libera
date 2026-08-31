@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['dist/', 'release/', 'coverage/', 'node_modules/', '.vite/']
+    // Anchored patterns would miss a workspace package's own build output.
+    ignores: ['**/dist/', '**/release/', '**/coverage/', '**/node_modules/', '**/.vite/']
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

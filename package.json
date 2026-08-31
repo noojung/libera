@@ -1,6 +1,9 @@
 {
   "name": "libera",
   "version": "1.1.4",
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "Libera - Cross-platform compression utility desktop app built with Electron, TypeScript, and React",
   "author": "Hyunwoo Jung",
   "homepage": "https://noojung.github.io/libera/",
@@ -28,27 +31,28 @@
   },
   "scripts": {
     "generate:metadata": "node scripts/generateThirdPartyLicenses.cjs && node scripts/generateAppInfo.cjs",
-    "predev": "npm run generate:metadata",
+    "predev": "npm run generate:metadata && npm run build:lib",
     "dev": "vite",
-    "prebuild": "npm run generate:metadata",
+    "prebuild": "npm run generate:metadata && npm run build:lib",
     "build": "tsc --noEmit && vite build",
-    "pretest": "npm run generate:metadata",
+    "pretest": "npm run generate:metadata && npm run build:lib",
     "site:dev": "hugo server --source site --buildDrafts --disableFastRender",
     "site:build": "hugo --source site --gc --minify",
     "site:capture": "npm run build && electron scripts/captureSiteScreenshots.cjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run build:lib && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "build:lib": "npm run build -w libera7z"
   },
   "build": {
     "appId": "com.libera.app",
     "productName": "Libera",
-    "copyright": "© 2026 Libera",
+    "copyright": "\u00a9 2026 Libera",
     "afterPack": "scripts/afterPack.cjs",
     "directories": {
       "output": "release/${version}"
@@ -106,6 +110,7 @@
     "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
     "i18next": "^26.3.6",
+    "libera7z": "*",
     "lucide-react": "^0.475.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

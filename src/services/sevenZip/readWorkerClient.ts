@@ -10,7 +10,7 @@ import {
   type SevenZipEntry,
   type SevenZipEntryEvent,
   type SevenZipReader
-} from '../../lib/libera7z'
+} from 'libera7z'
 import { reviveWorkerError, type WorkerFailure } from './workerMessages'
 
 // The whole reader lives in the worker, so the boundary is the archive surface

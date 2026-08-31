@@ -15,6 +15,15 @@ export default defineConfig({
         }
       },
       {
+        // The library is its own package, so its tests run against its source
+        // rather than the bundle the app imports.
+        test: {
+          name: 'libera7z',
+          environment: 'node',
+          include: ['packages/libera7z/src/**/*.test.ts']
+        }
+      },
+      {
         plugins: [tsconfigPaths()],
         test: {
           name: 'renderer',

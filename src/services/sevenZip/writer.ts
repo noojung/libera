@@ -1,6 +1,6 @@
 import type { ProgressCallback } from '../compressor'
 import { SevenZipError } from './error'
-import { Libera7zError } from '../../lib/libera7z'
+import { Libera7zError } from 'libera7z'
 import { writeLibera7z } from './node'
 import {
   MAX_SEVEN_ZIP_VOLUMES,

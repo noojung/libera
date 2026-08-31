@@ -1,6 +1,6 @@
 import { promises as fsPromises } from 'fs'
 import { SevenZipError } from './error'
-import { Libera7zError, type SevenZipReader } from '../../lib/libera7z'
+import { Libera7zError, type SevenZipReader } from 'libera7z'
 import { openLibera7zFile } from './node'
 import {
   archivePermissions,

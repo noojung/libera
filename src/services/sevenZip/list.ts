@@ -1,5 +1,5 @@
 import { SevenZipError } from './error'
-import { Libera7zError } from '../../lib/libera7z'
+import { Libera7zError } from 'libera7z'
 import { openLibera7zFile } from './node'
 import { discoverSevenZipVolumes, isSevenZipVolumePath } from './volumes'
 

@@ -7,7 +7,7 @@ import * as tar from 'tar'
 import { strToU8, zipSync } from 'fflate'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { referenceSevenZipFixture } from '../lib/libera7z/referenceFixtures.testData'
+import { referenceSevenZipFixture } from 'libera7z/testing'
 import { compressArchive, type ProgressData } from './compressor'
 import { writeLibera7z } from './sevenZip/node'
 import {

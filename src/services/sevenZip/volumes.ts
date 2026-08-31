@@ -1,6 +1,6 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
-import { crc32 } from '../../lib/libera7z/crc32'
+import { crc32 } from 'libera7z'
 import { normalizeName, SplitVolumeError } from '../zip/volumes'
 
 // Naming and discovery for split 7z sets. Deliberately separate from

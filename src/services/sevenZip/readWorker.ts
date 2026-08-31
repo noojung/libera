@@ -1,5 +1,5 @@
 import { isMainThread, parentPort, type MessagePort } from 'worker_threads'
-import type { SevenZipEntryEvent, SevenZipReader } from '../../lib/libera7z'
+import type { SevenZipEntryEvent, SevenZipReader } from 'libera7z'
 import { openLibera7zFileInline } from './node'
 import { serializeWorkerError } from './workerMessages'
 import type { ReadWorkerMessage, ReadWorkerRequest } from './readWorkerClient'

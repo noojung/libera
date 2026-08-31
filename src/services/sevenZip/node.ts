@@ -13,7 +13,7 @@ import {
   type SevenZipEntryInput,
   type SevenZipMethod,
   type SevenZipReader
-} from '../../lib/libera7z'
+} from 'libera7z'
 import { openLibera7zFileInWorker } from './readWorkerClient'
 import { runLibera7zWriteInWorker } from './writeWorkerClient'
 import {

@@ -1,4 +1,4 @@
-import { Libera7zError, type Libera7zErrorCode } from '../../lib/libera7z'
+import { Libera7zError, type Libera7zErrorCode } from 'libera7z'
 
 /** Libera7z codes carry the caller-visible meaning, so they cross the boundary. */
 export interface WorkerFailure {

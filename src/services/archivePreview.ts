@@ -9,7 +9,7 @@ import { MAX_ARCHIVE_ENTRIES, isWrongZipPasswordError } from './extractor'
 import { openZipArchive } from './zip/fileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath } from './sevenZip/volumes'
-import { Libera7zError } from '../lib/libera7z'
+import { Libera7zError } from 'libera7z'
 import { openLibera7zFile } from './sevenZip/node'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024

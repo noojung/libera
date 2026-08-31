@@ -1,7 +1,7 @@
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { Worker } from 'worker_threads'
-import { Libera7zError, type Libera7zErrorCode } from '../../lib/libera7z'
+import { Libera7zError, type Libera7zErrorCode } from 'libera7z'
 import type { WriteLibera7zOptions, WriteLibera7zResult } from './node'
 
 // The whole write runs inside the worker, so the protocol is one request, a
