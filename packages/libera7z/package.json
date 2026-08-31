@@ -53,6 +53,7 @@
   "scripts": {
     "build": "vite build && vite build -c vite.worker.config.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:browser": "npm run build && vite --port 5174 --open /browser-check/"
   }
 }

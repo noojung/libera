@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>libera7z browser check</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 46rem; }
+  h1 { font-size: 1.2rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+  td.state { width: 4rem; font-weight: 600; }
+  .pass { color: #0a7d32; }
+  .fail { color: #c02626; }
+  code { background: #f2f2f2; padding: 0 .2rem; }
+</style>
+<h1>libera7z browser check</h1>
+<p>
+  Loads <code>../dist/index.js</code> — the entry the <code>browser</code> and
+  <code>default</code> export conditions select — and drives it through the
+  worker the package ships. Results are also on <code>window.__results</code>.
+</p>
+<table><tbody id="rows"></tbody></table>
+
+<script type="module">
+  import { configure, create7z, open7z, MemorySink, MemorySource, Libera7zError } from '../dist/index.js'
+
+  const workerScript = new URL('../dist/worker.js', import.meta.url)
+  const results = []
+
+  const stream = bytes => new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    }
+  })
+
+  const payload = new Uint8Array(400_000)
+  let seed = 0x2545f491
+  for (let index = 0; index < payload.length; index += 1) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    payload[index] = seed >>> 24
+  }
+  const text = new TextEncoder().encode('libera7z in a browser\n'.repeat(5_000))
+
+  const entries = () => [
+    { path: 'random.bin', size: BigInt(payload.length), open: () => stream(payload) },
+    { path: 'notes.txt', size: BigInt(text.length), open: () => stream(text) }
+  ]
+
+  async function drain(readable) {
+    const reader = readable.getReader()
+    const chunks = []
+    let length = 0
+    for (;;) {
+      const item = await reader.read()
+      if (item.done) break
+      chunks.push(item.value)
+      length += item.value.length
+    }
+    const out = new Uint8Array(length)
+    let offset = 0
+    for (const chunk of chunks) {
+      out.set(chunk, offset)
+      offset += chunk.length
+    }
+    return out
+  }
+
+  const same = (a, b) => a.length === b.length && a.every((value, index) => value === b[index])
+
+  async function build(options = {}) {
+    const sink = new MemorySink()
+    await create7z(entries(), sink, { method: 'lzma2', ...options })
+    return sink.data()
+  }
+
+  function countingWorkers() {
+    let spawned = 0
+    configure({
+      workerScript,
+      useWorkers: true,
+      createWorker: script => {
+        spawned += 1
+        const worker = new Worker(script, { type: 'module' })
+        return {
+          postMessage: (message, transfer) => worker.postMessage(message, transfer),
+          terminate: () => worker.terminate(),
+          addMessageListener: listener => worker.addEventListener('message', event => listener(event.data)),
+          addErrorListener: listener => worker.addEventListener('error', listener)
+        }
+      }
+    })
+    return () => spawned
+  }
+
+  const checks = [
+    ['the shipped worker starts from workerScript alone', async () => {
+      configure({ workerScript, useWorkers: true, createWorker: undefined })
+      const bytes = await build()
+      const archive = await open7z(new MemorySource(bytes))
+      const backend = archive.constructor.name
+      const roundTrip = same(await drain(archive.openEntry(0)), payload)
+      await archive.close()
+      if (backend !== 'WorkerArchive') throw new Error(`read ran in process (${backend})`)
+      if (!roundTrip) throw new Error('entry did not round-trip')
+      return `read backend ${backend}, ${payload.length} bytes verified`
+    }],
+
+    ['writing and reading both run on a worker', async () => {
+      const spawned = countingWorkers()
+      const bytes = await build()
+      const afterWrite = spawned()
+      const archive = await open7z(new MemorySource(bytes))
+      await drain(archive.openEntry(1))
+      await archive.close()
+      if (afterWrite < 1) throw new Error('create7z stayed on the main thread')
+      if (spawned() <= afterWrite) throw new Error('open7z stayed on the main thread')
+      return `${afterWrite} worker for the write, ${spawned() - afterWrite} for the read`
+    }],
+
+    ['WebCrypto AES survives the worker boundary', async () => {
+      countingWorkers()
+      const bytes = await build({ password: 'hunter2' })
+      const archive = await open7z(new MemorySource(bytes), { password: 'hunter2' })
+      const decrypted = await drain(archive.openEntry(0))
+      await archive.close()
+      if (!same(decrypted, payload)) throw new Error('decrypted bytes differ')
+      return `${decrypted.length} bytes decrypted`
+    }],
+
+    ['a wrong password is reported, not mis-decoded', async () => {
+      const bytes = await build({ password: 'hunter2' })
+      const archive = await open7z(new MemorySource(bytes), { password: 'wrong' })
+      try {
+        await drain(archive.openEntry(0))
+      } catch (error) {
+        if (error instanceof Libera7zError && error.code === 'WRONG_PASSWORD') return 'WRONG_PASSWORD'
+        throw error
+      } finally {
+        await archive.close()
+      }
+      throw new Error('reading with the wrong password resolved')
+    }],
+
+    ['aborting a read reports CANCELLED', async () => {
+      const bytes = await build()
+      const archive = await open7z(new MemorySource(bytes))
+      const controller = new AbortController()
+      const reader = archive.openEntries([0, 1], { signal: controller.signal }).getReader()
+      await reader.read()
+      controller.abort()
+      try {
+        await reader.read()
+      } catch (error) {
+        if (error instanceof Libera7zError && error.code === 'CANCELLED') return 'CANCELLED'
+        throw error
+      } finally {
+        await archive.close()
+      }
+      throw new Error('reading after abort resolved')
+    }],
+
+    ['useWorkers: false keeps everything in process', async () => {
+      configure({ useWorkers: false })
+      const bytes = await build()
+      const archive = await open7z(new MemorySource(bytes))
+      const backend = archive.constructor.name
+      const roundTrip = same(await drain(archive.openEntry(1)), text)
+      await archive.close()
+      if (backend !== 'SevenZipArchive') throw new Error(`expected the in-process reader, got ${backend}`)
+      if (!roundTrip) throw new Error('entry did not round-trip')
+      return `read backend ${backend}`
+    }]
+  ]
+
+  const rows = document.getElementById('rows')
+  for (const [name, run] of checks) {
+    let result
+    try {
+      result = { name, ok: true, detail: await run() }
+    } catch (error) {
+      result = { name, ok: false, detail: String(error && error.message ? error.message : error) }
+    }
+    results.push(result)
+    const row = document.createElement('tr')
+    row.innerHTML = `<td class="state ${result.ok ? 'pass' : 'fail'}">${result.ok ? 'pass' : 'FAIL'}</td>` +
+      `<td>${result.name}<br><small>${result.detail}</small></td>`
+    rows.append(row)
+  }
+
+  window.__results = results
+  document.title = results.every(r => r.ok)
+    ? `libera7z browser check: ${results.length} passed`
+    : `libera7z browser check: ${results.filter(r => !r.ok).length} FAILED`
+</script>
