@@ -466,6 +466,19 @@ export class LzmaDecoder {
 export interface LzmaEncoderOptions {
   searchDepth?: number
   niceLength?: number
+  /**
+   * Largest match distance the encoder may emit. Callers that must declare a
+   * dictionary size up front - ZIP's method 14 header, for one - set this so
+   * the stream never reaches back further than the decoder will allocate.
+   * Unset lets a match reach the start of the input.
+   */
+  maxDistance?: number
+}
+
+function nextPowerOfTwo(value: number): number {
+  let size = 1
+  while (size < value) size *= 2
+  return size
 }
 
 function hash3(input: Uint8Array, position: number): number {
@@ -497,12 +510,19 @@ export function encodeLzma(
   const repLenEncoder = new LengthEncoder(posStates)
   const encoder = new RangeEncoder()
   const literalPosMask = (1 << properties.lp) - 1
-  const head = new Int32Array(1 << 16)
-  const previous = new Int32Array(input.length)
-  head.fill(-1)
-  previous.fill(-1)
   const searchDepth = Math.max(1, Math.min(1024, options.searchDepth ?? 32))
   const niceLength = Math.max(3, Math.min(273, options.niceLength ?? 64))
+  const maxDistance = Math.max(1, options.maxDistance ?? input.length)
+  // The chain only ever walks back `maxDistance` bytes, so it is kept in a
+  // ring that size rather than one slot per input byte. A whole-input array
+  // costs four bytes per byte compressed, which is what dominates the memory
+  // an entry needs.
+  const windowSize = nextPowerOfTwo(Math.min(maxDistance, Math.max(1, input.length)))
+  const windowMask = windowSize - 1
+  const head = new Int32Array(1 << 16)
+  const previous = new Int32Array(windowSize)
+  head.fill(-1)
+  previous.fill(-1)
   let previousByte = 0
   let state = 0
   let rep0 = 0
@@ -513,7 +533,7 @@ export function encodeLzma(
   const insert = (position: number) => {
     if (position + 2 >= input.length) return
     const hash = hash3(input, position)
-    previous[position] = head[hash]
+    previous[position & windowMask] = head[hash]
     head[hash] = position
   }
 
@@ -527,6 +547,8 @@ export function encodeLzma(
       const maxLength = Math.min(273, input.length - position)
       while (candidate >= 0 && searched < searchDepth) {
         const distance = position - candidate
+        // Candidates come newest first, so the first one out of reach ends it.
+        if (distance > maxDistance) break
         if (distance > 0 && input[candidate + bestLength] === input[position + bestLength]) {
           let length = 0
           while (length < maxLength && input[candidate + length] === input[position + length]) length += 1
@@ -536,7 +558,10 @@ export function encodeLzma(
             if (length >= niceLength) break
           }
         }
-        candidate = previous[candidate]
+        // Safe against the ring wrapping: a slot is only overwritten once the
+        // position is further back than `maxDistance`, and the break above
+        // stops the walk before it reaches one.
+        candidate = previous[candidate & windowMask]
         searched += 1
       }
     }
