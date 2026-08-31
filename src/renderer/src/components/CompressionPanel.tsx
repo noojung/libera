@@ -133,6 +133,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     return t(`compression.${names[lvl] ?? 'levelPlain'}`, { level: lvl })
   }
 
+  // Store writes the bytes through untouched, so a compression level would be
+  // a lie. Selecting it pins the level at 0 without discarding the level the
+  // user set, which comes back when they switch to Deflate again.
+  const storeSelected = isExpertMode && format === 'zip' && zipMethod === 'store'
+  const effectiveLevel = storeSelected ? 0 : level
+
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
     if (preset?.bytes) return preset.bytes
@@ -163,7 +169,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
     onStartCompress({
       format,
-      level,
+      level: effectiveLevel,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
       encryptFileNames: supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
@@ -228,16 +234,17 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               {t('compression.level')}
             </label>
             <span className="compression-panel__level-value">
-              {getLevelLabel(level)}
+              {getLevelLabel(effectiveLevel)}
             </span>
           </div>
           <input
             type="range"
             min="0"
             max={levels.length - 1}
-            value={Math.max(0, levels.indexOf(level))}
+            value={Math.max(0, levels.indexOf(effectiveLevel))}
             onChange={(e) => setLevel(levels[parseInt(e.target.value)])}
             className="compression-panel__range"
+            disabled={storeSelected}
           />
         </div>
       )}
@@ -252,24 +259,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             </div>
           </div>
 
-          {/* ZIP Encryption Method */}
-          {format === 'zip' && supportsPassword(format) && (
-            <div className="compression-panel__expert-row">
-              <label className="compression-panel__expert-label">
-                {t('compression.encryptionMethod')}
-              </label>
-              <select
-                className="input-select"
-                value={zipEncryptionMethod}
-                onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
-              >
-                <option value="zip20">{t('compression.zipCrypto')}</option>
-                <option value="aes256">{t('compression.aes256')}</option>
-                <option value="aes128">{t('compression.aes128')}</option>
-              </select>
-            </div>
-          )}
-
           {format === 'zip' && (
             <div className="compression-panel__expert-row">
               <label className="compression-panel__expert-label">{t('compression.zipMethod')}</label>
@@ -279,7 +268,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                 onChange={(event) => setZipMethod(event.target.value as ZipMethod)}
               >
                 <option value="deflate">{t('compression.methodDeflate')}</option>
-                <option value="store">{t('compression.methodCopy')}</option>
+                <option value="store">{t('compression.methodStore')}</option>
               </select>
             </div>
           )}
@@ -390,6 +379,24 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           </div>
           {password && password !== passwordConfirmation && (
             <p className="compression-panel__message compression-panel__message--error">{t('compression.passwordMismatch')}</p>
+          )}
+          {/* The algorithm belongs with the password it protects, so it sits
+              here rather than in the expert compression card above. */}
+          {isExpertMode && format === 'zip' && password && (
+            <div className="compression-panel__expert-row">
+              <label className="compression-panel__expert-label">
+                {t('compression.encryptionMethod')}
+              </label>
+              <select
+                className="input-select"
+                value={zipEncryptionMethod}
+                onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
+              >
+                <option value="zip20">{t('compression.zipCrypto')}</option>
+                <option value="aes256">{t('compression.aes256')}</option>
+                <option value="aes128">{t('compression.aes128')}</option>
+              </select>
+            </div>
           )}
           {password && password === passwordConfirmation && (
             <p className="compression-panel__message">

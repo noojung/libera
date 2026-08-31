@@ -243,11 +243,17 @@ describe('CompressionPanel', () => {
 
     expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
     const selects = screen.getAllByRole('combobox')
-    await user.selectOptions(selects[0], 'aes128')
-    await user.selectOptions(selects[1], 'store')
-    await user.selectOptions(selects[2], 'rle')
+    await user.selectOptions(selects[0], 'store')
+    await user.selectOptions(selects[1], 'rle')
+    // Store copies the files verbatim, so the level is pinned at 0.
+    expect(screen.getByText('0 - Store')).toBeInTheDocument()
+    expect(screen.getAllByRole('slider')[0]).toBeDisabled()
+
+    // The encryption algorithm only appears once a password is being set.
+    expect(screen.queryByRole('option', { name: /AES-128/ })).not.toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+    await user.selectOptions(screen.getAllByRole('combobox').at(-1)!, 'aes128')
     fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '9' } })
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
 
@@ -255,6 +261,7 @@ describe('CompressionPanel', () => {
       encryptionMethod: 'aes128',
       zipMethod: 'store',
       deflateStrategy: 'rle',
+      level: 0,
       memLevel: 9,
       password: 'secret'
     }))
