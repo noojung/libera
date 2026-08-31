@@ -156,7 +156,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   // Store writes the bytes through untouched, so a compression level would be
   // a lie. Selecting it pins the level at 0 without discarding the level the
   // user set, which comes back when they switch to Deflate again.
-  const passwordUsable = password !== '' && password === passwordConfirmation
   const storeSelected = isExpertMode && format === 'zip' && zipMethod === 'store'
   const effectiveLevel = storeSelected ? 0 : level
 
@@ -434,18 +433,13 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               </p>
             )}
             {isExpertMode && supportsHeaderEncryption(format) && (
-              // Shown from the start, but it has nothing to encrypt until the
-              // password it rides on is set, so until then it stays inert.
-              <label
-                className={`compression-panel__split-option compression-panel__split-option--nested${
-                  passwordUsable ? '' : ' is-disabled'
-                }`}
-              >
+              // Shown from the start; it only takes effect once a password
+              // backs it, which handleCompress enforces.
+              <label className="compression-panel__split-option compression-panel__split-option--nested">
                 <input
                   type="checkbox"
                   className="compression-panel__checkbox"
-                  checked={encryptFileNames && passwordUsable}
-                  disabled={!passwordUsable}
+                  checked={encryptFileNames}
                   onChange={(e) => setEncryptFileNames(e.target.checked)}
                 />
                 <span>

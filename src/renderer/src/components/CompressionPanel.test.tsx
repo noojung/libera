@@ -129,8 +129,8 @@ describe('CompressionPanel', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
-    // The option is there from the start, but inert until a password backs it.
-    expect(screen.getByRole('checkbox', { name: /Hide the file names too/ })).toBeDisabled()
+    // The option is there from the start, before any password is entered.
+    expect(screen.getByRole('checkbox', { name: /Hide the file names too/ })).toBeEnabled()
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
     await user.click(screen.getByText('Hide the file names too'))
