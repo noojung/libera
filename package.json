@@ -52,7 +52,7 @@
   "build": {
     "appId": "com.libera.app",
     "productName": "Libera",
-    "copyright": "\u00a9 2026 Libera",
+    "copyright": "© 2026 Libera",
     "afterPack": "scripts/afterPack.cjs",
     "directories": {
       "output": "release/${version}"
@@ -128,7 +128,6 @@
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "@types/tar": "^6.1.13",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "4.1.11",
     "electron": "43.4.0",
