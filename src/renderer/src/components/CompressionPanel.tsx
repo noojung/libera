@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Sliders, Archive, Zap, Lock } from 'lucide-react'
+import { Sliders, Archive, Package, Lock } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -275,7 +275,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         <div className="expert-card">
           <div className="expert-card__header">
             <div className="expert-card__title">
-              <Zap size={16} />
+              <Package size={16} />
               {t('compression.expertTitle')}
             </div>
           </div>

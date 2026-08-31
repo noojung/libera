@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { FolderOutput, Download, Zap } from 'lucide-react'
+import { FolderOutput, Download, PackageOpen } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -137,7 +137,7 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
         <div className="expert-card">
           <div className="expert-card__header">
             <div className="expert-card__title">
-              <Zap size={16} />
+              <PackageOpen size={16} />
               {t('extraction.expertTitle')}
             </div>
           </div>
