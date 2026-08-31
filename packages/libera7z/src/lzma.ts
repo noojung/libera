@@ -84,7 +84,28 @@ class RangeEncoder {
   private range = 0xffffffff
   private cache = 0
   private cacheSize = 1
-  private readonly output: number[] = []
+  // Bytes leave here as soon as they are final: the carry in `shiftLow` only
+  // ever reaches the byte still held in `cache`, never one already emitted.
+  // That is what lets a caller drain the encoder mid-stream.
+  private output = new Uint8Array(1 << 16)
+  private length = 0
+
+  private emit(byte: number): void {
+    if (this.length === this.output.length) {
+      const grown = new Uint8Array(this.output.length * 2)
+      grown.set(this.output)
+      this.output = grown
+    }
+    this.output[this.length] = byte
+    this.length += 1
+  }
+
+  /** Hands back the bytes settled so far and forgets them. */
+  drain(): Uint8Array {
+    const drained = this.output.slice(0, this.length)
+    this.length = 0
+    return drained
+  }
 
   bit(probabilities: Uint16Array, index: number, bit: number): void {
     const probability = probabilities[index]
@@ -120,7 +141,7 @@ class RangeEncoder {
     if (low32 < 0xff000000 || carry !== 0) {
       let cached = this.cache
       do {
-        this.output.push((cached + carry) & 0xff)
+        this.emit((cached + carry) & 0xff)
         cached = 0xff
         this.cacheSize -= 1
       } while (this.cacheSize !== 0)
@@ -132,7 +153,7 @@ class RangeEncoder {
 
   finish(): Uint8Array {
     for (let index = 0; index < 5; index += 1) this.shiftLow()
-    return Uint8Array.from(this.output)
+    return this.drain()
   }
 }
 
@@ -485,182 +506,302 @@ function hash3(input: Uint8Array, position: number): number {
   return (((input[position] * 251) ^ (input[position + 1] * 31) ^ input[position + 2]) & 0xffff) >>> 0
 }
 
+/** Longest match LZMA can encode, and so the lookahead a match needs. */
+const MATCH_MAX_LEN = 273
+
 /**
- * Pure-JavaScript raw LZMA encoder. A bounded hash chain supplies matches;
- * LZMA's adaptive literal, length, distance and repeated-distance models then
- * produce the same range-coded wire format as the SDK implementation.
+ * Streaming raw LZMA encoder. A bounded hash chain supplies matches; LZMA's
+ * adaptive literal, length, distance and repeated-distance models then produce
+ * the same range-coded wire format as the SDK implementation.
+ *
+ * Only the last `maxDistance` bytes are held, so the memory an entry needs is
+ * set by the dictionary rather than by the size of the entry. Data arrives
+ * through `update` and the stream is closed with `final`; both hand back the
+ * bytes settled so far.
+ */
+export class LzmaStreamEncoder {
+  private readonly posStates: number
+  private readonly isMatch: Uint16Array
+  private readonly isRep: Uint16Array
+  private readonly isRepG0: Uint16Array
+  private readonly isRepG1: Uint16Array
+  private readonly isRepG2: Uint16Array
+  private readonly isRep0Long: Uint16Array
+  private readonly literals: Uint16Array
+  private readonly posSlot: Uint16Array
+  private readonly posDecoders: Uint16Array
+  private readonly posAlign: Uint16Array
+  private readonly lenEncoder: LengthEncoder
+  private readonly repLenEncoder: LengthEncoder
+  private readonly encoder = new RangeEncoder()
+  private readonly literalPosMask: number
+  private readonly searchDepth: number
+  private readonly niceLength: number
+  private readonly maxDistance: number
+
+  // The match finder. `head` holds the newest position per hash and `previous`
+  // chains older ones; both store absolute positions, and `previous` is a ring
+  // the size of the window, since the walk stops before reaching a slot old
+  // enough to have been overwritten.
+  private readonly windowMask: number
+  private readonly head = new Int32Array(1 << 16)
+  private readonly previous: Int32Array
+
+  // `window` holds the bytes still in reach. It keeps `keep` bytes of history
+  // behind the encode position plus room to read ahead; when it fills, the
+  // history is moved to the front and `base` follows.
+  private readonly keep: number
+  private window: Uint8Array
+  private base = 0
+  private fill = 0
+
+  private position = 0
+  private previousByte = 0
+  private state = 0
+  private rep0 = 0
+  private rep1 = 0
+  private rep2 = 0
+  private rep3 = 0
+  private closed = false
+
+  constructor(
+    private readonly properties: LzmaProperties = { lc: 3, lp: 0, pb: 2 },
+    options: LzmaEncoderOptions = {}
+  ) {
+    this.posStates = 1 << properties.pb
+    this.isMatch = initializedProbabilities(NUM_STATES * this.posStates)
+    this.isRep = initializedProbabilities(NUM_STATES)
+    this.isRepG0 = initializedProbabilities(NUM_STATES)
+    this.isRepG1 = initializedProbabilities(NUM_STATES)
+    this.isRepG2 = initializedProbabilities(NUM_STATES)
+    this.isRep0Long = initializedProbabilities(NUM_STATES * this.posStates)
+    this.literals = initializedProbabilities(0x300 << (properties.lc + properties.lp))
+    this.posSlot = initializedProbabilities(4 << NUM_POS_SLOT_BITS)
+    this.posDecoders = initializedProbabilities(NUM_FULL_DISTANCES - END_POS_MODEL_INDEX)
+    this.posAlign = initializedProbabilities(ALIGN_TABLE_SIZE)
+    this.lenEncoder = new LengthEncoder(this.posStates)
+    this.repLenEncoder = new LengthEncoder(this.posStates)
+    this.literalPosMask = (1 << properties.lp) - 1
+    this.searchDepth = Math.max(1, Math.min(1024, options.searchDepth ?? 32))
+    this.niceLength = Math.max(3, Math.min(273, options.niceLength ?? 64))
+    this.maxDistance = Math.max(1, options.maxDistance ?? 1 << 24)
+
+    this.keep = nextPowerOfTwo(this.maxDistance)
+    this.windowMask = this.keep - 1
+    this.previous = new Int32Array(this.keep)
+    this.previous.fill(-1)
+    this.head.fill(-1)
+    // Room for the history plus a stretch to read ahead in. The lookahead has
+    // to clear one whole match for the encoder to make progress at all.
+    this.window = new Uint8Array(this.keep + Math.max(this.keep, 8 * MATCH_MAX_LEN))
+  }
+
+  /** Feeds more input and returns whatever the encoder could settle. */
+  update(chunk: Uint8Array, signal?: AbortSignal): Uint8Array {
+    if (this.closed) throw new Error('The LZMA encoder is closed')
+    let offset = 0
+    while (offset < chunk.length) {
+      const room = this.window.length - this.fill
+      if (room === 0) {
+        this.slideWindow()
+        continue
+      }
+      const take = Math.min(room, chunk.length - offset)
+      this.window.set(chunk.subarray(offset, offset + take), this.fill)
+      this.fill += take
+      offset += take
+      // Stop short of the end: a match that runs to the edge of what has
+      // arrived might have run further with the next chunk in hand. The extra
+      // byte of margin keeps the hash inserts that trail a longest match from
+      // running out of input too, which would leave the chain a slot short of
+      // what encoding the whole buffer at once would have recorded.
+      this.encodeUntil(this.base + this.fill - (MATCH_MAX_LEN + 1), signal)
+    }
+    return this.encoder.drain()
+  }
+
+  /** Closes the stream: encodes the tail and flushes the range coder. */
+  final(signal?: AbortSignal): Uint8Array {
+    if (this.closed) throw new Error('The LZMA encoder is closed')
+    this.encodeUntil(this.base + this.fill, signal)
+    this.closed = true
+    return this.encoder.finish()
+  }
+
+  /** Drops the history that has fallen out of reach and rebases the window. */
+  private slideWindow(): void {
+    const retained = Math.min(this.keep, this.position - this.base)
+    const discarded = this.position - retained - this.base
+    if (discarded <= 0) throw new Error('The LZMA window is too small to advance')
+    this.window.copyWithin(0, discarded, this.fill)
+    this.base += discarded
+    this.fill -= discarded
+  }
+
+  private insert(position: number, end: number): void {
+    if (position + 2 >= end) return
+    const offset = position - this.base
+    const hash = hash3(this.window, offset)
+    this.previous[position & this.windowMask] = this.head[hash]
+    this.head[hash] = position
+  }
+
+  private encodeUntil(limit: number, signal?: AbortSignal): void {
+    const window = this.window
+    const end = this.base + this.fill
+    const { properties } = this
+
+    while (this.position < limit) {
+      throwIfCancelled(signal)
+      const position = this.position
+      const offset = position - this.base
+      const available = end - position
+      let bestLength = 0
+      let bestDistance = 0
+
+      if (available > 2) {
+        let candidate = this.head[hash3(window, offset)]
+        let searched = 0
+        const maxLength = Math.min(MATCH_MAX_LEN, available)
+        while (candidate >= 0 && searched < this.searchDepth) {
+          const distance = position - candidate
+          // Candidates come newest first, so the first one out of reach ends it.
+          if (distance > this.maxDistance) break
+          const candidateOffset = offset - distance
+          if (distance > 0 && window[candidateOffset + bestLength] === window[offset + bestLength]) {
+            let length = 0
+            while (length < maxLength && window[candidateOffset + length] === window[offset + length]) length += 1
+            if (length > bestLength) {
+              bestLength = length
+              bestDistance = distance - 1
+              if (length >= this.niceLength) break
+            }
+          }
+          // Safe against the ring wrapping: a slot is only overwritten once the
+          // position is further back than `maxDistance`, and the break above
+          // stops the walk before it reaches one.
+          candidate = this.previous[candidate & this.windowMask]
+          searched += 1
+        }
+      }
+
+      const posState = position & (this.posStates - 1)
+      if (bestLength < 3) {
+        this.encoder.bit(this.isMatch, (this.state << properties.pb) + posState, 0)
+        const context = ((position & this.literalPosMask) << properties.lc) +
+          (this.previousByte >>> (8 - properties.lc))
+        const base = context * 0x300
+        let symbol = 1
+        const byte = window[offset]
+        let matched = this.state >= 7
+        let matchByte = matched ? window[offset - this.rep0 - 1] : 0
+        for (let bitIndex = 7; bitIndex >= 0; bitIndex -= 1) {
+          const bit = (byte >>> bitIndex) & 1
+          if (matched) {
+            const matchBit = (matchByte >>> 7) & 1
+            matchByte = (matchByte << 1) & 0xff
+            this.encoder.bit(this.literals, base + 0x100 + (matchBit << 8) + symbol, bit)
+            if (matchBit !== bit) matched = false
+          } else {
+            this.encoder.bit(this.literals, base + symbol, bit)
+          }
+          symbol = (symbol << 1) | bit
+        }
+        this.insert(position, end)
+        this.previousByte = byte
+        this.state = this.state < 4 ? 0 : this.state < 10 ? this.state - 3 : this.state - 6
+        this.position = position + 1
+        continue
+      }
+
+      this.encoder.bit(this.isMatch, (this.state << properties.pb) + posState, 1)
+      const reps = [this.rep0, this.rep1, this.rep2, this.rep3]
+      const repIndex = reps.indexOf(bestDistance)
+      if (repIndex >= 0) {
+        this.encoder.bit(this.isRep, this.state, 1)
+        if (repIndex === 0) {
+          this.encoder.bit(this.isRepG0, this.state, 0)
+          this.encoder.bit(this.isRep0Long, (this.state << properties.pb) + posState, 1)
+        } else {
+          this.encoder.bit(this.isRepG0, this.state, 1)
+          if (repIndex === 1) {
+            this.encoder.bit(this.isRepG1, this.state, 0)
+          } else {
+            this.encoder.bit(this.isRepG1, this.state, 1)
+            this.encoder.bit(this.isRepG2, this.state, repIndex === 2 ? 0 : 1)
+          }
+          if (repIndex === 1) {
+            this.rep1 = this.rep0
+          } else if (repIndex === 2) {
+            this.rep2 = this.rep1
+            this.rep1 = this.rep0
+          } else {
+            this.rep3 = this.rep2
+            this.rep2 = this.rep1
+            this.rep1 = this.rep0
+          }
+          this.rep0 = bestDistance
+        }
+        this.repLenEncoder.encode(this.encoder, posState, bestLength - MATCH_MIN_LEN)
+        this.state = this.state < 7 ? 8 : 11
+      } else {
+        this.encoder.bit(this.isRep, this.state, 0)
+        this.state = this.state < 7 ? 7 : 10
+        this.lenEncoder.encode(this.encoder, posState, bestLength - MATCH_MIN_LEN)
+        this.rep3 = this.rep2
+        this.rep2 = this.rep1
+        this.rep1 = this.rep0
+        this.rep0 = bestDistance
+
+        const lenState = Math.min(bestLength - MATCH_MIN_LEN, 3)
+        let distanceSlot: number
+        if (bestDistance < START_POS_MODEL_INDEX) {
+          distanceSlot = bestDistance
+        } else {
+          const log = Math.floor(Math.log2(bestDistance))
+          distanceSlot = (log << 1) + ((bestDistance >>> (log - 1)) & 1)
+        }
+        bitTreeEncode(this.encoder, this.posSlot, lenState << NUM_POS_SLOT_BITS, NUM_POS_SLOT_BITS, distanceSlot)
+        if (distanceSlot >= START_POS_MODEL_INDEX) {
+          const directBits = (distanceSlot >>> 1) - 1
+          const baseDistance = (2 | (distanceSlot & 1)) << directBits
+          const footer = bestDistance - baseDistance
+          if (distanceSlot < END_POS_MODEL_INDEX) {
+            reverseBitTreeEncode(this.encoder, this.posDecoders, baseDistance - distanceSlot - 1, directBits, footer)
+          } else {
+            this.encoder.directBits(footer >>> NUM_ALIGN_BITS, directBits - NUM_ALIGN_BITS)
+            reverseBitTreeEncode(this.encoder, this.posAlign, 0, NUM_ALIGN_BITS, footer & (ALIGN_TABLE_SIZE - 1))
+          }
+        }
+      }
+
+      for (let index = 0; index < bestLength; index += 1) this.insert(position + index, end)
+      this.previousByte = window[offset + bestLength - 1]
+      this.position = position + bestLength
+    }
+  }
+}
+
+/**
+ * Encodes a whole buffer in one call. The window is sized to the input unless
+ * the caller caps it, so the output matches what the streaming encoder
+ * produces for the same input and the same cap.
  */
 export function encodeLzma(
   input: Uint8Array,
   properties: LzmaProperties = { lc: 3, lp: 0, pb: 2 },
   options: LzmaEncoderOptions = {}
 ): Uint8Array {
-  const posStates = 1 << properties.pb
-  const isMatch = initializedProbabilities(NUM_STATES * posStates)
-  const isRep = initializedProbabilities(NUM_STATES)
-  const isRepG0 = initializedProbabilities(NUM_STATES)
-  const isRepG1 = initializedProbabilities(NUM_STATES)
-  const isRepG2 = initializedProbabilities(NUM_STATES)
-  const isRep0Long = initializedProbabilities(NUM_STATES * posStates)
-  const literals = initializedProbabilities(0x300 << (properties.lc + properties.lp))
-  const posSlot = initializedProbabilities(4 << NUM_POS_SLOT_BITS)
-  const posDecoders = initializedProbabilities(NUM_FULL_DISTANCES - END_POS_MODEL_INDEX)
-  const posAlign = initializedProbabilities(ALIGN_TABLE_SIZE)
-  const lenEncoder = new LengthEncoder(posStates)
-  const repLenEncoder = new LengthEncoder(posStates)
-  const encoder = new RangeEncoder()
-  const literalPosMask = (1 << properties.lp) - 1
-  const searchDepth = Math.max(1, Math.min(1024, options.searchDepth ?? 32))
-  const niceLength = Math.max(3, Math.min(273, options.niceLength ?? 64))
-  const maxDistance = Math.max(1, options.maxDistance ?? input.length)
-  // The chain only ever walks back `maxDistance` bytes, so it is kept in a
-  // ring that size rather than one slot per input byte. A whole-input array
-  // costs four bytes per byte compressed, which is what dominates the memory
-  // an entry needs.
-  const windowSize = nextPowerOfTwo(Math.min(maxDistance, Math.max(1, input.length)))
-  const windowMask = windowSize - 1
-  const head = new Int32Array(1 << 16)
-  const previous = new Int32Array(windowSize)
-  head.fill(-1)
-  previous.fill(-1)
-  let previousByte = 0
-  let state = 0
-  let rep0 = 0
-  let rep1 = 0
-  let rep2 = 0
-  let rep3 = 0
-
-  const insert = (position: number) => {
-    if (position + 2 >= input.length) return
-    const hash = hash3(input, position)
-    previous[position & windowMask] = head[hash]
-    head[hash] = position
-  }
-
-  let position = 0
-  while (position < input.length) {
-    let bestLength = 0
-    let bestDistance = 0
-    if (position + 2 < input.length) {
-      let candidate = head[hash3(input, position)]
-      let searched = 0
-      const maxLength = Math.min(273, input.length - position)
-      while (candidate >= 0 && searched < searchDepth) {
-        const distance = position - candidate
-        // Candidates come newest first, so the first one out of reach ends it.
-        if (distance > maxDistance) break
-        if (distance > 0 && input[candidate + bestLength] === input[position + bestLength]) {
-          let length = 0
-          while (length < maxLength && input[candidate + length] === input[position + length]) length += 1
-          if (length > bestLength) {
-            bestLength = length
-            bestDistance = distance - 1
-            if (length >= niceLength) break
-          }
-        }
-        // Safe against the ring wrapping: a slot is only overwritten once the
-        // position is further back than `maxDistance`, and the break above
-        // stops the walk before it reaches one.
-        candidate = previous[candidate & windowMask]
-        searched += 1
-      }
-    }
-
-    const posState = position & (posStates - 1)
-    if (bestLength < 3) {
-      encoder.bit(isMatch, (state << properties.pb) + posState, 0)
-      const context = ((position & literalPosMask) << properties.lc) + (previousByte >>> (8 - properties.lc))
-      const base = context * 0x300
-      let symbol = 1
-      const byte = input[position]
-      let matched = state >= 7
-      let matchByte = matched ? input[position - rep0 - 1] : 0
-      for (let bitIndex = 7; bitIndex >= 0; bitIndex -= 1) {
-        const bit = (byte >>> bitIndex) & 1
-        if (matched) {
-          const matchBit = (matchByte >>> 7) & 1
-          matchByte = (matchByte << 1) & 0xff
-          encoder.bit(literals, base + 0x100 + (matchBit << 8) + symbol, bit)
-          if (matchBit !== bit) matched = false
-        } else {
-          encoder.bit(literals, base + symbol, bit)
-        }
-        symbol = (symbol << 1) | bit
-      }
-      insert(position)
-      previousByte = byte
-      state = state < 4 ? 0 : state < 10 ? state - 3 : state - 6
-      position += 1
-      continue
-    }
-
-    encoder.bit(isMatch, (state << properties.pb) + posState, 1)
-    const reps = [rep0, rep1, rep2, rep3]
-    const repIndex = reps.indexOf(bestDistance)
-    if (repIndex >= 0) {
-      encoder.bit(isRep, state, 1)
-      if (repIndex === 0) {
-        encoder.bit(isRepG0, state, 0)
-        encoder.bit(isRep0Long, (state << properties.pb) + posState, 1)
-      } else {
-        encoder.bit(isRepG0, state, 1)
-        if (repIndex === 1) {
-          encoder.bit(isRepG1, state, 0)
-        } else {
-          encoder.bit(isRepG1, state, 1)
-          encoder.bit(isRepG2, state, repIndex === 2 ? 0 : 1)
-        }
-        if (repIndex === 1) {
-          rep1 = rep0
-        } else if (repIndex === 2) {
-          rep2 = rep1
-          rep1 = rep0
-        } else {
-          rep3 = rep2
-          rep2 = rep1
-          rep1 = rep0
-        }
-        rep0 = bestDistance
-      }
-      repLenEncoder.encode(encoder, posState, bestLength - MATCH_MIN_LEN)
-      state = state < 7 ? 8 : 11
-    } else {
-      encoder.bit(isRep, state, 0)
-      state = state < 7 ? 7 : 10
-      lenEncoder.encode(encoder, posState, bestLength - MATCH_MIN_LEN)
-      rep3 = rep2
-      rep2 = rep1
-      rep1 = rep0
-      rep0 = bestDistance
-
-      const lenState = Math.min(bestLength - MATCH_MIN_LEN, 3)
-      let distanceSlot: number
-      if (bestDistance < START_POS_MODEL_INDEX) {
-        distanceSlot = bestDistance
-      } else {
-        const log = Math.floor(Math.log2(bestDistance))
-        distanceSlot = (log << 1) + ((bestDistance >>> (log - 1)) & 1)
-      }
-      bitTreeEncode(encoder, posSlot, lenState << NUM_POS_SLOT_BITS, NUM_POS_SLOT_BITS, distanceSlot)
-      if (distanceSlot >= START_POS_MODEL_INDEX) {
-        const directBits = (distanceSlot >>> 1) - 1
-        const baseDistance = (2 | (distanceSlot & 1)) << directBits
-        const footer = bestDistance - baseDistance
-        if (distanceSlot < END_POS_MODEL_INDEX) {
-          reverseBitTreeEncode(encoder, posDecoders, baseDistance - distanceSlot - 1, directBits, footer)
-        } else {
-          encoder.directBits(footer >>> NUM_ALIGN_BITS, directBits - NUM_ALIGN_BITS)
-          reverseBitTreeEncode(encoder, posAlign, 0, NUM_ALIGN_BITS, footer & (ALIGN_TABLE_SIZE - 1))
-        }
-      }
-    }
-
-    for (let index = 0; index < bestLength; index += 1) insert(position + index)
-    previousByte = input[position + bestLength - 1]
-    position += bestLength
-  }
-
-  return encoder.finish()
+  const encoder = new LzmaStreamEncoder(properties, {
+    ...options,
+    maxDistance: Math.max(1, Math.min(options.maxDistance ?? input.length, Math.max(1, input.length)))
+  })
+  const head = encoder.update(input)
+  const tail = encoder.final()
+  const output = new Uint8Array(head.length + tail.length)
+  output.set(head)
+  output.set(tail, head.length)
+  return output
 }
 
 // Kept as a source-compatible name for early callers; it now uses the full

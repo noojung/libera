@@ -149,11 +149,10 @@ describe('ZIP codecs', () => {
     expect(await fs.readFile(path.join(outputDir, 'big.bin'))).toEqual(noise)
   }, 120_000)
 
-  it('names the limit rather than letting a huge entry fail on allocation', () => {
-    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE, 'compression')).not.toThrow()
-    expect(() => assertEntryFits(undefined, 'compression')).not.toThrow()
-    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE + 1, 'compression'))
-      .toThrow(/limited to 1024 MB per file/)
+  it('refuses an entry too large to decode, rather than writing one', () => {
+    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE)).not.toThrow()
+    expect(() => assertEntryFits(undefined)).not.toThrow()
+    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE + 1)).toThrow(/limited to 1024 MB per file/)
   })
 
   it('rejects deflate tuning that the chosen method cannot use', async () => {

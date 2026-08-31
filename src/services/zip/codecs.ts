@@ -1,7 +1,7 @@
 import { Duplex } from 'stream'
 import zlib from 'zlib'
 import { registerCodec } from '@zip.js/zip.js'
-import { decodeLzma1, encodeLzma } from 'libera7z'
+import { decodeLzma1, LzmaStreamEncoder } from 'libera7z'
 
 // Method numbers as they appear in a ZIP entry header. Store (0), Deflate (8),
 // Deflate64 (9) and AES (99) are zip.js built-ins and cannot be re-registered.
@@ -45,74 +45,36 @@ function concatChunks(chunks: Uint8Array[], totalLength: number): Uint8Array {
 }
 
 /**
- * The largest entry the one-shot codec accepts. It holds the whole entry in
- * memory, so an entry past this asks for an allocation that would more likely
- * fail than succeed - better a message naming the limit than an allocation
- * error from somewhere deep in the encoder.
+ * The largest LZMA entry this app handles. Compression streams, but decoding
+ * still produces the entry in one piece, so writing past this would produce an
+ * archive the app could not read back.
  */
 export const LZMA_MAX_ENTRY_SIZE = 1024 * 1024 * 1024
 
 /**
- * Gathers an entry into one buffer. The declared size lets it land in a single
- * exact allocation; without one, or if the declaration turns out to be wrong,
- * it falls back to collecting the chunks and joining them at the end.
+ * Collects the whole stream before handing it to a one-shot codec. The LZMA
+ * decoder needs the full stream to know where the range coder ends.
  */
-class EntryBuffer {
-  private buffer?: Uint8Array
-  private offset = 0
-  private chunks: Uint8Array[] = []
-  private length = 0
-
-  constructor(expectedSize?: number) {
-    if (expectedSize !== undefined && expectedSize > 0) this.buffer = new Uint8Array(expectedSize)
-  }
-
-  push(bytes: Uint8Array): void {
-    if (this.buffer) {
-      if (this.offset + bytes.length <= this.buffer.length) {
-        this.buffer.set(bytes, this.offset)
-        this.offset += bytes.length
-        this.length += bytes.length
-        return
-      }
-      this.chunks.push(this.buffer.subarray(0, this.offset))
-      this.buffer = undefined
-    }
-    this.chunks.push(bytes)
-    this.length += bytes.length
-  }
-
-  take(): Uint8Array {
-    if (this.buffer) return this.buffer.subarray(0, this.offset)
-    return concatChunks(this.chunks, this.length)
-  }
-}
-
-/**
- * Collects the whole entry before handing it to a one-shot codec. LZMA needs
- * the full input to pick its matches, and its decoder needs the full stream to
- * know where the range coder ends.
- */
-function bufferingTransform(
-  finish: (input: Uint8Array) => Uint8Array,
-  expectedSize?: number
-): TransformStreamLike {
-  const entry = new EntryBuffer(expectedSize)
+function bufferingTransform(finish: (input: Uint8Array) => Uint8Array): TransformStreamLike {
+  const chunks: Uint8Array[] = []
+  let totalLength = 0
   return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk) {
-      entry.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk))
+      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
+      chunks.push(bytes)
+      totalLength += bytes.length
     },
     flush(controller) {
-      controller.enqueue(finish(entry.take()))
+      controller.enqueue(finish(concatChunks(chunks, totalLength)))
     }
   }) as TransformStreamLike
 }
 
-export function assertEntryFits(size: number | undefined, action: string): void {
+export function assertEntryFits(size: number | undefined): void {
   if (size !== undefined && size > LZMA_MAX_ENTRY_SIZE) {
     const limit = Math.round(LZMA_MAX_ENTRY_SIZE / (1024 * 1024))
     throw new Error(
-      `LZMA ${action} holds the whole entry in memory and is limited to ${limit} MB per file. ` +
+      `LZMA entries are decoded in one piece and are limited to ${limit} MB per file. ` +
       'Choose Deflate or Zstandard for entries larger than that.'
     )
   }
@@ -151,14 +113,31 @@ class LzmaCompressionStream implements TransformStreamLike {
   writable: WritableStream
 
   constructor(_format: string, options: { level?: number; uncompressedSize?: number } = {}) {
-    assertEntryFits(options.uncompressedSize, 'compression')
-    const effort = lzmaEffort(options.level)
-    const stream = bufferingTransform((input) => {
-      const dictionarySize = lzmaDictionarySize(input.length)
-      const header = lzmaHeader(dictionarySize)
-      const body = encodeLzma(input, undefined, { ...effort, maxDistance: dictionarySize })
-      return concatChunks([header, body], header.length + body.length)
-    }, options.uncompressedSize)
+    // The dictionary goes in the header, ahead of any data, so it is sized
+    // from the declared entry size. An undeclared size takes the maximum.
+    assertEntryFits(options.uncompressedSize)
+    const dictionarySize = lzmaDictionarySize(options.uncompressedSize ?? LZMA_MAX_DICTIONARY_SIZE)
+    const encoder = new LzmaStreamEncoder(undefined, {
+      ...lzmaEffort(options.level),
+      maxDistance: dictionarySize
+    })
+    let headerSent = false
+    const sendHeader = (controller: TransformStreamDefaultController<Uint8Array>): void => {
+      if (headerSent) return
+      controller.enqueue(lzmaHeader(dictionarySize))
+      headerSent = true
+    }
+    const stream = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        sendHeader(controller)
+        const encoded = encoder.update(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk))
+        if (encoded.length > 0) controller.enqueue(encoded)
+      },
+      flush(controller) {
+        sendHeader(controller)
+        controller.enqueue(encoder.final())
+      }
+    }) as TransformStreamLike
     this.readable = stream.readable
     this.writable = stream.writable
   }
@@ -169,7 +148,7 @@ class LzmaDecompressionStream implements TransformStreamLike {
   writable: WritableStream
 
   constructor(_format: string, options: { uncompressedSize?: number; rawBitFlag?: number } = {}) {
-    assertEntryFits(options.uncompressedSize, 'decompression')
+    assertEntryFits(options.uncompressedSize)
     const stream = bufferingTransform((input) => {
       if (input.length < 4) throw new Error('The LZMA entry header is truncated.')
       const propertiesSize = input[2] | (input[3] << 8)
