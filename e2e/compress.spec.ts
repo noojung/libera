@@ -117,6 +117,11 @@ test('compresses a folder to an encrypted 7z with hidden names and extracts it b
   await seedFiles(source, ['one.bin', 'two.bin'], 128 * 1024)
   const outputPath = path.join(workDir, 'out', 'secret.7z')
 
+  // Hiding the file names is an expert option, so the app has to be in that
+  // mode before the checkbox is on screen.
+  await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
+  await page.reload()
+
   await stubDialogs(app, { filePaths: [source] })
   await page.getByRole('button', { name: 'Browse folders' }).click()
   await expect(page.locator('.drop-zone__item')).toHaveCount(1)
