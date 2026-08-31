@@ -10,8 +10,9 @@ npm run check:browser -w libera7z
 ```
 
 That builds the package and opens the page. Every row should read `pass`. The
-results are also on `window.__results`, so a browser automation harness can
-assert on them without scraping the table.
+results are also on `window.__results`, which is what `e2e/browserCheck.spec.ts`
+asserts on — that spec serves this directory and runs the page in Chromium, so
+the checks also run as part of `npm run test:e2e`.
 
 Any static server works too, since the page only uses the built files:
 
