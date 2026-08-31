@@ -1,9 +1,26 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import tsconfigPaths from 'vite-tsconfig-paths'
+import fs from 'fs'
 import path from 'path'
+import { createRequire } from 'module'
+
+// libera7z ships its worker as a self-contained bundle. The packaged app only
+// carries dist/, so the file is copied beside main, where workerSetup.ts looks
+// for it. The .mjs suffix keeps Node reading it as the ES module it is.
+function copyLibera7zWorker(): Plugin {
+  return {
+    name: 'copy-libera7z-worker',
+    closeBundle() {
+      const source = createRequire(import.meta.url).resolve('libera7z/worker')
+      const target = path.resolve(__dirname, 'dist/worker/libera7zWorker.mjs')
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.copyFileSync(source, target)
+    }
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -13,6 +30,7 @@ export default defineConfig({
         // Main-process entrypoint of the Electron App.
         entry: path.resolve(__dirname, 'src/main/main.ts'),
         vite: {
+          plugins: [copyLibera7zWorker()],
           build: {
             outDir: path.resolve(__dirname, 'dist/main'),
             rollupOptions: {
@@ -36,33 +54,6 @@ export default defineConfig({
           }
         }
       },
-      {
-        entry: path.resolve(__dirname, 'src/services/sevenZip/readWorker.ts'),
-        vite: {
-          build: {
-            outDir: path.resolve(__dirname, 'dist/worker'),
-            emptyOutDir: true,
-            rollupOptions: {
-              external: ['worker_threads'],
-              output: { entryFileNames: 'sevenZipReadWorker.js' }
-            }
-          }
-        }
-      },
-      {
-        entry: path.resolve(__dirname, 'src/services/sevenZip/writeWorker.ts'),
-        vite: {
-          build: {
-            outDir: path.resolve(__dirname, 'dist/worker'),
-            // The codec entry above already cleared the shared folder.
-            emptyOutDir: false,
-            rollupOptions: {
-              external: ['worker_threads'],
-              output: { entryFileNames: 'sevenZipWriteWorker.js' }
-            }
-          }
-        }
-      }
     ]),
     renderer(),
     // `root` below points at src/renderer, so the plugin is told where the

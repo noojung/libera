@@ -4,7 +4,12 @@
   "description": "A dependency-free TypeScript reader and writer for the 7z archive format.",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/node.js",
+    "./dist/worker.js",
+    "./src/node.ts",
+    "./src/worker/entry.ts"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,6 +17,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/entry.d.ts",
+      "default": "./dist/worker.js"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",
@@ -26,7 +39,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "build": "vite build && vite build -c vite.worker.config.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "vitest run"
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { open7z } from './format'
+import { open7z } from './sevenZip'
 import { MemorySource } from './io'
 import { decodePpmd7, parsePpmd7Properties } from './ppmd7'
 import { ppmdRestartArchiveFixture, ppmdRestartPayload } from './ppmdReferenceFixtures.testData'

@@ -1,5 +1,7 @@
 export * from './errors'
 export * from './format'
+export * from './sevenZip'
+export { configure, type Libera7zConfiguration, type WorkerFactory, type WorkerLike } from './worker/config'
 export * from './io'
 export {
   decryptAesCbcRaw,

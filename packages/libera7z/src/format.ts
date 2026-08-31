@@ -668,7 +668,8 @@ async function writeEncryptedHeader(
   return writer.build()
 }
 
-export async function create7z(
+/** Writes on the calling thread, whatever `configure` says. */
+export async function create7zInProcess(
   entries: readonly SevenZipEntryInput[],
   sink: SeekableSink,
   options: CreateSevenZipOptions = {}
@@ -1779,7 +1780,8 @@ export class SevenZipArchive implements SevenZipReader {
   }
 }
 
-export async function open7z(
+/** Reads on the calling thread, whatever `configure` says. */
+export async function open7zInProcess(
   source: RandomAccessSource,
   options: OpenSevenZipOptions = {}
 ): Promise<SevenZipArchive> {

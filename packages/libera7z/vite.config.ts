@@ -6,11 +6,15 @@ import path from 'path'
 export default defineConfig({
   build: {
     target: 'esnext',
+    // Only the Node adapter touches a built-in, and it must stay external so
+    // the browser entries keep their zero-dependency bundles.
+    rollupOptions: { external: ['worker_threads'] },
     minify: false,
     sourcemap: true,
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        node: path.resolve(__dirname, 'src/node.ts'),
         testing: path.resolve(__dirname, 'src/testing.ts')
       },
       formats: ['es']

@@ -2,7 +2,6 @@ import fs, { promises as fsPromises } from 'fs'
 import { Readable } from 'stream'
 import path from 'path'
 import {
-  SevenZipArchive,
   Libera7zError,
   create7z,
   open7z,
@@ -14,8 +13,7 @@ import {
   type SevenZipMethod,
   type SevenZipReader
 } from 'libera7z'
-import { openLibera7zFileInWorker } from './readWorkerClient'
-import { runLibera7zWriteInWorker } from './writeWorkerClient'
+import './workerSetup'
 import {
   discoverSevenZipVolumes,
   isSevenZipVolumePath,
@@ -377,12 +375,6 @@ const ENCODER_BY_LEVEL: Record<number, { searchDepth: number; niceLength: number
 }
 
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
-  const written = await runLibera7zWriteInWorker(options)
-  return written ?? await writeLibera7zInline(options)
-}
-
-/** The write itself. Runs on whichever thread called it, worker or main. */
-export async function writeLibera7zInline(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
   const entries = await collectSevenZipInputs(options.inputPaths, options.outputPath)
   const sink = options.splitSize === undefined
@@ -420,19 +412,6 @@ export async function openLibera7zFile(
   archivePath: string,
   options: OpenSevenZipOptions = {}
 ): Promise<SevenZipReader> {
-  const opened = await openLibera7zFileInWorker(archivePath, {
-    maxEntries: options.maxEntries,
-    password: options.password,
-    signal: options.signal
-  })
-  return opened ?? await openLibera7zFileInline(archivePath, options)
-}
-
-/** The reader itself. Runs on whichever thread called it, worker or main. */
-export async function openLibera7zFileInline(
-  archivePath: string,
-  options: OpenSevenZipOptions = {}
-): Promise<SevenZipArchive> {
   const source = isSevenZipVolumePath(archivePath)
     ? await NodeVolumeSource.open(await discoverSevenZipVolumes(archivePath))
     : await NodeFileSource.open(archivePath)

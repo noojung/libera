@@ -28,11 +28,22 @@ such as files on disk.
 `libera7z/testing` exports archives produced by the reference 7-Zip
 implementation, for testing an integration against real output.
 
-## A note on threads
+## Workers
 
-The codecs are synchronous and CPU-bound. Long operations should run on a
-worker so they do not block the calling thread; this package does not spawn one
-for you.
+The codecs are synchronous and CPU-bound, so a large archive would block the
+calling thread. Point the package at the worker bundle it ships and `open7z`
+and `create7z` move the whole operation off-thread:
+
+```ts
+import { configure } from 'libera7z'
+import 'libera7z/node' // Node only; browsers use the global Worker
+
+configure({ workerScript: '/path/to/libera7z/dist/worker.js' })
+```
+
+Nothing else changes. Your source and sink stay on the calling thread and the
+worker calls back into them, so the same objects work either way. Without a
+`workerScript`, or with `useWorkers: false`, everything runs in process.
 
 ## Licence
 
