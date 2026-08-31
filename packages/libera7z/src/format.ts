@@ -1,10 +1,10 @@
-import { ByteReader, ByteWriter, bitVector, concatBytes, readBitVector, uint64ToSafeNumber } from './binary'
-import { Crc32, crc32 } from './crc32'
-import { Libera7zError, invalidArchive, throwIfCancelled, unsupportedFeature } from './errors'
-import { type RandomAccessSource, type SeekableSink, readExactly, readableFromGenerator } from './io'
-import { LzmaDecoder, type LzmaEncoderOptions } from './lzma'
-import { decodeLzma1, parseLzma1Properties } from './lzma1'
-import { decodePpmd7, parsePpmd7Properties } from './ppmd7'
+import { ByteReader, ByteWriter, bitVector, concatBytes, readBitVector, uint64ToSafeNumber } from './binary.js'
+import { Crc32, crc32 } from './crc32.js'
+import { Libera7zError, invalidArchive, throwIfCancelled, unsupportedFeature } from './errors.js'
+import { type RandomAccessSource, type SeekableSink, readExactly, readableFromGenerator } from './io.js'
+import { LzmaDecoder, type LzmaEncoderOptions } from './lzma.js'
+import { decodeLzma1, parseLzma1Properties } from './lzma1.js'
+import { decodePpmd7, parsePpmd7Properties } from './ppmd7.js'
 import {
   decryptAesCbcRaw,
   decryptSevenZipAes,
@@ -17,11 +17,11 @@ import {
   SevenZipAesEncryptor,
   type SevenZipAesKeyDeriver,
   type SevenZipAesProperties
-} from './aes'
-import { decodeBzip2 } from './bzip2'
-import { decodeBcj2 } from './bcj2'
-import { inflateRaw } from './deflate'
-import { decodeSevenZipFilter, type SevenZipFilter } from './filters'
+} from './aes.js'
+import { decodeBzip2 } from './bzip2.js'
+import { decodeBcj2 } from './bcj2.js'
+import { inflateRaw } from './deflate.js'
+import { decodeSevenZipFilter, type SevenZipFilter } from './filters.js'
 import {
   initialLzma2ChunkState,
   planLzma2Chunk,
@@ -30,7 +30,7 @@ import {
   dictionaryPropertyForSize,
   dictionarySizeFromProperty,
   encodeLzma2Block
-} from './lzma2'
+} from './lzma2.js'
 
 const SIGNATURE = Uint8Array.of(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
 const SIGNATURE_HEADER_SIZE = 32

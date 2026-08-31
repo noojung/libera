@@ -1,4 +1,4 @@
-import { Libera7zError, throwIfCancelled } from '../errors'
+import { Libera7zError, throwIfCancelled } from '../errors.js'
 import type {
   CreateSevenZipOptions,
   OpenEntryOptions,
@@ -8,9 +8,9 @@ import type {
   SevenZipEntryEvent,
   SevenZipEntryInput,
   SevenZipReader
-} from '../format'
-import { readableFromGenerator, type RandomAccessSource, type SeekableSink } from '../io'
-import { spawnConfiguredWorker, type WorkerLike } from './config'
+} from '../format.js'
+import { readableFromGenerator, type RandomAccessSource, type SeekableSink } from '../io.js'
+import { spawnConfiguredWorker, type WorkerLike } from './config.js'
 import {
   ROOT_STREAM_ID,
   reviveFailure,
@@ -19,7 +19,7 @@ import {
   type WorkerIoCall,
   type WorkerReply,
   type WorkerRequest
-} from './protocol'
+} from './protocol.js'
 
 /** Owns one worker: routes its replies, and serves the I/O it asks for. */
 class WorkerSession {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import * as Libera7z from './index'
+import * as Libera7z from './index.js'
 
 describe('Libera7z public API', () => {
   it('exposes the container, I/O, error and checksum APIs', () => {

@@ -1,4 +1,4 @@
-import { invalidArchive, throwIfCancelled } from './errors'
+import { invalidArchive, throwIfCancelled } from './errors.js'
 
 // Wire constants and state transitions follow the public-domain LZMA SDK.
 // This implementation is TypeScript-native and uses no native or WASM codec.

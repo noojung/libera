@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Crc32, crc32 } from './crc32'
+import { Crc32, crc32 } from './crc32.js'
 
 describe('CRC-32', () => {
   it('matches the standard check value', () => {

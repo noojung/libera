@@ -1,4 +1,4 @@
-import { invalidArchive } from './errors'
+import { invalidArchive } from './errors.js'
 
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER)
 

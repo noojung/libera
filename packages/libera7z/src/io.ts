@@ -1,5 +1,5 @@
-import { uint64ToSafeNumber } from './binary'
-import { invalidArchive, throwIfCancelled } from './errors'
+import { uint64ToSafeNumber } from './binary.js'
+import { invalidArchive, throwIfCancelled } from './errors.js'
 
 export interface RandomAccessSource {
   readonly size: bigint

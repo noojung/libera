@@ -1,6 +1,6 @@
-import { concatBytes } from './binary'
-import { invalidArchive, throwIfCancelled } from './errors'
-import { encodeLzma, LzmaDecoder, type LzmaEncoderOptions } from './lzma'
+import { concatBytes } from './binary.js'
+import { invalidArchive, throwIfCancelled } from './errors.js'
+import { encodeLzma, LzmaDecoder, type LzmaEncoderOptions } from './lzma.js'
 
 const ENCODE_CHUNK_SIZE = 48 * 1024
 const DEFAULT_LZMA_PROPERTIES = 93 // lc=3, lp=0, pb=2

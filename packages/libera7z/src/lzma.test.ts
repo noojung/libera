@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { encodeLzma, LzmaDecoder, parseLzmaProperties } from './lzma'
+import { encodeLzma, LzmaDecoder, parseLzmaProperties } from './lzma.js'
 
 describe('pure TypeScript LZMA', () => {
   it('parses the default LZMA properties', () => {

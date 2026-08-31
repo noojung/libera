@@ -2,6 +2,27 @@
   "name": "libera7z",
   "version": "0.1.0",
   "description": "A dependency-free TypeScript reader and writer for the 7z archive format.",
+  "keywords": [
+    "7z",
+    "7zip",
+    "seven-zip",
+    "archive",
+    "compression",
+    "lzma",
+    "lzma2",
+    "ppmd",
+    "bzip2",
+    "browser"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noojung/libera.git",
+    "directory": "packages/libera7z"
+  },
+  "homepage": "https://github.com/noojung/libera/tree/main/packages/libera7z#readme",
+  "bugs": {
+    "url": "https://github.com/noojung/libera/issues"
+  },
   "license": "MIT",
   "type": "module",
   "sideEffects": [

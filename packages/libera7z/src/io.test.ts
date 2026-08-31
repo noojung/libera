@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MemorySink, MemorySource, readExactly, readableFromGenerator, type RandomAccessSource } from './io'
+import { MemorySink, MemorySource, readExactly, readableFromGenerator, type RandomAccessSource } from './io.js'
 
 describe('in-memory 7z I/O', () => {
   it('writes, patches and copies sink contents', async () => {

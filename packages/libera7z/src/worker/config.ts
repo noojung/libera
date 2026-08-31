@@ -1,4 +1,4 @@
-import type { WorkerReply } from './protocol'
+import type { WorkerReply } from './protocol.js'
 
 /** The slice of a Worker this package uses, so a Node worker_threads worker and
  * a browser Worker can both stand in without the package importing either. */

@@ -1,4 +1,4 @@
-import { invalidArchive, throwIfCancelled } from './errors'
+import { invalidArchive, throwIfCancelled } from './errors.js'
 
 function readUint32BE(bytes: Uint8Array, offset: number): number {
   return ((bytes[offset] << 24) |

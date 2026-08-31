@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeSevenZipFilter } from './filters'
+import { decodeSevenZipFilter } from './filters.js'
 
 describe('7z simple filters', () => {
   it('decodes Delta byte distances', () => {

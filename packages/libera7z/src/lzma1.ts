@@ -1,6 +1,6 @@
-import { uint64ToSafeNumber } from './binary'
-import { invalidArchive } from './errors'
-import { LzmaDecoder } from './lzma'
+import { uint64ToSafeNumber } from './binary.js'
+import { invalidArchive } from './errors.js'
+import { LzmaDecoder } from './lzma.js'
 
 export interface Lzma1Properties {
   property: number

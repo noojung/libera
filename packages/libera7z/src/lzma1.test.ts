@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { encodeLzma } from './lzma'
-import { decodeLzma1, parseLzma1Properties } from './lzma1'
+import { encodeLzma } from './lzma.js'
+import { decodeLzma1, parseLzma1Properties } from './lzma1.js'
 
 describe('LZMA1 codec', () => {
   it('parses 7z properties and decodes a raw LZMA stream', () => {

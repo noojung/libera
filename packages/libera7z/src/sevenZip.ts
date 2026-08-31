@@ -5,9 +5,9 @@ import {
   type OpenSevenZipOptions,
   type SevenZipEntryInput,
   type SevenZipReader
-} from './format'
-import type { RandomAccessSource, SeekableSink } from './io'
-import { createArchiveInWorker, openArchiveInWorker } from './worker/client'
+} from './format.js'
+import type { RandomAccessSource, SeekableSink } from './io.js'
+import { createArchiveInWorker, openArchiveInWorker } from './worker/client.js'
 
 // The public entry points. They run on a worker once one is configured, and on
 // the calling thread otherwise, so callers never change with the setting.

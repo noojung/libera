@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { open7z } from './sevenZip'
-import { MemorySource } from './io'
-import { decodePpmd7, parsePpmd7Properties } from './ppmd7'
-import { ppmdRestartArchiveFixture, ppmdRestartPayload } from './ppmdReferenceFixtures.testData'
+import { open7z } from './sevenZip.js'
+import { MemorySource } from './io.js'
+import { decodePpmd7, parsePpmd7Properties } from './ppmd7.js'
+import { ppmdRestartArchiveFixture, ppmdRestartPayload } from './ppmdReferenceFixtures.testData.js'
 
 async function collect(readable: ReadableStream<Uint8Array>): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []

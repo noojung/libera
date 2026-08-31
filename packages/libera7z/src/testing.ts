@@ -4,4 +4,4 @@ export {
   REFERENCE_SEVEN_ZIP_FIXTURES,
   referenceSevenZipFixture,
   type ReferenceSevenZipFixture
-} from './referenceFixtures.testData'
+} from './referenceFixtures.testData.js'

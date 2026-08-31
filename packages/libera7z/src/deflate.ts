@@ -1,4 +1,4 @@
-import { invalidArchive, throwIfCancelled } from './errors'
+import { invalidArchive, throwIfCancelled } from './errors.js'
 
 class BitReader {
   private offset = 0

@@ -1,5 +1,5 @@
-import { concatBytes } from './binary'
-import { invalidArchive, Libera7zError, throwIfCancelled } from './errors'
+import { concatBytes } from './binary.js'
+import { invalidArchive, Libera7zError, throwIfCancelled } from './errors.js'
 
 const SHA256_INITIAL = Uint32Array.of(
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,

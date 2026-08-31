@@ -8,7 +8,7 @@ import {
   encodeLzma2,
   encodeLzma2Block,
   LZMA2_ENCODE_CHUNK_SIZE
-} from './lzma2'
+} from './lzma2.js'
 
 describe('pure TypeScript LZMA2', () => {
   it('round-trips compressible and varied chunks', () => {

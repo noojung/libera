@@ -7,7 +7,7 @@ import {
   readBitVector,
   uint32Bytes,
   uint64ToSafeNumber
-} from './binary'
+} from './binary.js'
 
 describe('7z binary primitives', () => {
   it('round-trips every variable-width uint64 encoding', () => {

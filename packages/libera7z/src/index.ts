@@ -1,8 +1,8 @@
-export * from './errors'
-export * from './format'
-export * from './sevenZip'
-export { configure, type Libera7zConfiguration, type WorkerFactory, type WorkerLike } from './worker/config'
-export * from './io'
+export * from './errors.js'
+export * from './format.js'
+export * from './sevenZip.js'
+export { configure, type Libera7zConfiguration, type WorkerFactory, type WorkerLike } from './worker/config.js'
+export * from './io.js'
 export {
   decryptAesCbcRaw,
   decryptSevenZipAes,
@@ -15,12 +15,12 @@ export {
   Sha256,
   type SevenZipAesKeyDeriver,
   type SevenZipAesProperties
-} from './aes'
-export { inflateRaw } from './deflate'
-export { decodeBzip2 } from './bzip2'
-export { decodeBcj2 } from './bcj2'
-export { decodeSevenZipFilter, type SevenZipFilter } from './filters'
-export { crc32, Crc32 } from './crc32'
-export { decodeLzma1, parseLzma1Properties } from './lzma1'
-export { decodePpmd7, parsePpmd7Properties } from './ppmd7'
-export { dictionaryPropertyForSize, dictionarySizeFromProperty } from './lzma2'
+} from './aes.js'
+export { inflateRaw } from './deflate.js'
+export { decodeBzip2 } from './bzip2.js'
+export { decodeBcj2 } from './bcj2.js'
+export { decodeSevenZipFilter, type SevenZipFilter } from './filters.js'
+export { crc32, Crc32 } from './crc32.js'
+export { decodeLzma1, parseLzma1Properties } from './lzma1.js'
+export { decodePpmd7, parsePpmd7Properties } from './ppmd7.js'
+export { dictionaryPropertyForSize, dictionarySizeFromProperty } from './lzma2.js'

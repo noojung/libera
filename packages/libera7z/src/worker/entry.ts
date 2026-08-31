@@ -1,7 +1,7 @@
 // The bundled worker this package ships as `libera7z/dist/worker.js`. It runs
 // under both worker flavours: a browser worker talks through the global scope,
 // a Node worker through its parent port.
-import { installWorkerHandler, type WorkerPort } from './handler'
+import { installWorkerHandler, type WorkerPort } from './handler.js'
 
 interface BrowserWorkerScope {
   postMessage(message: unknown, transfer?: unknown[]): void

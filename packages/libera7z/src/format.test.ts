@@ -4,11 +4,11 @@ import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Libera7zError } from './errors'
-import { create7z, open7z } from './sevenZip'
-import { type SevenZipEntryInput } from './format'
-import { MemorySink, MemorySource, type RandomAccessSource } from './io'
-import { referenceSevenZipFixture } from './referenceFixtures.testData'
+import { Libera7zError } from './errors.js'
+import { create7z, open7z } from './sevenZip.js'
+import { type SevenZipEntryInput } from './format.js'
+import { MemorySink, MemorySource, type RandomAccessSource } from './io.js'
+import { referenceSevenZipFixture } from './referenceFixtures.testData.js'
 
 const temporaryDirectories: string[] = []
 const execFileAsync = promisify(execFile)

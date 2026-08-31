@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'zlib'
 import { describe, expect, it } from 'vitest'
-import { inflateRaw } from './deflate'
+import { inflateRaw } from './deflate.js'
 
 describe('DEFLATE decoder', () => {
   it.each([0, 1, 6, 9])('decodes raw streams produced at level %s', level => {

@@ -1,6 +1,6 @@
-import { Libera7zError, type Libera7zErrorCode } from '../errors'
-import type { SevenZipArchiveMetadata, SevenZipEntry, SevenZipEntryEvent, SevenZipMethod } from '../format'
-import type { LzmaEncoderOptions } from '../lzma'
+import { Libera7zError, type Libera7zErrorCode } from '../errors.js'
+import type { SevenZipArchiveMetadata, SevenZipEntry, SevenZipEntryEvent, SevenZipMethod } from '../format.js'
+import type { LzmaEncoderOptions } from '../lzma.js'
 
 // The worker owns the whole read or write, but a source, a sink and an entry's
 // content stream are objects with methods, so they cannot be cloned across the

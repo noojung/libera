@@ -9,7 +9,7 @@
  * follows those C files directly. The Readwide Java port is not an
  * implementation source for this file.
  */
-import { invalidArchive, throwIfCancelled, unsupportedFeature } from './errors'
+import { invalidArchive, throwIfCancelled, unsupportedFeature } from './errors.js'
 
 const INT_BITS = 7
 const PERIOD_BITS = 7

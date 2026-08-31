@@ -1,6 +1,6 @@
-import { Libera7zError } from '../errors'
-import { create7zInProcess, open7zInProcess, type SevenZipEntryEvent, type SevenZipEntryInput, type SevenZipReader } from '../format'
-import type { RandomAccessSource, SeekableSink } from '../io'
+import { Libera7zError } from '../errors.js'
+import { create7zInProcess, open7zInProcess, type SevenZipEntryEvent, type SevenZipEntryInput, type SevenZipReader } from '../format.js'
+import type { RandomAccessSource, SeekableSink } from '../io.js'
 import {
   ROOT_STREAM_ID,
   reviveFailure,
@@ -9,7 +9,7 @@ import {
   type WorkerIoCall,
   type WorkerReply,
   type WorkerRequest
-} from './protocol'
+} from './protocol.js'
 
 /** The port the handler talks over, narrowed so it fits both worker flavours. */
 export interface WorkerPort {

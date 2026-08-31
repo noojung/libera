@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { invalidArchive, Libera7zError, throwIfCancelled, unsupportedFeature } from './errors'
+import { invalidArchive, Libera7zError, throwIfCancelled, unsupportedFeature } from './errors.js'
 
 describe('Libera7z errors', () => {
   it('creates typed archive and feature errors', () => {

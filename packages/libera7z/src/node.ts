@@ -2,8 +2,8 @@
 // which the root entry deliberately does not know how to do. Browsers need
 // nothing: the global Worker is used instead.
 import { Worker } from 'worker_threads'
-import { setDefaultWorkerFactory, type WorkerLike } from './worker/config'
-import type { WorkerReply } from './worker/protocol'
+import { setDefaultWorkerFactory, type WorkerLike } from './worker/config.js'
+import type { WorkerReply } from './worker/protocol.js'
 
 setDefaultWorkerFactory((script): WorkerLike => {
   const worker = new Worker(script)
