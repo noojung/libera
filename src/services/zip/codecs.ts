@@ -1,7 +1,7 @@
 import { Duplex } from 'stream'
 import zlib from 'zlib'
 import { registerCodec } from '@zip.js/zip.js'
-import { decodeLzma1, LzmaStreamEncoder } from 'libera7z'
+import { LzmaStreamDecoder, LzmaStreamEncoder, parseLzma1Properties } from 'libera7z'
 
 // Method numbers as they appear in a ZIP entry header. Store (0), Deflate (8),
 // Deflate64 (9) and AES (99) are zip.js built-ins and cannot be re-registered.
@@ -19,6 +19,9 @@ const LZMA_MIN_DICTIONARY_SIZE = 4096
 const LZMA_PROPERTY_BYTE = 0x5d
 /** LZMA SDK version stamped into the entry header. Readers ignore it. */
 const LZMA_SDK_VERSION = [9, 20]
+/** Decoded slices allowed to sit between the decoder and its reader. */
+const OUTPUT_SLICES_IN_FLIGHT = 4
+
 /** General purpose bit 1 marks an LZMA stream that ends in an EOS marker. */
 const LZMA_EOS_FLAG = 0x02
 
@@ -42,42 +45,6 @@ function concatChunks(chunks: Uint8Array[], totalLength: number): Uint8Array {
     offset += chunk.length
   }
   return merged
-}
-
-/**
- * The largest LZMA entry this app handles. Compression streams, but decoding
- * still produces the entry in one piece, so writing past this would produce an
- * archive the app could not read back.
- */
-export const LZMA_MAX_ENTRY_SIZE = 1024 * 1024 * 1024
-
-/**
- * Collects the whole stream before handing it to a one-shot codec. The LZMA
- * decoder needs the full stream to know where the range coder ends.
- */
-function bufferingTransform(finish: (input: Uint8Array) => Uint8Array): TransformStreamLike {
-  const chunks: Uint8Array[] = []
-  let totalLength = 0
-  return new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk) {
-      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
-      chunks.push(bytes)
-      totalLength += bytes.length
-    },
-    flush(controller) {
-      controller.enqueue(finish(concatChunks(chunks, totalLength)))
-    }
-  }) as TransformStreamLike
-}
-
-export function assertEntryFits(size: number | undefined): void {
-  if (size !== undefined && size > LZMA_MAX_ENTRY_SIZE) {
-    const limit = Math.round(LZMA_MAX_ENTRY_SIZE / (1024 * 1024))
-    throw new Error(
-      `LZMA entries are decoded in one piece and are limited to ${limit} MB per file. ` +
-      'Choose Deflate or Zstandard for entries larger than that.'
-    )
-  }
 }
 
 /**
@@ -115,7 +82,6 @@ class LzmaCompressionStream implements TransformStreamLike {
   constructor(_format: string, options: { level?: number; uncompressedSize?: number } = {}) {
     // The dictionary goes in the header, ahead of any data, so it is sized
     // from the declared entry size. An undeclared size takes the maximum.
-    assertEntryFits(options.uncompressedSize)
     const dictionarySize = lzmaDictionarySize(options.uncompressedSize ?? LZMA_MAX_DICTIONARY_SIZE)
     const encoder = new LzmaStreamEncoder(undefined, {
       ...lzmaEffort(options.level),
@@ -148,23 +114,68 @@ class LzmaDecompressionStream implements TransformStreamLike {
   writable: WritableStream
 
   constructor(_format: string, options: { uncompressedSize?: number; rawBitFlag?: number } = {}) {
-    assertEntryFits(options.uncompressedSize)
-    const stream = bufferingTransform((input) => {
-      if (input.length < 4) throw new Error('The LZMA entry header is truncated.')
-      const propertiesSize = input[2] | (input[3] << 8)
-      const properties = input.subarray(4, 4 + propertiesSize)
-      if (properties.length !== 5) throw new Error('The LZMA entry properties are malformed.')
-      const { uncompressedSize } = options
-      if (uncompressedSize === undefined) {
-        // Without a size the decoder cannot tell payload from the padding that
-        // follows it, and this writer never emits the marker that would.
-        if ((options.rawBitFlag ?? 0) & LZMA_EOS_FLAG) {
-          throw new Error('LZMA entries with an end-of-stream marker and no declared size are unsupported.')
+    const { uncompressedSize } = options
+    if (uncompressedSize === undefined) {
+      // Without a size the decoder cannot tell payload from the padding that
+      // follows it, and this writer never emits the marker that would.
+      throw new Error(((options.rawBitFlag ?? 0) & LZMA_EOS_FLAG)
+        ? 'LZMA entries with an end-of-stream marker and no declared size are unsupported.'
+        : 'The LZMA entry does not declare its uncompressed size.')
+    }
+
+    // The header arrives ahead of the stream, so the first bytes are held
+    // until the properties it carries are complete.
+    let header: Uint8Array = new Uint8Array(0)
+    let decoder: LzmaStreamDecoder | undefined
+
+    const open = (chunk: Uint8Array): Uint8Array | undefined => {
+      header = concatChunks([header, chunk], header.length + chunk.length) as Uint8Array
+      if (header.length < 4) return undefined
+      const propertiesSize = header[2] | (header[3] << 8)
+      if (propertiesSize !== 5) throw new Error('The LZMA entry properties are malformed.')
+      if (header.length < 4 + propertiesSize) return undefined
+      const properties = header.subarray(4, 4 + propertiesSize)
+      const { property, dictionarySize } = parseLzma1Properties(properties)
+      // The dictionary is allocated whole, and the header is the archive's
+      // word for how big it is. A match can never reach past the output, so
+      // an entry that declares more than it produces is held to its size.
+      const bounded = Math.max(4096, Math.min(dictionarySize, uncompressedSize))
+      decoder = new LzmaStreamDecoder(bounded, property, uncompressedSize)
+      return header.subarray(4 + propertiesSize)
+    }
+
+    // Pulled a slice at a time, waiting whenever the reader falls behind: a
+    // little input can decode to a great deal of output, and enqueuing it all
+    // would put the entry back in memory, which is what streaming avoids.
+    const drain = async (controller: TransformStreamDefaultController<Uint8Array>): Promise<void> => {
+      for (let slice = decoder!.pull(); slice; slice = decoder!.pull()) {
+        controller.enqueue(slice)
+        while ((controller.desiredSize ?? 1) <= 0) {
+          await new Promise(resolve => setImmediate(resolve))
         }
-        throw new Error('The LZMA entry does not declare its uncompressed size.')
       }
-      return decodeLzma1(input.subarray(4 + propertiesSize), properties, uncompressedSize)
-    })
+    }
+
+    const stream = new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        let body = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
+        if (!decoder) {
+          const rest = open(body)
+          if (rest === undefined) return
+          body = rest
+        }
+        decoder!.push(body)
+        await drain(controller)
+      },
+      async flush(controller) {
+        if (!decoder) throw new Error('The LZMA entry header is truncated.')
+        decoder.end()
+        await drain(controller)
+        decoder.assertComplete()
+      }
+    // The readable side needs room of its own: with the default of zero,
+    // `desiredSize` never rises above zero and the wait below never ends.
+    }, undefined, { highWaterMark: OUTPUT_SLICES_IN_FLIGHT }) as TransformStreamLike
     this.readable = stream.readable
     this.writable = stream.writable
   }

@@ -27,20 +27,70 @@ function initializedProbabilities(length: number): Uint16Array {
   return result
 }
 
+/**
+ * Bytes a single LZMA symbol can consume in the worst case: one per bit the
+ * range coder reads, and the longest symbol is a match with its full distance
+ * footer. A decoder that holds this much back can always finish the symbol it
+ * starts, which is what lets it suspend on a chunk boundary without unwinding
+ * the probability models it has already advanced.
+ */
+const REQUIRED_INPUT_MAX = 96
+
 class RangeDecoder {
   private range = 0xffffffff
   private code = 0
   private offset = 0
+  private input: Uint8Array
+  private length: number
+  private started = false
 
-  constructor(private readonly input: Uint8Array) {
-    if (input.length < 5 || input[0] !== 0) throw invalidArchive('Invalid LZMA range-coder prefix')
-    for (let index = 0; index < 5; index += 1) this.code = ((this.code * 256) + input[index]) >>> 0
-    this.offset = 5
+  /** Given a buffer, the whole stream is present; otherwise it is fed in. */
+  constructor(input?: Uint8Array) {
+    this.input = input ?? new Uint8Array(1 << 16)
+    this.length = input?.length ?? 0
+    // A whole stream that cannot even start its prefix is malformed; a fed
+    // stream is simply not there yet.
+    if (input && !this.begin()) throw invalidArchive('Invalid LZMA range-coder prefix')
+  }
+
+  get available(): number {
+    return this.length - this.offset
+  }
+
+  /** Appends more of the stream, dropping whatever has been consumed. */
+  feed(bytes: Uint8Array): void {
+    if (this.offset > 0) {
+      this.input.copyWithin(0, this.offset, this.length)
+      this.length -= this.offset
+      this.offset = 0
+    }
+    if (this.length + bytes.length > this.input.length) {
+      let size = Math.max(this.input.length, 1 << 16)
+      while (size < this.length + bytes.length) size *= 2
+      const grown = new Uint8Array(size)
+      grown.set(this.input.subarray(0, this.length))
+      this.input = grown
+    }
+    this.input.set(bytes, this.length)
+    this.length += bytes.length
+  }
+
+  /** Reads the five byte prefix. Returns false while it has yet to arrive. */
+  begin(): boolean {
+    if (this.started) return true
+    if (this.available < 5) return false
+    if (this.input[this.offset] !== 0) throw invalidArchive('Invalid LZMA range-coder prefix')
+    for (let index = 0; index < 5; index += 1) {
+      this.code = ((this.code * 256) + this.input[this.offset + index]) >>> 0
+    }
+    this.offset += 5
+    this.started = true
+    return true
   }
 
   private normalize(): void {
     if (this.range >= TOP_VALUE) return
-    if (this.offset >= this.input.length) throw invalidArchive('Truncated LZMA range-coded stream')
+    if (this.offset >= this.length) throw invalidArchive('Truncated LZMA range-coded stream')
     this.range = (this.range * 256) >>> 0
     this.code = ((this.code * 256) + this.input[this.offset++]) >>> 0
   }
@@ -296,6 +346,10 @@ export class LzmaDecoder {
   private dictionaryFull = 0
   private processedPosition = 0
   private previousByte = 0
+  // Bytes of a match still to be copied. A match may run past the end of the
+  // buffer it is being decoded into, and the copy resumes on the next call
+  // rather than the symbol being decoded twice.
+  private pendingLength = 0
 
   private properties: LzmaProperties = { lc: 3, lp: 0, pb: 2 }
   private literal = initializedProbabilities(0x300 << 3)
@@ -378,15 +432,43 @@ export class LzmaDecoder {
   }
 
   decodeChunk(input: Uint8Array, outputSize: number, signal?: AbortSignal): Uint8Array {
-    const decoder = new RangeDecoder(input)
     const output = new Uint8Array(outputSize)
+    this.decodeInto(new RangeDecoder(input), output, 0, outputSize, false, outputSize, signal)
+    return output
+  }
+
+  /**
+   * Decodes into `output` between `start` and `end`. When `suspendable` is set
+   * it stops as soon as the range coder is short of a symbol's worth of input
+   * rather than reading off the end, and the caller resumes it once more of
+   * the stream has arrived. `allowed` is how much output the stream itself has
+   * left, which is what a match is measured against - `end` only says how far
+   * this buffer reaches. Returns the position it reached.
+   */
+  decodeInto(
+    decoder: RangeDecoder,
+    output: Uint8Array,
+    start: number,
+    end: number,
+    suspendable: boolean,
+    allowed: number,
+    signal?: AbortSignal
+  ): number {
     const { lc, lp, pb } = this.properties
     const posMask = (1 << pb) - 1
     const literalPosMask = (1 << lp) - 1
-    let outputPosition = 0
+    let outputPosition = start
 
-    while (outputPosition < output.length) {
+    while (outputPosition < end) {
       if ((outputPosition & 0x3fff) === 0) throwIfCancelled(signal)
+      if (this.pendingLength > 0) {
+        outputPosition = this.copyMatch(output, outputPosition, end)
+        if (this.pendingLength > 0) break
+        continue
+      }
+      // Stop on a symbol boundary: past this point the models have moved on
+      // and there is no way back to the start of the symbol.
+      if (suspendable && decoder.available < REQUIRED_INPUT_MAX) break
       const posState = this.processedPosition & posMask
       if (decoder.bit(this.isMatch, (this.state << pb) + posState) === 0) {
         const context = ((this.processedPosition & literalPosMask) << lc) + (this.previousByte >>> (8 - lc))
@@ -472,15 +554,103 @@ export class LzmaDecoder {
         }
       }
 
-      if (length > output.length - outputPosition) throw invalidArchive('LZMA match exceeds declared chunk size')
-      for (let index = 0; index < length; index += 1) {
-        const byte = this.dictionaryByte(this.rep0)
-        output[outputPosition++] = byte
-        this.putByte(byte)
+      if (length > allowed - (outputPosition - start)) {
+        throw invalidArchive('LZMA match exceeds declared chunk size')
       }
+      this.pendingLength = length
+      outputPosition = this.copyMatch(output, outputPosition, end)
+      if (this.pendingLength > 0) break
     }
 
-    return output
+    return outputPosition
+  }
+
+  /** Copies as much of the outstanding match as the buffer has room for. */
+  private copyMatch(output: Uint8Array, outputPosition: number, end: number): number {
+    let position = outputPosition
+    while (this.pendingLength > 0 && position < end) {
+      const byte = this.dictionaryByte(this.rep0)
+      output[position] = byte
+      position += 1
+      this.putByte(byte)
+      this.pendingLength -= 1
+    }
+    return position
+  }
+}
+
+/** How much output the streaming decoder produces per pull. */
+const DECODE_OUTPUT_CHUNK = 256 * 1024
+
+/**
+ * Streaming raw LZMA decoder. The dictionary was already circular, so only the
+ * ends were one-shot: this feeds the range coder in pieces and yields output a
+ * slice at a time, which keeps the memory to the dictionary rather than to the
+ * size of the entry.
+ *
+ * It is pull-driven on purpose. A little input can decode to a great deal of
+ * output, so the caller asks for one slice at a time and can let its consumer
+ * catch up in between rather than holding the whole entry.
+ *
+ * The stream must declare how many bytes it decodes to, the way ZIP's method
+ * 14 entries do; there is no end-of-stream marker to stop on.
+ */
+export class LzmaStreamDecoder {
+  private readonly decoder: LzmaDecoder
+  private readonly range = new RangeDecoder()
+  private readonly buffer = new Uint8Array(DECODE_OUTPUT_CHUNK)
+  private remaining: number
+  private ended = false
+
+  constructor(dictionarySize: number, propertyByte: number, outputSize: number) {
+    if (!Number.isSafeInteger(outputSize) || outputSize < 0) {
+      throw invalidArchive('Invalid LZMA output size')
+    }
+    this.decoder = new LzmaDecoder(dictionarySize)
+    this.decoder.resetDictionary()
+    this.decoder.setProperties(propertyByte)
+    this.decoder.resetState()
+    this.remaining = outputSize
+  }
+
+  /** How much output the stream has still to produce. */
+  get pending(): number {
+    return this.remaining
+  }
+
+  /** Hands more of the compressed stream to the decoder. */
+  push(chunk: Uint8Array): void {
+    if (this.ended) throw new Error('The LZMA decoder is closed')
+    this.range.feed(chunk)
+  }
+
+  /**
+   * Marks the compressed stream complete, after which the decoder no longer
+   * holds a symbol's worth of input back.
+   */
+  end(): void {
+    this.ended = true
+  }
+
+  /**
+   * Decodes the next slice of output, or nothing when it needs more input.
+   * Call it until it returns nothing, then push more and call again.
+   */
+  pull(signal?: AbortSignal): Uint8Array | undefined {
+    if (this.remaining === 0) return undefined
+    if (!this.range.begin()) return undefined
+    const target = Math.min(this.buffer.length, this.remaining)
+    const produced = this.decoder.decodeInto(
+      this.range, this.buffer, 0, target, !this.ended, this.remaining, signal
+    )
+    if (produced === 0) return undefined
+    this.remaining -= produced
+    return this.buffer.slice(0, produced)
+  }
+
+  /** Fails when the stream ran out before producing everything it declared. */
+  assertComplete(): void {
+    if (this.remaining > 0) throw invalidArchive('Truncated LZMA range-coded stream')
   }
 }
 

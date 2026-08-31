@@ -7,13 +7,7 @@ import { compressArchive } from '../compressor'
 import { inspectArchive } from '../archiveInspector'
 import { extractArchive } from '../extractor'
 import { MIN_SPLIT_SIZE } from './splitWriter'
-import {
-  assertEntryFits,
-  LZMA_MAX_ENTRY_SIZE,
-  supportsZstd,
-  ZIP_LZMA_METHOD,
-  ZIP_ZSTD_METHOD
-} from './codecs'
+import { supportsZstd, ZIP_LZMA_METHOD, ZIP_ZSTD_METHOD } from './codecs'
 
 const temporaryDirectories: string[] = []
 
@@ -149,10 +143,24 @@ describe('ZIP codecs', () => {
     expect(await fs.readFile(path.join(outputDir, 'big.bin'))).toEqual(noise)
   }, 120_000)
 
-  it('refuses an entry too large to decode, rather than writing one', () => {
-    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE)).not.toThrow()
-    expect(() => assertEntryFits(undefined)).not.toThrow()
-    expect(() => assertEntryFits(LZMA_MAX_ENTRY_SIZE + 1)).toThrow(/limited to 1024 MB per file/)
+  // Written by Python's zipfile with ZIP_LZMA: a foreign encoder, an 8 MB
+  // dictionary and general purpose bit 1 set, meaning its stream carries an
+  // end-of-stream marker that this decoder has to stop short of.
+  const foreignLzmaZip = Buffer.from([
+    'UEsDBD8AAgAOAHgRIV1P3xvjWAAAAFgbAAALAAAAZm9yZWlnbi50eHQJBAUAXQAAgAAANhpIajumvE0hvLEg0qFU524Tcen0',
+    'Q43jOjIcjuJJfCepY+OqXuLHaBwIPHJc6Ns2STy/DO/Iqg1C6IOj2u3BiCBHw8VTuP93//8mTgAAUEsBAj8DPwACAA4AeBEh',
+    'XU/fG+NYAAAAWBsAAAsAAAAAAAAAAAAAAIABAAAAAGZvcmVpZ24udHh0UEsFBgAAAAABAAEAOQAAAIEAAAAAAA=='
+  ].join(''), 'base64')
+
+  it('reads an LZMA entry another encoder wrote', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'foreign.zip')
+    await fs.writeFile(archivePath, foreignLzmaZip)
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath, targetDir: outputDir })
+    await expect(fs.readFile(path.join(outputDir, 'foreign.txt'), 'utf8'))
+      .resolves.toBe('libera reads foreign LZMA entries.\n'.repeat(200))
   })
 
   it('rejects deflate tuning that the chosen method cannot use', async () => {

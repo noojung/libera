@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import crypto from 'crypto'
-import { encodeLzma, LzmaDecoder, LzmaStreamEncoder, parseLzmaProperties } from './lzma.js'
+import {
+  encodeLzma,
+  LzmaDecoder,
+  LzmaStreamDecoder,
+  LzmaStreamEncoder,
+  parseLzmaProperties
+} from './lzma.js'
 
 describe('pure TypeScript LZMA', () => {
   it('parses the default LZMA properties', () => {
@@ -85,6 +91,81 @@ describe('pure TypeScript LZMA', () => {
       encoder.final()
       expect(() => encoder.update(new Uint8Array([4]))).toThrow('closed')
       expect(() => encoder.final()).toThrow('closed')
+    })
+  })
+
+  describe('streaming decoder', () => {
+    const sources: [string, Uint8Array][] = [
+      ['repetitive', new TextEncoder().encode('stream-decoded-lzma\n'.repeat(4_000))],
+      ['random', new Uint8Array(crypto.randomBytes(96 * 1024))],
+      ['mixed', (() => {
+        const noise = crypto.randomBytes(32 * 1024)
+        return new Uint8Array(Buffer.concat([noise, Buffer.from('b'.repeat(40_000)), noise]))
+      })()]
+    ]
+
+    const DICTIONARY = 1024 * 1024
+
+    function decodeStreamed(encoded: Uint8Array, outputSize: number, chunkSize: number): Uint8Array {
+      const decoder = new LzmaStreamDecoder(DICTIONARY, 93, outputSize)
+      const parts: Uint8Array[] = []
+      const drain = (): void => {
+        for (let slice = decoder.pull(); slice; slice = decoder.pull()) parts.push(slice)
+      }
+      for (let offset = 0; offset < encoded.length; offset += chunkSize) {
+        decoder.push(encoded.subarray(offset, offset + chunkSize))
+        drain()
+      }
+      decoder.end()
+      drain()
+      decoder.assertComplete()
+      return new Uint8Array(Buffer.concat(parts.map(part => Buffer.from(part))))
+    }
+
+    // A symbol may span a chunk boundary, so the decoder has to suspend and
+    // resume without disturbing the models it decodes through.
+    it.each(sources)('splits %s input without changing a byte', (_, source) => {
+      const encoded = encodeLzma(source, undefined, { maxDistance: 64 * 1024 })
+      for (const chunkSize of [1, 5, 17, 96, 4_096, encoded.length]) {
+        expect(decodeStreamed(encoded, source.length, chunkSize)).toEqual(source)
+      }
+    })
+
+    it('yields bounded slices however compressible the stream is', () => {
+      const source = new Uint8Array(4 * 1024 * 1024)
+      source.fill(7)
+      // A few hundred bytes of input stand for megabytes of output, which is
+      // exactly the case that must not arrive in one piece.
+      const encoded = encodeLzma(source, undefined, { maxDistance: 4096 })
+      const decoder = new LzmaStreamDecoder(4096, 93, source.length)
+      decoder.push(encoded)
+      decoder.end()
+      let produced = 0
+      let largest = 0
+      for (let slice = decoder.pull(); slice; slice = decoder.pull()) {
+        produced += slice.length
+        largest = Math.max(largest, slice.length)
+      }
+      decoder.assertComplete()
+      expect(produced).toBe(source.length)
+      expect(largest).toBeLessThanOrEqual(256 * 1024)
+    })
+
+    it('reports a stream that ends early', () => {
+      const source = new TextEncoder().encode('truncated'.repeat(2_000))
+      const encoded = encodeLzma(source)
+      const decoder = new LzmaStreamDecoder(1024 * 1024, 93, source.length)
+      decoder.push(encoded.subarray(0, 32))
+      decoder.end()
+      expect(() => {
+        for (let slice = decoder.pull(); slice; slice = decoder.pull()) continue
+        decoder.assertComplete()
+      }).toThrow('Truncated LZMA range-coded stream')
+      expect(() => decoder.push(new Uint8Array([0]))).toThrow('closed')
+    })
+
+    it('rejects an output size it cannot work with', () => {
+      expect(() => new LzmaStreamDecoder(4096, 93, -1)).toThrow('Invalid LZMA output size')
     })
   })
 
