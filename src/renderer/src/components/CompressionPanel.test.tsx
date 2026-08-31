@@ -249,24 +249,27 @@ describe('CompressionPanel', () => {
 
     expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
     const selects = screen.getAllByRole('combobox')
-    await user.selectOptions(selects[0], 'store')
     await user.selectOptions(selects[1], 'rle')
-    // Store copies the files verbatim, so the level is pinned at 0.
+    fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '9' } })
+    await user.selectOptions(selects[0], 'store')
+    // Store copies the files verbatim, so the level is pinned at 0 and the
+    // deflate tuning drops out along with the pass it steers.
     expect(screen.getByText('0 - Store')).toBeInTheDocument()
     expect(screen.getAllByRole('slider')[0]).toBeDisabled()
+    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Memory level/)).not.toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
     await user.selectOptions(screen.getAllByRole('combobox').at(-1)!, 'aes128')
-    fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '9' } })
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       encryptionMethod: 'aes128',
       zipMethod: 'store',
-      deflateStrategy: 'rle',
+      deflateStrategy: undefined,
       level: 0,
-      memLevel: 9,
+      memLevel: undefined,
       password: 'secret'
     }))
   })

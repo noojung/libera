@@ -159,6 +159,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   // user set, which comes back when they switch to Deflate again.
   const storeSelected = isExpertMode && format === 'zip' && zipMethod === 'store'
   const effectiveLevel = storeSelected ? 0 : level
+  // Deflate tuning only means something where a deflate pass actually runs.
+  const deflateTuned = (format === 'zip' && zipMethod !== 'store') || format === 'tgz' || format === 'gz'
 
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
@@ -204,8 +206,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             matchFinderWordSize: format === '7z' && sevenZipMethod === 'lzma2' ? matchFinderWordSize : undefined,
             searchCycles: format === '7z' && sevenZipMethod === 'lzma2' ? searchCycles : undefined,
             solidArchive: format === '7z' && sevenZipMethod === 'lzma2' ? solidBlock : undefined,
-            deflateStrategy: format === 'zip' || format === 'tgz' || format === 'gz' ? deflateStrategy : undefined,
-            memLevel: format === 'zip' || format === 'tgz' || format === 'gz' ? memLevel : undefined
+            deflateStrategy: deflateTuned ? deflateStrategy : undefined,
+            memLevel: deflateTuned ? memLevel : undefined
           }
         : {})
     })
@@ -351,8 +353,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             </>
           )}
 
-          {/* Deflate Strategy for ZIP/TGZ/GZ */}
-          {(format === 'zip' || format === 'tgz' || format === 'gz') && (
+          {/* Deflate tuning for ZIP/TGZ/GZ. Store copies the bytes through,
+              so there is no deflate pass left for these knobs to steer. */}
+          {deflateTuned && (
             <>
               <div className="compression-panel__expert-row">
                 <label className="compression-panel__expert-label">
