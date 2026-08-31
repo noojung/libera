@@ -118,9 +118,14 @@
   color: #FFFFFF;
 }
 
-.input-select.archive-preview__encoding-select {
-  /* Fixed, because a select is as wide as the option it shows: picking
-     CP949 over Auto would otherwise widen it and squeeze the header. */
+.archive-preview__encoding-select-container {
+  width: 128px;
+  flex: 0 0 auto;
+}
+
+.archive-preview__encoding-select {
+  /* Fixed, because longer encoding names would otherwise widen the control
+     and squeeze the header. */
   width: 128px;
   height: 30px;
   flex-shrink: 0;

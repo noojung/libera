@@ -42,9 +42,10 @@ describe('ExtractionPanel', () => {
     const { user } = renderWithI18n(<ExtractionPanel items={[archive]} onStartBatchExtract={onStart} />)
     await waitFor(() => expect(screen.getByPlaceholderText('Choose an extraction path')).toHaveValue('C:\\output'))
 
-    const selects = screen.getAllByRole('combobox')
-    await user.selectOptions(selects[0], 'cp949')
-    await user.selectOptions(selects[1], 'skip')
+    await user.click(screen.getByRole('combobox', { name: 'Filename character encoding' }))
+    await user.click(screen.getByRole('option', { name: 'Korean Windows (CP949 / EUC-KR)' }))
+    await user.click(screen.getByRole('combobox', { name: 'File overwrite rule' }))
+    await user.click(screen.getByRole('option', { name: 'Skip existing files' }))
     await user.click(screen.getByRole('checkbox', { name: /Restore Unix file permissions/ }))
     await user.click(screen.getByRole('checkbox', { name: /Restore symbolic links/ }))
     await user.click(screen.getByRole('checkbox', { name: /Filter out macOS metadata/ }))

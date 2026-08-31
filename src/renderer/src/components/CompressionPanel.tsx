@@ -19,6 +19,7 @@ import {
 } from '@/utils/archivePaths'
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
+import { Select } from './Select'
 import './CompressionPanel.css'
 
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
@@ -284,17 +285,21 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
           {format === 'zip' && (
             <div className="compression-panel__expert-row">
-              <label className="compression-panel__expert-label">{t('compression.zipMethod')}</label>
-              <select
-                className="input-select"
+              <label className="compression-panel__expert-label" htmlFor="compression-zip-method">
+                {t('compression.zipMethod')}
+              </label>
+              <Select<ZipMethod>
+                id="compression-zip-method"
+                ariaLabel={t('compression.zipMethod')}
                 value={zipMethod}
-                onChange={(event) => setZipMethod(event.target.value as ZipMethod)}
-              >
-                <option value="deflate">{t('compression.methodDeflate')}</option>
-                <option value="store">{t('compression.methodStore')}</option>
-                <option value="lzma">{t('compression.methodZipLzma')}</option>
-                <option value="zstd">{t('compression.methodZipZstd')}</option>
-              </select>
+                onChange={setZipMethod}
+                options={[
+                  { value: 'deflate', label: t('compression.methodDeflate') },
+                  { value: 'store', label: t('compression.methodStore') },
+                  { value: 'lzma', label: t('compression.methodZipLzma') },
+                  { value: 'zstd', label: t('compression.methodZipZstd') }
+                ]}
+              />
             </div>
           )}
 
@@ -302,32 +307,49 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {format === '7z' && (
             <>
               <div className="compression-panel__expert-row">
-                <label className="compression-panel__expert-label">
+                <label className="compression-panel__expert-label" htmlFor="compression-7z-method">
                   {t('compression.codecMethod')}
                 </label>
-                <select
-                  className="input-select"
+                <Select<SevenZipMethod>
+                  id="compression-7z-method"
+                  ariaLabel={t('compression.codecMethod')}
                   value={sevenZipMethod}
-                  onChange={(e) => setSevenZipMethod(e.target.value as SevenZipMethod)}
-                >
-                  <option value="lzma2">{t('compression.methodLzma2')}</option>
-                  <option value="copy">{t('compression.methodCopy')}</option>
-                </select>
+                  onChange={setSevenZipMethod}
+                  options={[
+                    { value: 'lzma2', label: t('compression.methodLzma2') },
+                    { value: 'copy', label: t('compression.methodCopy') }
+                  ]}
+                />
               </div>
 
               {sevenZipMethod === 'lzma2' && (
                 <>
                   <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label">{t('compression.dictionarySize')}</label>
-                    <select className="input-select" value={dictionarySize} onChange={(e) => setDictionarySize(Number(e.target.value))}>
-                      {DICTIONARY_SIZES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-                    </select>
+                    <label className="compression-panel__expert-label" htmlFor="compression-dictionary-size">
+                      {t('compression.dictionarySize')}
+                    </label>
+                    <Select<number>
+                      id="compression-dictionary-size"
+                      ariaLabel={t('compression.dictionarySize')}
+                      value={dictionarySize}
+                      onChange={setDictionarySize}
+                      options={DICTIONARY_SIZES}
+                    />
                   </div>
                   <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label">{t('compression.matchFinderWordSize')}</label>
-                    <select className="input-select" value={matchFinderWordSize} onChange={(e) => setMatchFinderWordSize(Number(e.target.value) as MatchFinderWordSize)}>
-                      {[32, 64, 128, 273].map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>
+                    <label className="compression-panel__expert-label" htmlFor="compression-match-finder-word-size">
+                      {t('compression.matchFinderWordSize')}
+                    </label>
+                    <Select<MatchFinderWordSize>
+                      id="compression-match-finder-word-size"
+                      ariaLabel={t('compression.matchFinderWordSize')}
+                      value={matchFinderWordSize}
+                      onChange={setMatchFinderWordSize}
+                      options={[32, 64, 128, 273].map(value => ({
+                        value: value as MatchFinderWordSize,
+                        label: String(value)
+                      }))}
+                    />
                   </div>
                   <div className="compression-panel__expert-row">
                     <label className="compression-panel__expert-label">{t('compression.searchCycles')} ({searchCycles})</label>
@@ -360,20 +382,22 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {deflateTuned && (
             <>
               <div className="compression-panel__expert-row">
-                <label className="compression-panel__expert-label">
+                <label className="compression-panel__expert-label" htmlFor="compression-deflate-strategy">
                   {t('compression.deflateStrategy')}
                 </label>
-                <select
-                  className="input-select"
+                <Select<DeflateStrategy>
+                  id="compression-deflate-strategy"
+                  ariaLabel={t('compression.deflateStrategy')}
                   value={deflateStrategy}
-                  onChange={(e) => setDeflateStrategy(e.target.value as DeflateStrategy)}
-                >
-                  <option value="default">{t('compression.strategyDefault')}</option>
-                  <option value="filtered">{t('compression.strategyFiltered')}</option>
-                  <option value="huffman_only">{t('compression.strategyHuffman')}</option>
-                  <option value="rle">{t('compression.strategyRle')}</option>
-                  <option value="fixed">{t('compression.strategyFixed')}</option>
-                </select>
+                  onChange={setDeflateStrategy}
+                  options={[
+                    { value: 'default', label: t('compression.strategyDefault') },
+                    { value: 'filtered', label: t('compression.strategyFiltered') },
+                    { value: 'huffman_only', label: t('compression.strategyHuffman') },
+                    { value: 'rle', label: t('compression.strategyRle') },
+                    { value: 'fixed', label: t('compression.strategyFixed') }
+                  ]}
+                />
               </div>
 
               <div className="compression-panel__expert-row">
@@ -415,18 +439,20 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             )}
             {isExpertMode && format === 'zip' && (
               <div className="compression-panel__expert-row compression-panel__expert-row--spaced">
-                <label className="compression-panel__expert-label">
+                <label className="compression-panel__expert-label" htmlFor="compression-encryption-method">
                   {t('compression.encryptionMethod')}
                 </label>
-                <select
-                  className="input-select"
+                <Select<ZipEncryptionMethod>
+                  id="compression-encryption-method"
+                  ariaLabel={t('compression.encryptionMethod')}
                   value={zipEncryptionMethod}
-                  onChange={(e) => setZipEncryptionMethod(e.target.value as ZipEncryptionMethod)}
-                >
-                  <option value="zip20">{t('compression.zipCrypto')}</option>
-                  <option value="aes256">{t('compression.aes256')}</option>
-                  <option value="aes128">{t('compression.aes128')}</option>
-                </select>
+                  onChange={setZipEncryptionMethod}
+                  options={[
+                    { value: 'zip20', label: t('compression.zipCrypto') },
+                    { value: 'aes256', label: t('compression.aes256') },
+                    { value: 'aes128', label: t('compression.aes128') }
+                  ]}
+                />
               </div>
             )}
             {password && password === passwordConfirmation && (

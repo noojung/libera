@@ -42,7 +42,8 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
 
   const select = page.locator('.archive-preview__encoding-select')
   await expect(select).toBeVisible()
-  await select.selectOption('cp949')
+  await select.click()
+  await page.getByRole('option', { name: 'CP949 / EUC-KR' }).click()
   await expect(page.locator('.archive-preview__footer')).toContainText('CP949')
 
   const size = async (selector: string) => {
@@ -59,6 +60,17 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
     expect(await size('.archive-preview__toggle-btn svg')).toEqual({ width: 13, height: 13 })
     expect(await size('.archive-preview__copy-btn svg')).toEqual({ width: 14, height: 14 })
     expect(await size('.archive-preview__icon')).toEqual({ width: 40, height: 40 })
+
+    await select.click()
+    const menu = page.getByRole('listbox', { name: 'Encoding' })
+    await expect(menu).toBeVisible()
+    const menuBox = await menu.boundingBox()
+    expect(menuBox).not.toBeNull()
+    expect(menuBox!.x).toBeGreaterThanOrEqual(0)
+    expect(menuBox!.y).toBeGreaterThanOrEqual(0)
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(width)
+    expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(640)
+    await page.keyboard.press('Escape')
   }
 })
 

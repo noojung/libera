@@ -6,6 +6,7 @@ import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import type { FilenameEncoding, OverwritePolicy } from '@services/extractor'
+import { Select } from './Select'
 import './ExtractionPanel.css'
 
 export interface StartBatchExtractOptions {
@@ -144,38 +145,42 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
 
           {/* Character Encoding Selector */}
           <div className="extraction-panel__expert-row">
-            <label className="extraction-panel__expert-label">
+            <label className="extraction-panel__expert-label" htmlFor="extraction-filename-encoding">
               {t('extraction.encoding')}
             </label>
-            <select
-              className="input-select"
+            <Select<FilenameEncoding>
+              id="extraction-filename-encoding"
+              ariaLabel={t('extraction.encoding')}
               value={encoding}
-              onChange={(e) => setEncoding(e.target.value as FilenameEncoding)}
-            >
-              <option value="auto">{t('extraction.encodingAuto')}</option>
-              <option value="utf-8">{t('extraction.encodingUtf8')}</option>
-              <option value="cp949">{t('extraction.encodingCp949')}</option>
-              <option value="shift_jis">{t('extraction.encodingShiftJis')}</option>
-              <option value="gbk">{t('extraction.encodingGbk')}</option>
-              <option value="big5">{t('extraction.encodingBig5')}</option>
-              <option value="windows-1252">{t('extraction.encodingWin1252')}</option>
-              <option value="cp437">{t('extraction.encodingCp437')}</option>
-            </select>
+              onChange={setEncoding}
+              options={[
+                { value: 'auto', label: t('extraction.encodingAuto') },
+                { value: 'utf-8', label: t('extraction.encodingUtf8') },
+                { value: 'cp949', label: t('extraction.encodingCp949') },
+                { value: 'shift_jis', label: t('extraction.encodingShiftJis') },
+                { value: 'gbk', label: t('extraction.encodingGbk') },
+                { value: 'big5', label: t('extraction.encodingBig5') },
+                { value: 'windows-1252', label: t('extraction.encodingWin1252') },
+                { value: 'cp437', label: t('extraction.encodingCp437') }
+              ]}
+            />
           </div>
 
           {/* Overwrite Policy */}
           <div className="extraction-panel__expert-row">
-            <label className="extraction-panel__expert-label">
+            <label className="extraction-panel__expert-label" htmlFor="extraction-overwrite-policy">
               {t('extraction.overwritePolicy')}
             </label>
-            <select
-              className="input-select"
+            <Select<OverwritePolicy>
+              id="extraction-overwrite-policy"
+              ariaLabel={t('extraction.overwritePolicy')}
               value={overwritePolicy}
-              onChange={(e) => setOverwritePolicy(e.target.value as OverwritePolicy)}
-            >
-              <option value="overwrite">{t('extraction.overwriteAlways')}</option>
-              <option value="skip">{t('extraction.overwriteSkip')}</option>
-            </select>
+              onChange={setOverwritePolicy}
+              options={[
+                { value: 'overwrite', label: t('extraction.overwriteAlways') },
+                { value: 'skip', label: t('extraction.overwriteSkip') }
+              ]}
+            />
           </div>
 
           {/* Attributes & Safety Checkboxes */}

@@ -248,10 +248,11 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
     expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
-    const selects = screen.getAllByRole('combobox')
-    await user.selectOptions(selects[1], 'rle')
+    await user.click(screen.getByRole('combobox', { name: 'Deflate strategy' }))
+    await user.click(screen.getByRole('option', { name: 'RLE (Match distance 1 only)' }))
     fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '9' } })
-    await user.selectOptions(selects[0], 'store')
+    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
+    await user.click(screen.getByRole('option', { name: 'Store (0)' }))
     // Store copies the files verbatim, so the level is pinned at 0 and the
     // deflate tuning drops out along with the pass it steers.
     expect(screen.getByText('0 - Store')).toBeInTheDocument()
@@ -261,7 +262,8 @@ describe('CompressionPanel', () => {
 
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
-    await user.selectOptions(screen.getAllByRole('combobox').at(-1)!, 'aes128')
+    await user.click(screen.getByRole('combobox', { name: 'Encryption algorithm' }))
+    await user.click(screen.getByRole('option', { name: 'AES-128 (WinZip AES 128-bit)' }))
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
@@ -280,7 +282,8 @@ describe('CompressionPanel', () => {
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
-    await user.selectOptions(screen.getAllByRole('combobox')[0], 'lzma')
+    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
+    await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
     expect(screen.queryByText(/Memory level/)).not.toBeInTheDocument()
 
@@ -299,10 +302,12 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
-    const selects = screen.getAllByRole('combobox')
-    await user.selectOptions(selects[0], 'lzma2')
-    await user.selectOptions(selects[1], String(64 * 1024 * 1024))
-    await user.selectOptions(selects[2], '128')
+    await user.click(screen.getByRole('combobox', { name: 'Compression method / Codec' }))
+    await user.click(screen.getByRole('option', { name: 'LZMA2 (High efficiency)' }))
+    await user.click(screen.getByRole('combobox', { name: 'Dictionary size' }))
+    await user.click(screen.getByRole('option', { name: '64 MB' }))
+    await user.click(screen.getByRole('combobox', { name: 'Match finder word size' }))
+    await user.click(screen.getByRole('option', { name: '128' }))
     fireEvent.change(screen.getAllByRole('slider').at(-1)!, { target: { value: '96' } })
     await user.click(screen.getByRole('checkbox', { name: /Solid block compression/ }))
     await user.click(screen.getByRole('button', { name: /Start compression/ }))

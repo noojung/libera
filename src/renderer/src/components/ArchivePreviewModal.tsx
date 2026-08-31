@@ -8,6 +8,7 @@ import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import { detectLineEnding, type LineEnding } from '@/utils/lineEndings'
+import { Select } from './Select'
 import './ArchivePreviewModal.css'
 
 interface ArchivePreviewModalProps {
@@ -202,24 +203,26 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
                 </div>
 
                 {viewMode === 'text' && (
-                  <select
-                    className="input-select archive-preview__encoding-select"
-                    aria-label={t('inspector.preview.switchEncoding')}
+                  <Select
+                    className="archive-preview__encoding-select"
+                    rootClassName="archive-preview__encoding-select-container"
+                    ariaLabel={t('inspector.preview.switchEncoding')}
                     title={t('inspector.preview.switchEncoding')}
                     value={encodingOverride}
-                    onChange={(e) => setEncodingOverride(e.target.value)}
-                  >
-                    <option value="auto">{t('inspector.preview.encodingAuto')}</option>
-                    <option value="utf-8">UTF-8</option>
-                    <option value="utf-16le">UTF-16LE</option>
-                    <option value="utf-16be">UTF-16BE</option>
-                    <option value="cp949">CP949 / EUC-KR</option>
-                    <option value="shift_jis">Shift-JIS</option>
-                    <option value="gbk">GBK</option>
-                    <option value="big5">Big5</option>
-                    <option value="windows-1252">Windows-1252</option>
-                    <option value="ascii">ASCII</option>
-                  </select>
+                    onChange={setEncodingOverride}
+                    options={[
+                      { value: 'auto', label: t('inspector.preview.encodingAuto') },
+                      { value: 'utf-8', label: 'UTF-8' },
+                      { value: 'utf-16le', label: 'UTF-16LE' },
+                      { value: 'utf-16be', label: 'UTF-16BE' },
+                      { value: 'cp949', label: 'CP949 / EUC-KR' },
+                      { value: 'shift_jis', label: 'Shift-JIS' },
+                      { value: 'gbk', label: 'GBK' },
+                      { value: 'big5', label: 'Big5' },
+                      { value: 'windows-1252', label: 'Windows-1252' },
+                      { value: 'ascii', label: 'ASCII' }
+                    ]}
+                  />
                 )}
 
                 {viewMode !== 'image' && <button

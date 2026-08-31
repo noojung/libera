@@ -640,26 +640,6 @@ body {
   animation: cute-bounce-pulse 2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }
 
-.input-select {
-  background: var(--bg-input);
-  border: 2px solid var(--border-doodle);
-  color: var(--text-main);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  outline: none;
-  transition: all 0.2s ease;
-  width: 100%;
-  box-shadow: 2px 2px 0px var(--border-shadow);
-  cursor: pointer;
-}
-
-.input-select:focus {
-  border-color: var(--accent-peach);
-  box-shadow: 3px 3px 0px var(--border-shadow);
-}
-
 .expert-card {
   background: var(--bg-card);
   border: 2px dashed var(--accent-peach);
