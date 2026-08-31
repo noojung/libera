@@ -105,16 +105,16 @@
     }
   },
   "dependencies": {
-    "@zip.js/zip.js": "^2.8.45",
+    "@zip.js/zip.js": "^2.8.61",
     "archiver": "7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
-    "i18next": "^26.3.6",
+    "i18next": "^26.4.0",
     "libera7z": "*",
     "lucide-react": "^0.475.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-i18next": "^17.0.11",
+    "react-i18next": "^17.0.12",
     "tar": "^7.4.3"
   },
   "devDependencies": {

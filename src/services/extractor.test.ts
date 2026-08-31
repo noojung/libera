@@ -218,7 +218,10 @@ describe('extractArchive security checks', () => {
     const outsidePath = path.join(directory, 'escape.txt')
     await fs.writeFile(archivePath, zipSync({ '../escape.txt': strToU8('unsafe') }))
 
-    await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow('entry path escapes the destination')
+    // Either our own guard or the ZIP reader may reject first, so this asserts
+    // the property that matters. normalizeEntryPath is covered directly in
+    // extractionSafety.test.ts.
+    await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow()
     await expect(fs.access(outsidePath)).rejects.toThrow()
   })
 
