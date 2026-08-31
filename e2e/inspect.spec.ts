@@ -30,8 +30,8 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
   const archivePath = path.join(workDir, 'notes.zip')
   await writeZipArchive(archivePath, { 'notes.txt': 'first line\r\nsecond line\r\n' })
 
-  // The encoding picker is an expert control, so the app has to be in that
-  // mode before it is on screen.
+  // The view toggle and the copy button are expert controls, so the app has to
+  // be in that mode before they are on screen.
   await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
   await page.reload()
 
@@ -40,11 +40,7 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
   await page.getByRole('button', { name: 'Open file...' }).click()
   await page.locator('.archive-inspector__entry', { hasText: 'notes.txt' }).click()
 
-  const select = page.locator('.archive-preview__encoding-select')
-  await expect(select).toBeVisible()
-  await select.click()
-  await page.getByRole('option', { name: 'CP949 / EUC-KR' }).click()
-  await expect(page.locator('.archive-preview__footer')).toContainText('CP949')
+  await expect(page.locator('.archive-preview__footer')).toContainText('CRLF')
 
   const size = async (selector: string) => {
     const box = await page.locator(selector).first().boundingBox()
@@ -52,25 +48,13 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
   }
 
   // Narrow enough that the header has to give somewhere. It used to give in
-  // the two places that show: the select collapsed to a stub, and flex shrank
-  // the button icons - an svg goes before any text wraps - into slivers.
+  // the icons, which flex shrank into slivers - an svg goes before any text
+  // wraps.
   for (const width of [720, 560, 460]) {
     await page.setViewportSize({ width, height: 640 })
-    expect(await size('.archive-preview__encoding-select')).toEqual({ width: 128, height: 30 })
     expect(await size('.archive-preview__toggle-btn svg')).toEqual({ width: 13, height: 13 })
     expect(await size('.archive-preview__copy-btn svg')).toEqual({ width: 14, height: 14 })
     expect(await size('.archive-preview__icon')).toEqual({ width: 40, height: 40 })
-
-    await select.click()
-    const menu = page.getByRole('listbox', { name: 'Encoding' })
-    await expect(menu).toBeVisible()
-    const menuBox = await menu.boundingBox()
-    expect(menuBox).not.toBeNull()
-    expect(menuBox!.x).toBeGreaterThanOrEqual(0)
-    expect(menuBox!.y).toBeGreaterThanOrEqual(0)
-    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(width)
-    expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(640)
-    await page.keyboard.press('Escape')
   }
 })
 
