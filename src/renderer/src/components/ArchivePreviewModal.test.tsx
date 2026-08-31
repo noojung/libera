@@ -20,13 +20,17 @@ function textResult(text: string): ArchivePreviewResult {
 }
 
 function show(text: string, expert = true): void {
+  showResult(textResult(text), 'notes.txt', expert)
+}
+
+function showResult(result: ArchivePreviewResult, entryPath: string, expert = true): void {
   localStorage.setItem('libera_expert_mode', expert ? 'true' : 'false')
   installElectronApi()
   renderWithI18n(
     <ArchivePreviewModal
-      entryPath="notes.txt"
+      entryPath={entryPath}
       loading={false}
-      result={textResult(text)}
+      result={result}
       errorKey={null}
       onClose={vi.fn()}
     />
@@ -64,6 +68,27 @@ describe('ArchivePreviewModal', () => {
     expect(screen.getByRole('button', { name: 'Text' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hex' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Text View/ })).not.toBeInTheDocument()
+  })
+
+  // A hex dump of a PNG tells you nothing you wanted from a picture, so the
+  // view belongs to text entries alone.
+  it('does not offer hex for an image', () => {
+    const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    showResult(
+      {
+        kind: 'image',
+        data,
+        mediaType: 'image/png',
+        width: 1,
+        height: 1,
+        previewedBytes: data.length,
+        totalBytes: data.length
+      },
+      'logo.png'
+    )
+
+    expect(screen.queryByRole('button', { name: 'Hex' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Image View' })).not.toBeInTheDocument()
   })
 
   it('reports the line endings alongside the encoding', () => {

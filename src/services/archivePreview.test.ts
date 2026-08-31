@@ -303,16 +303,27 @@ describe('previewArchiveEntry', () => {
     await expect(previewArchiveEntry(tarPath, 'entry-0')).rejects.toMatchObject({ code: 'ENTRY_NOT_PREVIEWABLE' })
   })
 
-  it('returns bounded raw bytes for the expert Hex viewer', async () => {
+  it('returns the raw bytes for the expert Hex viewer', async () => {
     const directory = await createTemporaryDirectory()
-    const zipPath = path.join(directory, 'binary.zip')
-    const bytes = Uint8Array.from([0, 1, 2, 3, 0xfe, 0xff])
-    await writeZip(zipPath, [{ name: 'binary.bin', contents: bytes }])
+    const zipPath = path.join(directory, 'notes.zip')
+    const contents = 'hex me\n'
+    await writeZip(zipPath, [{ name: 'notes.txt', contents }])
 
     const result = await previewArchiveEntry(zipPath, 'entry-0', { includeRawBytes: true })
-    expect(result).toMatchObject({ kind: 'binary', truncated: false, previewedBytes: bytes.length })
-    if (result.kind !== 'binary') throw new Error('Expected a binary preview')
-    expect(result.rawBytes).toEqual(bytes)
+    expect(result).toMatchObject({ kind: 'text', truncated: false })
+    if (result.kind !== 'text') throw new Error('Expected a text preview')
+    expect(result.rawBytes).toEqual(new TextEncoder().encode(contents))
+  })
+
+  // Raw bytes are only ever a second view of a text entry, never a way to
+  // preview something that is not previewable.
+  it('still rejects binary data when raw bytes are requested', async () => {
+    const directory = await createTemporaryDirectory()
+    const zipPath = path.join(directory, 'binary.zip')
+    await writeZip(zipPath, [{ name: 'binary.bin', contents: Uint8Array.from([0, 1, 2, 3, 0xfe, 0xff]) }])
+
+    await expect(previewArchiveEntry(zipPath, 'entry-0', { includeRawBytes: true }))
+      .rejects.toMatchObject({ code: 'NOT_TEXT' })
   })
 
   it('previews an encrypted ZIP entry once given the password', async () => {

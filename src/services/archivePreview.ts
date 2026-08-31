@@ -53,13 +53,7 @@ export interface ArchiveImagePreviewResult extends ArchivePreviewBaseResult {
   rawBytes?: Uint8Array
 }
 
-export interface ArchiveBinaryPreviewResult extends ArchivePreviewBaseResult {
-  kind: 'binary'
-  rawBytes: Uint8Array
-  truncated: boolean
-}
-
-export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePreviewResult | ArchiveBinaryPreviewResult
+export type ArchivePreviewResult = ArchiveTextPreviewResult | ArchiveImagePreviewResult
 
 export interface ArchivePreviewRequestOptions {
   password?: string
@@ -625,15 +619,6 @@ export async function previewArchiveEntry(
 
   const truncated = preview.truncated || (preview.totalBytes !== null && preview.totalBytes > preview.data.length)
   if (preview.previewKind.kind === 'unsupported-image') {
-    if (context.includeRawBytes) {
-      return {
-        kind: 'binary',
-        rawBytes: Uint8Array.from(preview.data.subarray(0, MAX_ARCHIVE_PREVIEW_BYTES)),
-        truncated,
-        previewedBytes: Math.min(preview.data.length, MAX_ARCHIVE_PREVIEW_BYTES),
-        totalBytes: preview.totalBytes
-      }
-    }
     throw previewError('UNSUPPORTED_IMAGE', 'This image format is not supported for preview')
   }
   if (preview.previewKind.kind === 'image') {
@@ -651,19 +636,7 @@ export async function previewArchiveEntry(
     }
   }
 
-  let decoded: ReturnType<typeof decodeText>
-  try {
-    decoded = decodeText(preview.data, truncated)
-  } catch (error) {
-    if (!context.includeRawBytes || !(error instanceof ArchivePreviewError) || error.code !== 'NOT_TEXT') throw error
-    return {
-      kind: 'binary',
-      rawBytes: Uint8Array.from(preview.data),
-      truncated,
-      previewedBytes: preview.data.length,
-      totalBytes: preview.totalBytes
-    }
-  }
+  const decoded = decodeText(preview.data, truncated)
   return {
     kind: 'text',
     ...decoded,

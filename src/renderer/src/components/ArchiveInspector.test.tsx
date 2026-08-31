@@ -186,7 +186,7 @@ describe('ArchiveInspector', () => {
     await user.click(screen.getByRole('button', { name: 'Open file...' }))
     await user.click(await screen.findByRole('button', { name: /binary\.bin/ }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('This file does not appear to contain supported text.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('This file format is not supported for preview.')
   })
 
   it('identifies a split archive and expands its complete volume list', async () => {
@@ -488,7 +488,9 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry: vi.fn().mockResolvedValue({
         success: true,
         result: {
-          kind: 'binary',
+          kind: 'text',
+          text: 'Hi',
+          encoding: 'utf-8',
           rawBytes: Uint8Array.from([0x48, 0x69]),
           truncated: false,
           previewedBytes: 2,
@@ -510,9 +512,10 @@ describe('ArchiveInspector', () => {
       expect.stringMatching(/^archive-preview-/),
       { password: undefined, includeRawBytes: true }
     )
-    expect(await screen.findByText(/00000000\s+48 69/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Text' }))
-    expect(screen.getByText('Hi')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Encoding' })).toBeInTheDocument()
+    expect(await screen.findByText('Hi')).toBeInTheDocument()
+    // The encoding is whatever the decoder settled on; there is no override.
+    expect(screen.queryByRole('combobox', { name: 'Encoding' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Hex' }))
+    expect(screen.getByText(/00000000\s+48 69/)).toBeInTheDocument()
   })
 })

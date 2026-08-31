@@ -8,7 +8,6 @@ import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import { detectLineEnding, type LineEnding } from '@/utils/lineEndings'
-import { Select } from './Select'
 import './ArchivePreviewModal.css'
 
 interface ArchivePreviewModalProps {
@@ -32,7 +31,6 @@ function formatImageType(mediaType: ArchivePreviewMediaType): string {
 
 function initialViewMode(result: ArchivePreviewResult | null): 'text' | 'image' | 'hex' {
   if (result?.kind === 'image') return 'image'
-  if (result?.kind === 'binary') return 'hex'
   return 'text'
 }
 
@@ -75,7 +73,6 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
 
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'text' | 'image' | 'hex'>(() => initialViewMode(result))
-  const [encodingOverride, setEncodingOverride] = useState<string>('auto')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -99,32 +96,16 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
 
   const rawBytes = useMemo(() => {
     if (!result) return null
-    if (result.kind === 'binary') return Uint8Array.from(result.rawBytes)
     if (result.kind === 'image') return Uint8Array.from(result.rawBytes ?? result.data)
     return Uint8Array.from(result.rawBytes ?? new TextEncoder().encode(result.text))
   }, [result])
 
   const displayedText = useMemo(() => {
     if (!result) return ''
-    if (viewMode === 'hex') {
-      return rawBytes ? formatHexDump(rawBytes) : ''
-    }
-    if (viewMode !== 'text') return ''
-    if (result.kind === 'text' && encodingOverride === 'auto') return result.text
-    if (rawBytes) {
-      try {
-        const requestedEncoding = encodingOverride === 'auto' ? 'utf-8' : encodingOverride
-        if (requestedEncoding === 'ascii') {
-          return Array.from(rawBytes, byte => byte < 0x80 ? String.fromCharCode(byte) : '\uFFFD').join('')
-        }
-        const encoding = requestedEncoding === 'cp949' ? 'euc-kr' : requestedEncoding
-        return new TextDecoder(encoding, { fatal: false }).decode(rawBytes)
-      } catch {
-        return result.kind === 'text' ? result.text : ''
-      }
-    }
-    return result.kind === 'text' ? result.text : ''
-  }, [result, viewMode, encodingOverride, rawBytes])
+    if (viewMode === 'hex') return rawBytes ? formatHexDump(rawBytes) : ''
+    if (viewMode !== 'text' || result.kind !== 'text') return ''
+    return result.text
+  }, [result, viewMode, rawBytes])
 
   const lineEnding = useMemo(
     () => viewMode === 'text' ? detectLineEnding(displayedText) : null,
@@ -169,29 +150,19 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
           </div>
 
           <div className="archive-preview__header-actions">
-            {isExpertMode && result && rawBytes && (
+            {/* Images carry no expert controls: hex is reserved for text, and
+                there is nothing else to switch a picture between. */}
+            {isExpertMode && result?.kind === 'text' && rawBytes && (
               <div className="archive-preview__expert-controls">
                 <div className="archive-preview__mode-toggle">
-                  {(result.kind === 'text' || result.kind === 'binary') && (
-                    <button
-                      type="button"
-                      className={`archive-preview__toggle-btn${viewMode === 'text' ? ' is-active' : ''}`}
-                      onClick={() => setViewMode('text')}
-                    >
-                      <FileText size={13} />
-                      {t('inspector.preview.textView')}
-                    </button>
-                  )}
-                  {result.kind === 'image' && (
-                    <button
-                      type="button"
-                      className={`archive-preview__toggle-btn${viewMode === 'image' ? ' is-active' : ''}`}
-                      onClick={() => setViewMode('image')}
-                    >
-                      <ImageIcon size={13} />
-                      {t('inspector.preview.imageView')}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={`archive-preview__toggle-btn${viewMode === 'text' ? ' is-active' : ''}`}
+                    onClick={() => setViewMode('text')}
+                  >
+                    <FileText size={13} />
+                    {t('inspector.preview.textView')}
+                  </button>
                   <button
                     type="button"
                     className={`archive-preview__toggle-btn${viewMode === 'hex' ? ' is-active' : ''}`}
@@ -202,30 +173,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
                   </button>
                 </div>
 
-                {viewMode === 'text' && (
-                  <Select
-                    className="archive-preview__encoding-select"
-                    rootClassName="archive-preview__encoding-select-container"
-                    ariaLabel={t('inspector.preview.switchEncoding')}
-                    title={t('inspector.preview.switchEncoding')}
-                    value={encodingOverride}
-                    onChange={setEncodingOverride}
-                    options={[
-                      { value: 'auto', label: t('inspector.preview.encodingAuto') },
-                      { value: 'utf-8', label: 'UTF-8' },
-                      { value: 'utf-16le', label: 'UTF-16LE' },
-                      { value: 'utf-16be', label: 'UTF-16BE' },
-                      { value: 'cp949', label: 'CP949 / EUC-KR' },
-                      { value: 'shift_jis', label: 'Shift-JIS' },
-                      { value: 'gbk', label: 'GBK' },
-                      { value: 'big5', label: 'Big5' },
-                      { value: 'windows-1252', label: 'Windows-1252' },
-                      { value: 'ascii', label: 'ASCII' }
-                    ]}
-                  />
-                )}
-
-                {viewMode !== 'image' && <button
+                <button
                   type="button"
                   className="btn-secondary archive-preview__copy-btn"
                   onClick={handleCopy}
@@ -233,7 +181,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copied ? t('inspector.preview.copied') : t('inspector.preview.copy')}</span>
-                </button>}
+                </button>
               </div>
             )}
 
@@ -271,7 +219,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
             displayedText ? <pre className="archive-preview__content archive-preview__content--hex">{displayedText}</pre> : (
               <div className="archive-preview__state">{t('inspector.preview.empty')}</div>
             )
-          ) : viewMode === 'text' && (result?.kind === 'text' || result?.kind === 'binary') ? (
+          ) : viewMode === 'text' && result?.kind === 'text' ? (
             displayedText ? (
               <pre className="archive-preview__content">{displayedText}</pre>
             ) : (
@@ -295,7 +243,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
           ) : null}
         </div>
 
-        {(result?.kind === 'text' || result?.kind === 'binary') && (
+        {result?.kind === 'text' && (
           <footer className="archive-preview__footer">
             {/* Grouped, because the footer spaces its children apart and the
                 line endings belong with the encoding, not across from it. */}
@@ -303,11 +251,7 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
               <span>
                 {viewMode === 'hex'
                   ? t('inspector.preview.hexView')
-                  : t('inspector.preview.encoding', {
-                      encoding: (encodingOverride !== 'auto'
-                        ? encodingOverride
-                        : result.kind === 'text' ? result.encoding : 'utf-8').toUpperCase()
-                    })}
+                  : t('inspector.preview.encoding', { encoding: result.encoding.toUpperCase() })}
               </span>
               {lineEnding && (
                 <span>{t('inspector.preview.lineEnding', { ending: formatLineEnding(lineEnding, t) })}</span>
