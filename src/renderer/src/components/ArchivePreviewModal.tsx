@@ -243,30 +243,30 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
           ) : null}
         </div>
 
+        {/* Shaped like the image footer below: the labelled kind on the left,
+            the bare details trailing on the right. */}
         {result?.kind === 'text' && (
           <footer className="archive-preview__footer">
-            {/* Grouped, because the footer spaces its children apart and the
-                line endings belong with the encoding, not across from it. */}
+            <span>
+              {viewMode === 'hex'
+                ? t('inspector.preview.hexView')
+                : t('inspector.preview.encoding', { encoding: result.encoding.toUpperCase() })}
+            </span>
             <div className="archive-preview__meta">
-              <span>
-                {viewMode === 'hex'
-                  ? t('inspector.preview.hexView')
-                  : t('inspector.preview.encoding', { encoding: result.encoding.toUpperCase() })}
-              </span>
-              {lineEnding && (
-                <span>{t('inspector.preview.lineEnding', { ending: formatLineEnding(lineEnding, t) })}</span>
+              {lineEnding && <span>{formatLineEnding(lineEnding, t)}</span>}
+              {result.truncated ? (
+                <span role="status" className="archive-preview__notice">
+                  {result.totalBytes === null
+                    ? t('inspector.preview.truncatedUnknown', { shown: formatBytes(result.previewedBytes, language) })
+                    : t('inspector.preview.truncated', {
+                        shown: formatBytes(result.previewedBytes, language),
+                        total: formatBytes(result.totalBytes, language)
+                      })}
+                </span>
+              ) : (
+                <span>{formatBytes(result.previewedBytes, language)}</span>
               )}
             </div>
-            {result.truncated && (
-              <span role="status" className="archive-preview__notice">
-                {result.totalBytes === null
-                  ? t('inspector.preview.truncatedUnknown', { shown: formatBytes(result.previewedBytes, language) })
-                  : t('inspector.preview.truncated', {
-                      shown: formatBytes(result.previewedBytes, language),
-                      total: formatBytes(result.totalBytes, language)
-                    })}
-              </span>
-            )}
           </footer>
         )}
         {result?.kind === 'image' && (

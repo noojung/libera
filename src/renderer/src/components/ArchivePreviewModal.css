@@ -261,7 +261,9 @@
   display: flex;
   min-width: 0;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  text-align: right;
 }
 
 /* The same middle dot the image footer joins its details with. */
@@ -273,5 +275,4 @@
 .archive-preview__notice {
   color: var(--status-warning);
   font-weight: 600;
-  text-align: right;
 }

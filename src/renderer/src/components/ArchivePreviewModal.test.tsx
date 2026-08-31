@@ -95,28 +95,29 @@ describe('ArchivePreviewModal', () => {
     show('first\r\nsecond\r\n')
 
     expect(screen.getByText('Encoding: UTF-8')).toBeInTheDocument()
-    expect(screen.getByText('Line endings: CRLF')).toBeInTheDocument()
+    expect(screen.getByText('CRLF')).toBeInTheDocument()
   })
 
-  // The footer spaces its children apart to keep the truncation notice on the
-  // right, which would strand the line endings there too.
-  it('keeps the line endings beside the encoding', () => {
+  // The footer reads like the image one: the labelled encoding on the left,
+  // the bare details trailing together on the right.
+  it('trails the line endings and size after the encoding', () => {
     show('first\r\nsecond\r\n')
 
-    const meta = screen.getByText('Encoding: UTF-8').parentElement
+    const meta = screen.getByText('CRLF').parentElement
     expect(meta).toHaveClass('archive-preview__meta')
-    expect(meta).toContainElement(screen.getByText('Line endings: CRLF'))
+    expect(meta).toContainElement(screen.getByText('15 B'))
+    expect(meta).not.toContainElement(screen.getByText('Encoding: UTF-8'))
   })
 
   it('spells out a file that mixes them', () => {
     show('first\r\nsecond\n')
 
-    expect(screen.getByText('Line endings: Mixed (CRLF + LF)')).toBeInTheDocument()
+    expect(screen.getByText('Mixed CRLF + LF')).toBeInTheDocument()
   })
 
   it('reports line endings outside expert mode too', () => {
     show('only one line', false)
 
-    expect(screen.getByText('Line endings: None')).toBeInTheDocument()
+    expect(screen.getByText('No line breaks')).toBeInTheDocument()
   })
 })
