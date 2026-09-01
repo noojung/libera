@@ -4,6 +4,7 @@ import type { CompressionOptions } from '../services/compressor'
 import type { ExtractionOptions } from '../services/extractor'
 import type { ArchiveInspectionResult } from '../services/archiveInspector'
 import type { ResolveExtractionInputsResult } from '../services/archiveInputResolver'
+import type { ArchiveInputTreeEntry } from '../services/archiveInputTree'
 
 type CompressionResult = Awaited<ReturnType<typeof import('../services/compressor').compressArchive>>
 type ExtractionResult = Awaited<ReturnType<typeof import('../services/extractor').extractArchive>>
@@ -40,6 +41,7 @@ export interface ElectronAPI {
   openExternalLink: (url: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
+  listArchiveInputChildren: (directoryPath: string) => Promise<ArchiveInputTreeEntry[]>
   resolveExtractionInputs: (itemPaths: string[]) => Promise<ResolveExtractionInputsResult>
   getPathForFile: (file: File) => string
   onProgress: (callback: (data: any) => void) => () => void
@@ -63,6 +65,7 @@ const api: ElectronAPI = {
   openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),
+  listArchiveInputChildren: (directoryPath) => ipcRenderer.invoke('system:listArchiveInputChildren', directoryPath),
   resolveExtractionInputs: (itemPaths) => ipcRenderer.invoke('archive:resolveExtractionInputs', itemPaths),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   onProgress: (callback) => {

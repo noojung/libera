@@ -10,13 +10,31 @@ import {
   splitVolumeBase,
   volumePathForDisk
 } from './volumes'
-import { registerZipCodecs, ZIP_LZMA_METHOD, ZIP_ZSTD_METHOD } from './codecs'
-import { shouldStoreEntry } from './storeHeuristics'
-import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from '../compressor'
+import {
+  registerZipCodecs,
+  withZipDeflateOptions,
+  ZipDeflateCompressionStream,
+  ZIP_LZMA_METHOD,
+  ZIP_ZSTD_METHOD
+} from './codecs'
+import { shouldStoreAfterDeflate } from './storeHeuristics'
+import {
+  resolveZipMethod,
+  type DeflateStrategy,
+  type ZipMethod,
+  type ZipMethodOverride
+} from './methodOverrides'
+import type { ProgressCallback, ZipEncryptionMethod } from '../compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
 // alone - without it zip.js tries to spawn a Blob-URL worker under Node.
-configure({ useWebWorkers: false })
+configure({
+  useWebWorkers: false,
+  CompressionStream: ZipDeflateCompressionStream as never,
+  // zip.js disables the native CompressionStream route at levels other than
+  // 6, so the fallback must be the same strategy-aware implementation.
+  CompressionStreamFallback: ZipDeflateCompressionStream as never
+})
 registerZipCodecs()
 
 export const MIN_SPLIT_SIZE = 1024 * 1024
@@ -33,6 +51,9 @@ export interface ZipSqueezeOptions {
   password?: string
   encryptionMethod?: ZipEncryptionMethod
   method?: ZipMethod
+  methodOverrides?: ZipMethodOverride[]
+  deflateStrategy?: DeflateStrategy
+  memLevel?: number
 }
 
 export interface ZipFileOptions {
@@ -52,6 +73,7 @@ interface ArchiveEntry {
   isDirectory: boolean
   size: number
   lastModDate: Date
+  unixMode: number
 }
 
 interface VolumeSink extends WritableWriter {
@@ -64,10 +86,12 @@ interface VolumeSink extends WritableWriter {
  * two registered codecs name their method number, and Deflate is the default
  * zip.js already writes.
  */
-function zipMethodOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
+function zipMethodOptions(squeeze: ZipSqueezeOptions, explicit = false): Record<string, unknown> {
   const level = squeeze.method === 'store' ? 0 : squeeze.level
   if (squeeze.method === 'lzma') return { level, compressionMethod: ZIP_LZMA_METHOD }
   if (squeeze.method === 'zstd') return { level, compressionMethod: ZIP_ZSTD_METHOD }
+  if (squeeze.method === 'store') return STORE_ENTRY_OPTIONS
+  if (explicit) return { level, compressionMethod: 8 }
   return { level }
 }
 
@@ -82,15 +106,63 @@ const STORE_ENTRY_OPTIONS = { level: 0, compressionMethod: 0 } as const
  * The method this entry is written with: the archive's, unless the file is one
  * compression cannot help - see storeHeuristics.
  */
-function entryMethodOptions(
+async function entryMethodOptions(
   squeeze: ZipSqueezeOptions,
   archiveOptions: Record<string, unknown>,
-  entry: { absolutePath: string; size: number }
-): Record<string, unknown> {
-  if (squeeze.method === 'store' || squeeze.level <= 0) return archiveOptions
-  return shouldStoreEntry(entry.absolutePath, entry.size, squeeze.level)
-    ? { ...STORE_ENTRY_OPTIONS }
-    : archiveOptions
+  entry: { absolutePath: string; size: number },
+  signal?: AbortSignal
+): Promise<{ options: Record<string, unknown>; deflateStrategy?: DeflateStrategy; memLevel?: number }> {
+  const resolvedMethod = resolveZipMethod(entry.absolutePath, squeeze.method ?? 'auto', squeeze.methodOverrides)
+  if (resolvedMethod.method === 'auto') {
+    const level = resolvedMethod.level ?? squeeze.level
+    const deflateStrategy = resolvedMethod.deflateStrategy ?? squeeze.deflateStrategy
+    const store = await shouldStoreAfterDeflate(entry.absolutePath, entry.size, {
+      level,
+      strategy: deflateStrategy,
+      memLevel: squeeze.memLevel,
+      signal
+    })
+    return store
+      ? { options: STORE_ENTRY_OPTIONS }
+      : {
+          options: zipMethodOptions({ ...squeeze, method: 'deflate', level: Math.max(1, level) }, true),
+          ...(deflateStrategy ? { deflateStrategy } : {}),
+          ...(squeeze.memLevel !== undefined ? { memLevel: squeeze.memLevel } : {})
+        }
+  }
+  if (resolvedMethod.explicit) {
+    const resolvedLevel = resolvedMethod.method === 'store'
+      ? 0
+      : resolvedMethod.level ?? Math.max(1, squeeze.level)
+    return {
+      options: zipMethodOptions({ ...squeeze, method: resolvedMethod.method, level: resolvedLevel }, true),
+      ...(resolvedMethod.method === 'deflate' && resolvedMethod.deflateStrategy
+        ? { deflateStrategy: resolvedMethod.deflateStrategy }
+        : resolvedMethod.method === 'deflate' && squeeze.deflateStrategy
+          ? { deflateStrategy: squeeze.deflateStrategy }
+          : {}),
+      ...(resolvedMethod.method === 'deflate' && squeeze.memLevel !== undefined
+        ? { memLevel: squeeze.memLevel }
+        : {})
+    }
+  }
+  if (squeeze.method === 'store' || squeeze.level <= 0) return { options: archiveOptions }
+  const deflateStrategy = resolvedMethod.method === 'deflate' ? squeeze.deflateStrategy : undefined
+  const store = await shouldStoreAfterDeflate(entry.absolutePath, entry.size, {
+    level: squeeze.level,
+    strategy: deflateStrategy,
+    memLevel: squeeze.memLevel,
+    signal
+  })
+  return store
+    ? { options: STORE_ENTRY_OPTIONS }
+    : {
+        options: archiveOptions,
+        ...(deflateStrategy ? { deflateStrategy } : {}),
+        ...(resolvedMethod.method === 'deflate' && squeeze.memLevel !== undefined
+          ? { memLevel: squeeze.memLevel }
+          : {})
+      }
 }
 
 function zipEncryptionOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
@@ -159,7 +231,8 @@ async function collectEntries(
         entryName,
         isDirectory: false,
         size: stat.size,
-        lastModDate: stat.mtime
+        lastModDate: stat.mtime,
+        unixMode: stat.mode & 0xffff
       })
       return
     }
@@ -173,7 +246,8 @@ async function collectEntries(
       entryName,
       isDirectory: true,
       size: 0,
-      lastModDate: stat.mtime
+      lastModDate: stat.mtime,
+      unixMode: stat.mode & 0xffff
     })
 
     const children = await fsPromises.readdir(itemPath, { withFileTypes: true }).catch(() => [])
@@ -287,6 +361,7 @@ export async function writeSplitZip(
         await zipWriter.add(entry.entryName, undefined, {
           directory: true,
           lastModDate: entry.lastModDate,
+          unixMode: entry.unixMode,
           signal
         })
         continue
@@ -295,14 +370,16 @@ export async function writeSplitZip(
       const reader = new NodeFileReader(entry.absolutePath)
       const entryStart = processedBytes
       try {
+        const method = await entryMethodOptions(options.squeeze, methodOptions, entry, signal)
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
-        await zipWriter.add(entry.entryName, reader, {
-          ...entryMethodOptions(options.squeeze, methodOptions, entry),
+        await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
+          ...method.options,
           lastModDate: entry.lastModDate,
+          unixMode: entry.unixMode,
           signal,
           onprogress: (progress) => report(entryStart + progress, entry.entryName)
-        })
+        }))
         processedBytes = entryStart + entry.size
         report(processedBytes, entry.entryName)
       } catch (err) {
@@ -339,7 +416,7 @@ export async function writeSplitZip(
   return { volumePaths, compressedSize }
 }
 
-/** Writes a regular, non-split ZIP with zip.js (needed for WinZip AES-128). */
+/** Writes a regular, non-split ZIP with zip.js. */
 export async function writeZipFile(
   options: ZipFileOptions,
   onProgress?: ProgressCallback,
@@ -392,20 +469,31 @@ export async function writeZipFile(
   try {
     for (const entry of entries) {
       if (entry.isDirectory) {
-        await zipWriter.add(entry.entryName, undefined, { directory: true, lastModDate: entry.lastModDate, signal })
+        await zipWriter.add(entry.entryName, undefined, {
+          directory: true,
+          lastModDate: entry.lastModDate,
+          unixMode: entry.unixMode,
+          signal
+        })
         continue
       }
       const reader = new NodeFileReader(entry.absolutePath)
       const entryStart = processedBytes
       try {
-        await zipWriter.add(entry.entryName, reader, {
-          ...entryMethodOptions(squeeze, methodOptions, entry),
+        const method = await entryMethodOptions(squeeze, methodOptions, entry, signal)
+        await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
+          ...method.options,
           lastModDate: entry.lastModDate,
+          unixMode: entry.unixMode,
           signal,
           onprogress: progress => report(entryStart + progress, entry.entryName)
-        })
+        }))
         processedBytes += entry.size
         report(processedBytes, entry.entryName)
+      } catch (error) {
+        if (!isSkippableEntryError(error)) throw error
+        console.warn(`Skipping ${entry.absolutePath}:`, error)
+        processedBytes = entryStart + entry.size
       } finally {
         await reader.close().catch(() => undefined)
       }

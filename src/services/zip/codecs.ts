@@ -1,7 +1,9 @@
 import { Duplex } from 'stream'
+import { AsyncLocalStorage } from 'async_hooks'
 import zlib from 'zlib'
 import { registerCodec } from '@zip.js/zip.js'
 import { LzmaStreamDecoder, LzmaStreamEncoder, parseLzma1Properties } from 'libera7z'
+import type { DeflateStrategy } from './methodOverrides'
 
 // Method numbers as they appear in a ZIP entry header. Store (0), Deflate (8),
 // Deflate64 (9) and AES (99) are zip.js built-ins and cannot be re-registered.
@@ -28,6 +30,52 @@ const LZMA_EOS_FLAG = 0x02
 interface TransformStreamLike {
   readable: ReadableStream
   writable: WritableStream
+}
+
+interface ZipDeflateOptions {
+  strategy?: DeflateStrategy
+  memLevel?: number
+}
+
+const zipDeflateOptionsContext = new AsyncLocalStorage<ZipDeflateOptions>()
+
+function nodeDeflateStrategy(strategy?: DeflateStrategy): number {
+  switch (strategy) {
+    case 'filtered': return zlib.constants.Z_FILTERED
+    case 'huffman_only': return zlib.constants.Z_HUFFMAN_ONLY
+    case 'rle': return zlib.constants.Z_RLE
+    case 'fixed': return zlib.constants.Z_FIXED
+    default: return zlib.constants.Z_DEFAULT_STRATEGY
+  }
+}
+
+/** Node zlib-backed Deflate stream whose strategy is scoped to one ZIP entry. */
+export class ZipDeflateCompressionStream implements TransformStreamLike {
+  readable: ReadableStream
+  writable: WritableStream
+
+  constructor(format: string, options: { level?: number } = {}) {
+    const entryOptions = zipDeflateOptionsContext.getStore()
+    const zlibOptions = {
+      level: options.level,
+      strategy: nodeDeflateStrategy(entryOptions?.strategy),
+      ...(entryOptions?.memLevel !== undefined ? { memLevel: entryOptions.memLevel } : {})
+    }
+    const stream = webTransform(format === 'gzip'
+      ? zlib.createGzip(zlibOptions)
+      : zlib.createDeflateRaw(zlibOptions))
+    this.readable = stream.readable
+    this.writable = stream.writable
+  }
+}
+
+export function withZipDeflateOptions<T>(
+  options: ZipDeflateOptions,
+  action: () => Promise<T>
+): Promise<T> {
+  return options.strategy === undefined && options.memLevel === undefined
+    ? action()
+    : zipDeflateOptionsContext.run(options, action)
 }
 
 /** Rounds up to a power of two so the declared size is one LZMA accepts. */

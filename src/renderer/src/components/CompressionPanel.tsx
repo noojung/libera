@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Sliders, Archive, Package, Lock } from 'lucide-react'
+import { Sliders, Archive, Package, Lock, Files } from 'lucide-react'
 import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
@@ -20,10 +20,11 @@ import {
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import { Select } from './Select'
+import type { ZipMethodOverride } from '@services/compressor'
+import { ZipMethodOverridesModal } from './ZipMethodOverridesModal'
 import './CompressionPanel.css'
 
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
-export type ZipMethod = 'deflate' | 'store' | 'lzma' | 'zstd'
 export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
 export type SevenZipMethod = 'lzma2' | 'copy'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
@@ -36,7 +37,7 @@ export interface StartCompressOptions {
   encryptFileNames?: boolean
   splitSize?: number
   encryptionMethod?: ZipEncryptionMethod
-  zipMethod?: ZipMethod
+  zipMethodOverrides?: ZipMethodOverride[]
   sevenZipMethod?: SevenZipMethod
   dictionarySize?: number
   matchFinderWordSize?: MatchFinderWordSize
@@ -117,7 +118,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
   // Expert options state
   const [zipEncryptionMethod, setZipEncryptionMethod] = useState<ZipEncryptionMethod>('zip20')
-  const [zipMethod, setZipMethod] = useState<ZipMethod>('deflate')
+  const [zipMethodOverrides, setZipMethodOverrides] = useState<ZipMethodOverride[]>([])
+  const [showZipMethodOverrides, setShowZipMethodOverrides] = useState(false)
   const [sevenZipMethod, setSevenZipMethod] = useState<SevenZipMethod>('lzma2')
   const [dictionarySize, setDictionarySize] = useState<number>(16 * 1024 * 1024)
   const [matchFinderWordSize, setMatchFinderWordSize] = useState<MatchFinderWordSize>(32)
@@ -133,6 +135,24 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       })
     }
   }, [])
+
+  useEffect(() => {
+    const isWindows = (window as any).electronAPI?.platform === 'windows'
+    const normalize = (value: string) => {
+      const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '')
+      return isWindows ? normalized.toLowerCase() : normalized
+    }
+    // The input list is owned by App, so pruning is the synchronization this
+    // component must perform when that external selection changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setZipMethodOverrides(current => current.filter(rule => {
+      const rulePath = normalize(rule.sourcePath)
+      return items.some(item => {
+        const itemPath = normalize(item.path)
+        return rulePath === itemPath || (item.isDirectory && rulePath.startsWith(`${itemPath}/`))
+      })
+    }))
+  }, [items])
 
   const handleSelectSavePath = async () => {
     if ((window as any).electronAPI) {
@@ -155,13 +175,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     return t(`compression.${names[lvl] ?? 'levelPlain'}`, { level: lvl })
   }
 
-  // Store writes the bytes through untouched, so a compression level would be
-  // a lie. Selecting it pins the level at 0 without discarding the level the
-  // user set, which comes back when they switch to Deflate again.
-  const storeSelected = isExpertMode && format === 'zip' && zipMethod === 'store'
-  const effectiveLevel = storeSelected ? 0 : level
-  // Deflate tuning only means something where a deflate pass actually runs.
-  const deflateTuned = (format === 'zip' && zipMethod === 'deflate') || format === 'tgz' || format === 'gz'
+  const activeZipMethodOverrides = isExpertMode ? zipMethodOverrides : []
+  // ZIP Deflate tuning lives with each file rule. These global knobs only
+  // remain for the single Deflate streams used by GZ and TAR.GZ.
+  const deflateTuned = format === 'tgz' || format === 'gz'
 
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
@@ -193,7 +210,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
     onStartCompress({
       format,
-      level: effectiveLevel,
+      level,
       outputPath: finalOutput,
       password: supportsPassword(format) ? password || undefined : undefined,
       encryptFileNames: isExpertMode && supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
@@ -201,7 +218,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       ...(isExpertMode
         ? {
             encryptionMethod: format === 'zip' ? zipEncryptionMethod : undefined,
-            zipMethod: format === 'zip' ? zipMethod : undefined,
+            zipMethodOverrides: format === 'zip' && activeZipMethodOverrides.length > 0
+              ? activeZipMethodOverrides
+              : undefined,
             sevenZipMethod: format === '7z' ? sevenZipMethod : undefined,
             dictionarySize: format === '7z' && sevenZipMethod === 'lzma2' ? dictionarySize : undefined,
             matchFinderWordSize: format === '7z' && sevenZipMethod === 'lzma2' ? matchFinderWordSize : undefined,
@@ -258,17 +277,16 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               {t('compression.level')}
             </label>
             <span className="compression-panel__level-value">
-              {getLevelLabel(effectiveLevel)}
+              {getLevelLabel(level)}
             </span>
           </div>
           <input
             type="range"
             min="0"
             max={levels.length - 1}
-            value={Math.max(0, levels.indexOf(effectiveLevel))}
+            value={Math.max(0, levels.indexOf(level))}
             onChange={(e) => setLevel(levels[parseInt(e.target.value)])}
             className="compression-panel__range"
-            disabled={storeSelected}
           />
         </div>
       )}
@@ -284,23 +302,26 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           </div>
 
           {format === 'zip' && (
-            <div className="compression-panel__expert-row">
-              <label className="compression-panel__expert-label" htmlFor="compression-zip-method">
-                {t('compression.zipMethod')}
-              </label>
-              <Select<ZipMethod>
-                id="compression-zip-method"
-                ariaLabel={t('compression.zipMethod')}
-                value={zipMethod}
-                onChange={setZipMethod}
-                options={[
-                  { value: 'deflate', label: t('compression.methodDeflate') },
-                  { value: 'store', label: t('compression.methodStore') },
-                  { value: 'lzma', label: t('compression.methodZipLzma') },
-                  { value: 'zstd', label: t('compression.methodZipZstd') }
-                ]}
-              />
-            </div>
+            <button
+              type="button"
+              className="compression-panel__zip-overrides"
+              aria-label={t('compression.zipOverridesButton')}
+              onClick={() => setShowZipMethodOverrides(true)}
+              disabled={items.length === 0}
+            >
+              <span className="compression-panel__zip-overrides-copy">
+                <Files size={16} />
+                <span>
+                  <span className="compression-panel__zip-overrides-title">{t('compression.zipOverridesButton')}</span>
+                  <span className="compression-panel__zip-overrides-hint">{t('compression.zipOverridesButtonHint')}</span>
+                </span>
+              </span>
+              {zipMethodOverrides.length > 0 && (
+                <span className="compression-panel__zip-overrides-badge">
+                  {t('compression.zipOverridesCount', { count: zipMethodOverrides.length })}
+                </span>
+              )}
+            </button>
           )}
 
           {/* 7Z Codec & Dictionary Tuning */}
@@ -377,8 +398,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             </>
           )}
 
-          {/* Deflate tuning for ZIP/TGZ/GZ. Store copies the bytes through,
-              so there is no deflate pass left for these knobs to steer. */}
+          {/* Gzip-based formats still have one stream-wide Deflate pass. ZIP
+              chooses the strategy for each file in the override dialog. */}
           {deflateTuned && (
             <>
               <div className="compression-panel__expert-row">
@@ -415,6 +436,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               </div>
             </>
           )}
+
         </div>
       )}
 
@@ -582,6 +604,16 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         <Archive size={20} />
         {t('compression.start')}
       </button>
+
+      {showZipMethodOverrides && isExpertMode && format === 'zip' && (
+        <ZipMethodOverridesModal
+          items={items}
+          overrides={zipMethodOverrides}
+          defaultLevel={level}
+          onChange={setZipMethodOverrides}
+          onClose={() => setShowZipMethodOverrides(false)}
+        />
+      )}
     </div>
   )
 }

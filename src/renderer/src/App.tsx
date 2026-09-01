@@ -299,7 +299,7 @@ export const App: React.FC = () => {
         encryptFileNames: options.encryptFileNames,
         splitSize: options.splitSize,
         encryptionMethod: options.encryptionMethod,
-        zipMethod: options.zipMethod,
+        zipMethodOverrides: options.zipMethodOverrides,
         sevenZipMethod: options.sevenZipMethod,
         dictionarySize: options.dictionarySize,
         matchFinderWordSize: options.matchFinderWordSize,

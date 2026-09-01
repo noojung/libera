@@ -15,6 +15,7 @@ import {
 import { inspectArchive } from './archiveInspector'
 import { extractArchive } from './extractor'
 import { MIN_SPLIT_SIZE } from './zip/splitWriter'
+import { supportsZstd } from './zip/codecs'
 
 const temporaryDirectories: string[] = []
 
@@ -132,7 +133,7 @@ describe('compressArchive', () => {
     })
   })
 
-  it('creates readable AES-128 and Store ZIP archives with accurate metadata', async () => {
+  it('creates readable AES-128 with a per-file Deflate strategy and Store ZIP archives', async () => {
     const directory = await createTemporaryDirectory()
     const inputPath = path.join(directory, 'payload.txt')
     const encryptedPath = path.join(directory, 'aes128.zip')
@@ -145,7 +146,14 @@ describe('compressArchive', () => {
       outputPath: encryptedPath,
       format: 'zip',
       password: 'hunter2',
-      encryptionMethod: 'aes128'
+      encryptionMethod: 'aes128',
+      zipMethodOverrides: [{
+        sourcePath: inputPath,
+        scope: 'file',
+        method: 'deflate',
+        deflateStrategy: 'rle',
+        level: 9
+      }]
     })
     const encrypted = await inspectArchive(encryptedPath)
     expect(encrypted.entries[0]).toMatchObject({ encryptionMethod: 'AES-128', encrypted: true })
@@ -380,6 +388,242 @@ describe('storing what compression cannot help', () => {
     for (const entry of inspected.entries.filter(entry => !entry.isDirectory)) {
       expect(entry.codec).toBe('Store')
     }
+  })
+})
+
+describe('per-file ZIP methods', () => {
+  it('tunes Automatic per folder and stores only entries whose measured Deflate payload grows', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const text = Buffer.from('automatic folder tuning '.repeat(3000))
+    const noise = crypto.randomBytes(64 * 1024)
+    await fs.writeFile(path.join(sourceDir, 'notes.txt'), text)
+    await fs.writeFile(path.join(sourceDir, 'noise.bin'), noise)
+    const outputPath = path.join(directory, 'automatic-tuned.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      zipMethodOverrides: [{
+        sourcePath: sourceDir,
+        scope: 'tree',
+        method: 'auto',
+        level: 9,
+        deflateStrategy: 'huffman_only'
+      }]
+    })
+
+    const entries = (await inspectArchive(outputPath)).entries.filter(entry => !entry.isDirectory)
+    expect(Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
+      'notes.txt': 'Deflate',
+      'noise.bin': 'Store'
+    })
+    expect(entries.find(entry => entry.name === 'notes.txt')?.compressedSize).toBe(zlib.deflateRawSync(text, {
+      level: 9,
+      strategy: zlib.constants.Z_HUFFMAN_ONLY
+    }).length)
+  })
+
+  it.runIf(supportsZstd())('writes Store, Deflate, LZMA, and Zstandard entries in one archive', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const sources = {
+      'stored.txt': 'stored bytes',
+      'forced.jpg': 'a JPEG name that should still be explicitly deflated '.repeat(100),
+      'automatic.png': 'compressible content despite its extension '.repeat(100),
+      'lzma.txt': 'lzma content '.repeat(200),
+      'zstd.txt': 'zstandard content '.repeat(200)
+    }
+    await Promise.all(Object.entries(sources).map(([name, contents]) => fs.writeFile(path.join(sourceDir, name), contents)))
+    const outputPath = path.join(directory, 'mixed-methods.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      level: 6,
+      zipMethod: 'deflate',
+      zipMethodOverrides: [
+        { sourcePath: path.join(sourceDir, 'stored.txt'), scope: 'file', method: 'store' },
+        { sourcePath: path.join(sourceDir, 'forced.jpg'), scope: 'file', method: 'deflate' },
+        { sourcePath: path.join(sourceDir, 'lzma.txt'), scope: 'file', method: 'lzma' },
+        { sourcePath: path.join(sourceDir, 'zstd.txt'), scope: 'file', method: 'zstd' }
+      ]
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries.filter(entry => !entry.isDirectory).map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
+      'stored.txt': 'Store',
+      'forced.jpg': 'Deflate',
+      'automatic.png': 'Deflate',
+      'lzma.txt': 'LZMA',
+      'zstd.txt': 'Zstd'
+    })
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    for (const [name, contents] of Object.entries(sources)) {
+      await expect(fs.readFile(path.join(outputDir, 'source', name), 'utf8')).resolves.toBe(contents)
+    }
+  })
+
+  it('applies a recursive folder method while allowing a file exception', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    const nestedDir = path.join(sourceDir, 'nested')
+    await fs.mkdir(nestedDir, { recursive: true })
+    await fs.writeFile(path.join(nestedDir, 'compressed.txt'), 'compress me '.repeat(200))
+    await fs.writeFile(path.join(nestedDir, 'plain.txt'), 'leave me plain')
+    const outputPath = path.join(directory, 'folder-rules.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      zipMethodOverrides: [
+        { sourcePath: sourceDir, scope: 'tree', method: 'lzma' },
+        { sourcePath: path.join(nestedDir, 'plain.txt'), scope: 'file', method: 'store' }
+      ]
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries.filter(entry => !entry.isDirectory).map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
+      'compressed.txt': 'LZMA',
+      'plain.txt': 'Store'
+    })
+  })
+
+  it('applies each Deflate strategy to the individual entry that selected it', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const contents = Buffer.from('aaaaabbbbbcccccdddddeeeee-0123456789\n'.repeat(2000))
+    const strategies = [
+      ['default', zlib.constants.Z_DEFAULT_STRATEGY],
+      ['filtered', zlib.constants.Z_FILTERED],
+      ['huffman_only', zlib.constants.Z_HUFFMAN_ONLY],
+      ['rle', zlib.constants.Z_RLE],
+      ['fixed', zlib.constants.Z_FIXED]
+    ] as const
+    const sourcePaths = Object.fromEntries(strategies.map(([strategy]) => [
+      strategy,
+      path.join(sourceDir, `${strategy}.txt`)
+    ]))
+    await Promise.all(Object.values(sourcePaths).map(sourcePath => fs.writeFile(sourcePath, contents)))
+    const outputPath = path.join(directory, 'deflate-strategies.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      level: 6,
+      zipMethodOverrides: strategies.map(([strategy]) => ({
+        sourcePath: sourcePaths[strategy],
+        scope: 'file',
+        method: 'deflate',
+        deflateStrategy: strategy
+      }))
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    const compressedSizes = Object.fromEntries(inspected.entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => [path.basename(entry.path, '.txt'), entry.compressedSize]))
+    expect(compressedSizes).toEqual(Object.fromEntries(strategies.map(([strategy, zlibStrategy]) => [
+      strategy,
+      zlib.deflateRawSync(contents, { level: 6, strategy: zlibStrategy }).length
+    ])))
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    for (const strategy of strategies.map(([name]) => name)) {
+      await expect(fs.readFile(path.join(outputDir, 'source', `${strategy}.txt`))).resolves.toEqual(contents)
+    }
+  })
+
+  it('applies compression strength independently to each ZIP entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const contents = Buffer.from('per-file compression strength 000000111111222222333333\n'.repeat(3000))
+    const levels = [1, 6, 9]
+    const sourcePaths = Object.fromEntries(levels.map(level => [
+      level,
+      path.join(sourceDir, `level-${level}.txt`)
+    ]))
+    await Promise.all(Object.values(sourcePaths).map(sourcePath => fs.writeFile(sourcePath, contents)))
+    const outputPath = path.join(directory, 'compression-strengths.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      level: 3,
+      zipMethodOverrides: levels.map(level => ({
+        sourcePath: sourcePaths[level],
+        scope: 'file',
+        method: 'deflate',
+        level
+      }))
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => [path.basename(entry.path, '.txt'), entry.compressedSize])))
+      .toEqual(Object.fromEntries(levels.map(level => [
+        `level-${level}`,
+        zlib.deflateRawSync(contents, { level }).length
+      ])))
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    for (const level of levels) {
+      await expect(fs.readFile(path.join(outputDir, 'source', `level-${level}.txt`))).resolves.toEqual(contents)
+    }
+  })
+
+  it('keeps automatic entries stored at level zero while compressing an explicit file at the minimum strength', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const compressedPath = path.join(sourceDir, 'compressed.txt')
+    const storedPath = path.join(sourceDir, 'automatic.txt')
+    const contents = Buffer.from('minimum per-file strength '.repeat(2000))
+    await Promise.all([fs.writeFile(compressedPath, contents), fs.writeFile(storedPath, contents)])
+    const outputPath = path.join(directory, 'store-with-exception.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      level: 0,
+      zipMethodOverrides: [{ sourcePath: compressedPath, scope: 'file', method: 'deflate' }]
+    })
+
+    const entries = (await inspectArchive(outputPath)).entries.filter(entry => !entry.isDirectory)
+    expect(Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
+      'compressed.txt': 'Deflate',
+      'automatic.txt': 'Store'
+    })
+    expect(entries.find(entry => entry.name === 'compressed.txt')?.compressedSize)
+      .toBe(zlib.deflateRawSync(contents, { level: 1 }).length)
+  })
+
+  it('rejects ZIP method rules for another archive format', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'input.txt')
+    await fs.writeFile(inputPath, 'content')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath],
+      outputPath: path.join(directory, 'archive.tar'),
+      format: 'tar',
+      zipMethodOverrides: [{ sourcePath: inputPath, scope: 'file', method: 'store' }]
+    })).rejects.toThrow(/ZIP method overrides/)
   })
 })
 

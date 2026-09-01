@@ -29,6 +29,7 @@ import {
   type ResolveExtractionInputsResult
 } from '../services/archiveInputResolver'
 import { canonicalArchivePath } from '../services/archiveVolumes'
+import { listArchiveInputChildren } from '../services/archiveInputTree'
 import appInfo from '../renderer/src/generated/appInfo.json'
 
 let mainWindow: BrowserWindow | null = null
@@ -503,4 +504,8 @@ ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
       }
     }
   }))
+})
+
+ipcMain.handle('system:listArchiveInputChildren', async (_, directoryPath: string) => {
+  return listArchiveInputChildren(directoryPath)
 })

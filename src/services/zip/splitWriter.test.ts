@@ -3,9 +3,11 @@ import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
+import zlib from 'zlib'
 import { SplitDataReader, Uint8ArrayReader, Uint8ArrayWriter, ZipReader, type Entry } from '@zip.js/zip.js'
 import { compressArchive, CompressionError, type ProgressData } from '../compressor'
 import { inspectArchive } from '../archiveInspector'
+import { supportsZstd, ZIP_LZMA_METHOD, ZIP_ZSTD_METHOD } from './codecs'
 
 const temporaryDirectories: string[] = []
 
@@ -272,6 +274,56 @@ describe('split ZIP compression', () => {
       expect(entry.encrypted).toBe(true)
       const data = await readEntryData(entry)
       expect(Buffer.from(data).equals(await fs.readFile(path.join(sourceDir, 'file-0.bin')))).toBe(true)
+    } finally {
+      await close()
+    }
+  }, 30000)
+
+  it.runIf(supportsZstd())('keeps per-file methods in a split ZIP', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const paths = {
+      store: path.join(sourceDir, 'store.bin'),
+      deflate: path.join(sourceDir, 'deflate.txt'),
+      lzma: path.join(sourceDir, 'lzma.txt'),
+      zstd: path.join(sourceDir, 'zstd.txt')
+    }
+    await fs.writeFile(paths.store, crypto.randomBytes(1200 * 1024))
+    await fs.writeFile(paths.deflate, 'deflate '.repeat(30_000))
+    await fs.writeFile(paths.lzma, 'lzma '.repeat(30_000))
+    await fs.writeFile(paths.zstd, 'zstd '.repeat(30_000))
+
+    const result = await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'mixed.zip'),
+      format: 'zip',
+      level: 6,
+      splitSize: 1024 * 1024,
+      zipMethodOverrides: [
+        { sourcePath: paths.store, scope: 'file', method: 'store' },
+        { sourcePath: paths.deflate, scope: 'file', method: 'deflate', deflateStrategy: 'huffman_only', level: 2 },
+        { sourcePath: paths.lzma, scope: 'file', method: 'lzma' },
+        { sourcePath: paths.zstd, scope: 'file', method: 'zstd' }
+      ]
+    })
+
+    expect(result.volumePaths!.length).toBeGreaterThan(1)
+    const { entries, close } = await readSplitZip(result.volumePaths!)
+    try {
+      expect(Object.fromEntries(entries.filter(entry => !entry.directory).map(entry => [path.basename(entry.filename), entry.compressionMethod]))).toEqual({
+        'store.bin': 0,
+        'deflate.txt': 8,
+        'lzma.txt': ZIP_LZMA_METHOD,
+        'zstd.txt': ZIP_ZSTD_METHOD
+      })
+      const deflateEntry = entries.find(entry => entry.filename === 'source/deflate.txt')!
+      const deflateContents = 'deflate '.repeat(30_000)
+      expect(deflateEntry.compressedSize).toBe(zlib.deflateRawSync(deflateContents, {
+        level: 2,
+        strategy: zlib.constants.Z_HUFFMAN_ONLY
+      }).length)
+      expect(Buffer.from(await readEntryData(deflateEntry)).toString()).toBe(deflateContents)
     } finally {
       await close()
     }

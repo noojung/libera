@@ -1,10 +1,8 @@
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import archiver from 'archiver'
-import zipEncrypted from 'archiver-zip-encrypted'
 import zlib from 'zlib'
 import { supportsZstd } from './zip/codecs'
-import { shouldStoreEntry } from './zip/storeHeuristics'
 import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
@@ -13,6 +11,13 @@ import {
   writeZipFile
 } from './zip/splitWriter'
 import { writeSevenZipArchive } from './sevenZip/writer'
+import {
+  isZipMethod,
+  validateZipMethodOverrides,
+  type DeflateStrategy,
+  type ZipMethod,
+  type ZipMethodOverride
+} from './zip/methodOverrides'
 
 /** A split set's compressed size is the whole set, not the volume opened. */
 async function totalOutputSize(outputPaths: string[]): Promise<number> {
@@ -22,15 +27,10 @@ async function totalOutputSize(outputPaths: string[]): Promise<number> {
   return sizes.reduce((total, size) => total + size, 0)
 }
 
-// Archiver does not provide password protection for ZIP archives itself.
-// This plugin adds the ZipCrypto format used below. It is registered once when
-// this module is loaded; registering it per job would throw in later jobs.
-archiver.registerFormat('zip-encrypted', zipEncrypted)
-
 export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
-export type ZipMethod = 'deflate' | 'store' | 'lzma' | 'zstd'
-export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
+export type { ZipMethod, ZipMethodOverride, ZipOverrideMethod } from './zip/methodOverrides'
+export type { DeflateStrategy } from './zip/methodOverrides'
 export type SevenZipMethod = 'lzma2' | 'copy'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
@@ -45,6 +45,7 @@ export interface CompressionOptions {
   // Expert options:
   encryptionMethod?: ZipEncryptionMethod
   zipMethod?: ZipMethod
+  zipMethodOverrides?: ZipMethodOverride[]
   sevenZipMethod?: SevenZipMethod
   dictionarySize?: number
   matchFinderWordSize?: MatchFinderWordSize
@@ -212,10 +213,14 @@ export async function compressArchive(
   if (options.zipMethod !== undefined && format !== 'zip') {
     throw new Error('ZIP compression method can only be used with ZIP archives.')
   }
-  if (options.zipMethod !== undefined && !['deflate', 'store', 'lzma', 'zstd'].includes(options.zipMethod)) {
+  if (options.zipMethod !== undefined && !isZipMethod(options.zipMethod)) {
     throw new RangeError('ZIP compression method is unsupported.')
   }
-  if (options.zipMethod === 'zstd' && !supportsZstd()) {
+  if (options.zipMethodOverrides !== undefined && format !== 'zip') {
+    throw new Error('ZIP method overrides can only be used with ZIP archives.')
+  }
+  validateZipMethodOverrides(options.zipMethodOverrides, inputPaths)
+  if ((options.zipMethod === 'zstd' || options.zipMethodOverrides?.some(rule => rule.method === 'zstd')) && !supportsZstd()) {
     throw new Error('Zstandard is unavailable in this runtime.')
   }
   if (
@@ -351,7 +356,10 @@ export async function compressArchive(
             level,
             password: options.password,
             encryptionMethod: options.encryptionMethod,
-            method: options.zipMethod
+            method: options.zipMethod,
+            methodOverrides: options.zipMethodOverrides,
+            deflateStrategy: options.deflateStrategy,
+            memLevel: options.memLevel
           }
         },
         onProgress,
@@ -380,26 +388,28 @@ export async function compressArchive(
     }
   }
 
-  // Two things archiver cannot write: WinZip AES-128, which its encryption
-  // plugin has no support for, and the LZMA and Zstandard methods, which ride
-  // on the codecs registered with zip.js. Both take the zip.js writer that
-  // split sets already use.
-  const needsZipJsWriter = format === 'zip' && (
-    (options.password !== undefined && options.encryptionMethod === 'aes128') ||
-    options.zipMethod === 'lzma' ||
-    options.zipMethod === 'zstd'
-  )
-  if (needsZipJsWriter) {
-    const written = await writeZipFile({
-      source: { inputPaths, totalBytes },
-      outputPath,
-      squeeze: {
-        level,
-        password: options.password,
-        encryptionMethod: options.encryptionMethod,
-        method: options.zipMethod
-      }
-    }, onProgress, { signal })
+  // ZIP always uses the per-entry writer. Automatic entries first run their
+  // configured Deflate pass and choose Store only when its payload grew.
+  if (format === 'zip') {
+    let written
+    try {
+      written = await writeZipFile({
+        source: { inputPaths, totalBytes },
+        outputPath,
+        squeeze: {
+          level,
+          password: options.password,
+          encryptionMethod: options.encryptionMethod,
+          method: options.zipMethod,
+          methodOverrides: options.zipMethodOverrides,
+          deflateStrategy: options.deflateStrategy,
+          memLevel: options.memLevel
+        }
+      }, onProgress, { signal })
+    } catch (error) {
+      if (signal?.aborted) throw new CompressionError('COMPRESSION_CANCELLED', 'Compression cancelled')
+      throw error
+    }
     return {
       outputPath,
       originalSize: totalBytes,
@@ -408,12 +418,8 @@ export async function compressArchive(
     }
   }
 
-  if (format === 'zip' || format === 'tar' || format === 'tgz') {
-    // Only ZIP names a method per entry, and only when one was asked for:
-    // Store already stores everything, and level 0 compresses nothing.
-    const perEntryStore = format === 'zip' && options.zipMethod !== 'store' && level > 0
-
-    const archiveInputs: { itemPath: string; isDirectory: boolean; store: boolean }[] = []
+  if (format === 'tar' || format === 'tgz') {
+    const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
     for (const itemPath of inputPaths) {
       if (path.resolve(itemPath) === resolvedOutputPath) continue
       try {
@@ -421,8 +427,7 @@ export async function compressArchive(
         const isDirectory = stat.isDirectory()
         archiveInputs.push({
           itemPath,
-          isDirectory,
-          store: perEntryStore && !isDirectory && shouldStoreEntry(itemPath, stat.size, level)
+          isDirectory
         })
       } catch (err) {
         console.error(`Error reading ${itemPath}:`, err)
@@ -434,31 +439,14 @@ export async function compressArchive(
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath)
 
-      const archiverFormat = format === 'tgz'
-        ? 'tar'
-        : format === 'zip' && options.password
-          ? 'zip-encrypted'
-          : format
+      const archiverFormat = format === 'tgz' ? 'tar' : format
       const strategy = mapDeflateStrategy(options.deflateStrategy)
       const archiveOptions: archiver.ArchiverOptions = {
-        ...(format === 'zip' && options.zipMethod === 'store' ? { store: true } : {}),
         zlib: {
           level,
           ...(strategy !== undefined ? { strategy } : {}),
           ...(options.memLevel !== undefined ? { memLevel: options.memLevel } : {})
         }
-      }
-
-      if (options.password) {
-        // ZipCrypto (zip20) remains the compatibility default. AES-128 uses
-        // the zip.js path above because this plugin only supports AES-256.
-        const method = options.encryptionMethod === 'aes256'
-          ? 'aes256'
-          : 'zip20'
-        Object.assign(archiveOptions, {
-          password: options.password,
-          encryptionMethod: method
-        })
       }
 
       if (format === 'tgz') {
@@ -530,7 +518,7 @@ export async function compressArchive(
 
       archive.pipe(output)
 
-      for (const { itemPath, isDirectory, store } of archiveInputs) {
+      for (const { itemPath, isDirectory } of archiveInputs) {
         const baseName = path.basename(itemPath)
         if (isDirectory) {
           // Returning false from this callback drops the entry from the walk.
@@ -539,14 +527,10 @@ export async function compressArchive(
           archive.directory(itemPath, baseName, entry => {
             const absolutePath = path.resolve(itemPath, entry.name)
             if (absolutePath === resolvedOutputPath) return false
-            if (perEntryStore && entry.stats?.isFile() &&
-                shouldStoreEntry(absolutePath, entry.stats.size, level)) {
-              return { ...entry, store: true } as archiver.EntryData
-            }
             return entry
           })
         } else {
-          archive.file(itemPath, { name: baseName, ...(store ? { store: true } : {}) })
+          archive.file(itemPath, { name: baseName })
         }
       }
 

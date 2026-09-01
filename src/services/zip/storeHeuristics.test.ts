@@ -4,20 +4,18 @@ import zlib from 'zlib'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { isPrecompressedName, maxDeflatedSize, shouldStoreEntry } from './storeHeuristics'
+import { shouldStoreAfterDeflate } from './storeHeuristics'
+import type { DeflateStrategy } from './methodOverrides'
 
 const temporaryDirectories: string[] = []
 
-async function createTemporaryDirectory(): Promise<string> {
+async function writeFile(name: string, contents: Buffer | string): Promise<{ filePath: string; contents: Buffer }> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-store-'))
   temporaryDirectories.push(directory)
-  return directory
-}
-
-async function writeFile(name: string, contents: Buffer | string): Promise<string> {
-  const filePath = path.join(await createTemporaryDirectory(), name)
-  await fs.writeFile(filePath, contents)
-  return filePath
+  const filePath = path.join(directory, name)
+  const buffer = Buffer.isBuffer(contents) ? contents : Buffer.from(contents)
+  await fs.writeFile(filePath, buffer)
+  return { filePath, contents: buffer }
 }
 
 afterEach(async () => {
@@ -26,87 +24,49 @@ afterEach(async () => {
   ))
 })
 
-describe('isPrecompressedName', () => {
-  it('recognises the formats that carry their own compression, whatever the case', () => {
-    expect(isPrecompressedName('holiday.jpg')).toBe(true)
-    expect(isPrecompressedName('/photos/Holiday.JPEG')).toBe(true)
-    expect(isPrecompressedName('screenshot.png')).toBe(true)
-    expect(isPrecompressedName('clip.mp4')).toBe(true)
-    expect(isPrecompressedName('bundle.zip')).toBe(true)
-    expect(isPrecompressedName('report.docx')).toBe(true)
+describe('shouldStoreAfterDeflate', () => {
+  it('stores only payloads whose actual Deflate result is larger', async () => {
+    for (const contents of [Buffer.from('hello'), crypto.randomBytes(4096), Buffer.from('repeat me '.repeat(1000))]) {
+      const { filePath } = await writeFile('payload.bin', contents)
+      await expect(shouldStoreAfterDeflate(filePath, contents.length, { level: 6 }))
+        .resolves.toBe(zlib.deflateRawSync(contents, { level: 6 }).length > contents.length)
+    }
   })
 
-  it('leaves everything else to be measured', () => {
-    expect(isPrecompressedName('notes.txt')).toBe(false)
-    expect(isPrecompressedName('data.csv')).toBe(false)
-    expect(isPrecompressedName('archive.tar')).toBe(false)
-    expect(isPrecompressedName('README')).toBe(false)
-  })
-})
-
-describe('maxDeflatedSize', () => {
-  it('leaves room for the stored blocks deflate falls back to', () => {
-    // Every 64 KiB block that cannot be compressed is framed in five bytes.
-    expect(maxDeflatedSize(0)).toBeGreaterThanOrEqual(0)
-    expect(maxDeflatedSize(65535)).toBeGreaterThan(65535)
-    expect(zlib.deflateRawSync(crypto.randomBytes(256 * 1024), { level: 6 }).length)
-      .toBeLessThanOrEqual(maxDeflatedSize(256 * 1024))
-  })
-})
-
-describe('shouldStoreEntry', () => {
-  it('stores a file whose bytes deflate no smaller than they arrived', async () => {
-    // The complaint this rule answers: a short text file left deflate with
-    // nothing to find, so the entry came out bigger than the file.
-    const tiny = await writeFile('note.txt', 'hello')
-    expect(shouldStoreEntry(tiny, 5, 6)).toBe(true)
-
-    const random = await writeFile('blob.bin', crypto.randomBytes(4096))
-    expect(shouldStoreEntry(random, 4096, 6)).toBe(true)
+  it('does not assume a file is incompressible from its extension', async () => {
+    const { filePath, contents } = await writeFile('photo.jpg', Buffer.alloc(128 * 1024, 0x41))
+    expect(zlib.deflateRawSync(contents, { level: 6 }).length).toBeLessThan(contents.length)
+    await expect(shouldStoreAfterDeflate(filePath, contents.length, { level: 6 })).resolves.toBe(false)
   })
 
-  it('compresses a file that deflate can shrink', async () => {
-    const text = await writeFile('notes.txt', 'the quick brown fox\n'.repeat(200))
-    expect(shouldStoreEntry(text, (await fs.stat(text)).size, 6)).toBe(false)
+  it.each([
+    ['default', zlib.constants.Z_DEFAULT_STRATEGY],
+    ['filtered', zlib.constants.Z_FILTERED],
+    ['huffman_only', zlib.constants.Z_HUFFMAN_ONLY],
+    ['rle', zlib.constants.Z_RLE],
+    ['fixed', zlib.constants.Z_FIXED]
+  ] as const)('uses the selected %s strategy for the decision', async (strategy, zlibStrategy) => {
+    const { filePath, contents } = await writeFile('strategy.txt', Buffer.from('aaaaabbbbbccccc-012345\n'.repeat(500)))
+    await expect(shouldStoreAfterDeflate(filePath, contents.length, {
+      level: 6,
+      strategy: strategy as DeflateStrategy
+    })).resolves.toBe(zlib.deflateRawSync(contents, { level: 6, strategy: zlibStrategy }).length > contents.length)
   })
 
-  it('stores an already-compressed format on its name alone', async () => {
-    // Compressible bytes under a name that says otherwise. The point of the
-    // name is to skip the read: a photo library is not worth a pass over
-    // every byte for the few percent deflate would find in some of it.
-    const jpeg = await writeFile('photo.jpg', Buffer.alloc(128 * 1024, 0x41))
-    expect(shouldStoreEntry(jpeg, 128 * 1024, 6)).toBe(true)
-  })
-
-  it('measures anything the name does not settle', async () => {
-    const misnamed = await writeFile('notes.txt', crypto.randomBytes(128 * 1024))
-    expect(shouldStoreEntry(misnamed, 128 * 1024, 6)).toBe(true)
-  })
-
-  it('weighs the whole file, not the part that happens to compress', async () => {
-    // A compressible header on an incompressible payload: worth compressing,
-    // because the header is a real saving and the payload costs nothing.
-    const size = 4 * 1024 * 1024
-    const withHeader = await writeFile('clip.bin', Buffer.concat([
+  it('streams the complete file and respects level zero', async () => {
+    const { filePath, contents } = await writeFile('large.bin', Buffer.concat([
       Buffer.alloc(64 * 1024, 0x41),
-      crypto.randomBytes(size - 64 * 1024)
+      crypto.randomBytes(4 * 1024 * 1024 - 64 * 1024)
     ]))
-    expect(shouldStoreEntry(withHeader, size, 6)).toBe(false)
-
-    // The same payload with nothing to find anywhere in it.
-    const payload = await writeFile('payload.bin', crypto.randomBytes(size))
-    expect(shouldStoreEntry(payload, size, 6)).toBe(true)
+    await expect(shouldStoreAfterDeflate(filePath, contents.length, { level: 6 }))
+      .resolves.toBe(zlib.deflateRawSync(contents, { level: 6 }).length > contents.length)
+    await expect(shouldStoreAfterDeflate(filePath, contents.length, { level: 0 })).resolves.toBe(true)
   })
 
-  it('stores empty files and anything at level 0', async () => {
-    const empty = await writeFile('empty.txt', '')
-    expect(shouldStoreEntry(empty, 0, 6)).toBe(true)
-
-    const text = await writeFile('notes.txt', 'the quick brown fox\n'.repeat(200))
-    expect(shouldStoreEntry(text, (await fs.stat(text)).size, 0)).toBe(true)
-  })
-
-  it('leaves an unreadable file to the writer rather than deciding for it', () => {
-    expect(shouldStoreEntry(path.join(os.tmpdir(), 'libera-store-missing.txt'), 10, 6)).toBe(false)
+  it('stores empty input and reports unreadable input', async () => {
+    const { filePath } = await writeFile('empty.txt', '')
+    await expect(shouldStoreAfterDeflate(filePath, 0, { level: 6 })).resolves.toBe(true)
+    await expect(shouldStoreAfterDeflate(path.join(os.tmpdir(), 'libera-store-missing.txt'), 10, { level: 6 }))
+      .rejects.toThrow()
   })
 })
