@@ -11,6 +11,7 @@ import {
   volumePathForDisk
 } from './volumes'
 import { registerZipCodecs, ZIP_LZMA_METHOD, ZIP_ZSTD_METHOD } from './codecs'
+import { shouldStoreEntry } from './storeHeuristics'
 import type { ProgressCallback, ZipEncryptionMethod, ZipMethod } from '../compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
@@ -68,6 +69,28 @@ function zipMethodOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
   if (squeeze.method === 'lzma') return { level, compressionMethod: ZIP_LZMA_METHOD }
   if (squeeze.method === 'zstd') return { level, compressionMethod: ZIP_ZSTD_METHOD }
   return { level }
+}
+
+/**
+ * Store, spelled out for one entry. The method number has to be named because
+ * the writer's own is whatever the archive asked for, and level 0 alone would
+ * leave an LZMA or Zstandard entry on that codec.
+ */
+const STORE_ENTRY_OPTIONS = { level: 0, compressionMethod: 0 } as const
+
+/**
+ * The method this entry is written with: the archive's, unless the file is one
+ * compression cannot help - see storeHeuristics.
+ */
+function entryMethodOptions(
+  squeeze: ZipSqueezeOptions,
+  archiveOptions: Record<string, unknown>,
+  entry: { absolutePath: string; size: number }
+): Record<string, unknown> {
+  if (squeeze.method === 'store' || squeeze.level <= 0) return archiveOptions
+  return shouldStoreEntry(entry.absolutePath, entry.size, squeeze.level)
+    ? { ...STORE_ENTRY_OPTIONS }
+    : archiveOptions
 }
 
 function zipEncryptionOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
@@ -275,7 +298,7 @@ export async function writeSplitZip(
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
         await zipWriter.add(entry.entryName, reader, {
-          ...methodOptions,
+          ...entryMethodOptions(options.squeeze, methodOptions, entry),
           lastModDate: entry.lastModDate,
           signal,
           onprogress: (progress) => report(entryStart + progress, entry.entryName)
@@ -376,7 +399,7 @@ export async function writeZipFile(
       const entryStart = processedBytes
       try {
         await zipWriter.add(entry.entryName, reader, {
-          ...methodOptions,
+          ...entryMethodOptions(squeeze, methodOptions, entry),
           lastModDate: entry.lastModDate,
           signal,
           onprogress: progress => report(entryStart + progress, entry.entryName)

@@ -267,6 +267,122 @@ describe('compressArchive', () => {
   })
 })
 
+describe('storing what compression cannot help', () => {
+  /** A directory holding one entry of each kind the per-entry rule sorts. */
+  async function createMixedSource(directory: string): Promise<string> {
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'notes.txt'), 'the quick brown fox\n'.repeat(500))
+    await fs.writeFile(path.join(sourceDir, 'tiny.txt'), 'hello')
+    await fs.writeFile(path.join(sourceDir, 'photo.jpg'), crypto.randomBytes(64 * 1024))
+    return sourceDir
+  }
+
+  function codecsByName(entries: { path: string; codec?: string }[]): Record<string, string | undefined> {
+    return Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))
+  }
+
+  it('stores the already-compressed and the too-small, and deflates the rest', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createMixedSource(directory)
+    const outputPath = path.join(directory, 'mixed.zip')
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip' })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
+      'notes.txt': 'Deflate',
+      'tiny.txt': 'Store',
+      'photo.jpg': 'Store'
+    })
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    await expect(fs.readFile(path.join(outputDir, 'source', 'tiny.txt'), 'utf8')).resolves.toBe('hello')
+  })
+
+  it('sorts a file named on its own the same way a walked one is', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createMixedSource(directory)
+    const outputPath = path.join(directory, 'listed.zip')
+
+    await compressArchive({
+      inputPaths: [
+        path.join(sourceDir, 'notes.txt'),
+        path.join(sourceDir, 'tiny.txt'),
+        path.join(sourceDir, 'photo.jpg')
+      ],
+      outputPath,
+      format: 'zip'
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(codecsByName(inspected.entries)).toEqual({
+      'notes.txt': 'Deflate',
+      'tiny.txt': 'Store',
+      'photo.jpg': 'Store'
+    })
+  })
+
+  // The zip.js writer, reached here by asking for a method archiver cannot
+  // write. A stored entry has to drop the archive's codec, not just its level.
+  it('stores them under LZMA too, and keeps the archive readable', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createMixedSource(directory)
+    const outputPath = path.join(directory, 'lzma.zip')
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip', zipMethod: 'lzma' })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
+      'notes.txt': 'LZMA',
+      'tiny.txt': 'Store',
+      'photo.jpg': 'Store'
+    })
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    await expect(fs.readFile(path.join(outputDir, 'source', 'tiny.txt'), 'utf8')).resolves.toBe('hello')
+  })
+
+  // ZipCrypto is written by archiver's encryption plugin, which takes a
+  // different path through its stream for a stored entry than a deflated one.
+  it('round-trips a stored entry through ZipCrypto', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createMixedSource(directory)
+    const outputPath = path.join(directory, 'secret.zip')
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip', password: 'hunter2' })
+
+    const inspected = await inspectArchive(outputPath, { password: 'hunter2' })
+    expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
+      'notes.txt': 'Deflate',
+      'tiny.txt': 'Store',
+      'photo.jpg': 'Store'
+    })
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir, password: 'hunter2' })
+    await expect(fs.readFile(path.join(outputDir, 'source', 'tiny.txt'), 'utf8')).resolves.toBe('hello')
+    expect((await fs.readFile(path.join(outputDir, 'source', 'photo.jpg'))).equals(
+      await fs.readFile(path.join(sourceDir, 'photo.jpg'))
+    )).toBe(true)
+  })
+
+  it('leaves every entry alone when Store or level 0 was asked for', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createMixedSource(directory)
+    const outputPath = path.join(directory, 'stored.zip')
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip', zipMethod: 'store' })
+
+    const inspected = await inspectArchive(outputPath)
+    for (const entry of inspected.entries.filter(entry => !entry.isDirectory)) {
+      expect(entry.codec).toBe('Store')
+    }
+  })
+})
+
 describe('7z compression', () => {
   it('writes a readable archive and reports its size', async () => {
     const directory = await createTemporaryDirectory()

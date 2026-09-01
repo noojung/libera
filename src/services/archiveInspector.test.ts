@@ -27,7 +27,8 @@ describe('inspectArchive', () => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')
     const archivePath = path.join(directory, 'secret.zip')
-    const contents = 'secret contents'
+    // Long enough to keep the entry on Deflate: a short file is stored now.
+    const contents = 'secret contents\n'.repeat(100)
     await fs.writeFile(sourcePath, contents)
     await compressArchive({
       inputPaths: [sourcePath],

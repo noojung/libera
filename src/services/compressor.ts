@@ -4,6 +4,7 @@ import archiver from 'archiver'
 import zipEncrypted from 'archiver-zip-encrypted'
 import zlib from 'zlib'
 import { supportsZstd } from './zip/codecs'
+import { shouldStoreEntry } from './zip/storeHeuristics'
 import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
@@ -408,12 +409,21 @@ export async function compressArchive(
   }
 
   if (format === 'zip' || format === 'tar' || format === 'tgz') {
-    const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
+    // Only ZIP names a method per entry, and only when one was asked for:
+    // Store already stores everything, and level 0 compresses nothing.
+    const perEntryStore = format === 'zip' && options.zipMethod !== 'store' && level > 0
+
+    const archiveInputs: { itemPath: string; isDirectory: boolean; store: boolean }[] = []
     for (const itemPath of inputPaths) {
       if (path.resolve(itemPath) === resolvedOutputPath) continue
       try {
         const stat = await fsPromises.lstat(itemPath)
-        archiveInputs.push({ itemPath, isDirectory: stat.isDirectory() })
+        const isDirectory = stat.isDirectory()
+        archiveInputs.push({
+          itemPath,
+          isDirectory,
+          store: perEntryStore && !isDirectory && shouldStoreEntry(itemPath, stat.size, level)
+        })
       } catch (err) {
         console.error(`Error reading ${itemPath}:`, err)
       }
@@ -520,17 +530,23 @@ export async function compressArchive(
 
       archive.pipe(output)
 
-      for (const { itemPath, isDirectory } of archiveInputs) {
+      for (const { itemPath, isDirectory, store } of archiveInputs) {
         const baseName = path.basename(itemPath)
         if (isDirectory) {
           // Returning false from this callback drops the entry from the walk.
           // entry.name is relative to itemPath, so resolving the two gives the
           // absolute path to compare against the archive's own location.
-          archive.directory(itemPath, baseName, entry =>
-            path.resolve(itemPath, entry.name) === resolvedOutputPath ? false : entry
-          )
+          archive.directory(itemPath, baseName, entry => {
+            const absolutePath = path.resolve(itemPath, entry.name)
+            if (absolutePath === resolvedOutputPath) return false
+            if (perEntryStore && entry.stats?.isFile() &&
+                shouldStoreEntry(absolutePath, entry.stats.size, level)) {
+              return { ...entry, store: true } as archiver.EntryData
+            }
+            return entry
+          })
         } else {
-          archive.file(itemPath, { name: baseName })
+          archive.file(itemPath, { name: baseName, ...(store ? { store: true } : {}) })
         }
       }
 
