@@ -1,12 +1,38 @@
 import fs from 'fs'
+import path from 'path'
 import zlib from 'zlib'
 
 // ZIP names a compression method per entry, so an archive can deflate what
 // shrinks and store what does not. Two kinds of file are worth storing: one
 // whose bytes are already a compressed stream, and one so small that deflate's
-// own framing costs more than it saves. Both are decided by deflating a sample
-// of the file rather than by reading its name - an extension is a claim about
-// the contents, and the contents are right here to be read.
+// own framing costs more than it saves.
+//
+// A format that carries its own compression is taken at its name. Deflate can
+// still find a few percent in some of them - a flat-coloured JPEG or a small
+// PNG will give up five to ten - but paying a pass over every byte of a photo
+// library to shave a rounding error off it is the wrong trade. Everything else
+// is decided by deflating a sample, because there the name says nothing.
+
+/** Formats that arrive compressed, so the archive leaves them as they are. */
+const PRECOMPRESSED_EXTENSIONS = new Set([
+  // Images
+  'jpg', 'jpeg', 'jpe', 'jp2', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'jxl',
+  // Audio
+  'mp3', 'aac', 'm4a', 'ogg', 'oga', 'opus', 'flac', 'wma',
+  // Video
+  'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'flv', '3gp',
+  // Archives and compressed streams
+  'zip', 'zipx', '7z', 'rar', 'gz', 'tgz', 'bz2', 'tbz', 'tbz2', 'xz', 'txz',
+  'zst', 'lz4', 'lzma', 'br', 'cab', 'arj',
+  // Containers that are themselves ZIPs
+  'jar', 'war', 'ear', 'apk', 'ipa', 'crx', 'whl', 'epub',
+  'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'
+])
+
+/** Whether the name ends in a format that ships its own compression. */
+export function isPrecompressedName(name: string): boolean {
+  return PRECOMPRESSED_EXTENSIONS.has(path.extname(name).slice(1).toLowerCase())
+}
 
 /** One sample window. Three of them are read from a file too big to judge whole. */
 const WINDOW_BYTES = 32 * 1024
@@ -63,6 +89,7 @@ export function sampleResistsDeflate(sample: Uint8Array, level: number): boolean
 export function shouldStoreEntry(filePath: string, size: number, level: number): boolean {
   if (level <= 0) return true
   if (size === 0) return true
+  if (isPrecompressedName(filePath)) return true
 
   let handle: number
   try {

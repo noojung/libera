@@ -3,7 +3,13 @@ import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { PROBE_BYTES, probeOffsets, sampleResistsDeflate, shouldStoreEntry } from './storeHeuristics'
+import {
+  isPrecompressedName,
+  PROBE_BYTES,
+  probeOffsets,
+  sampleResistsDeflate,
+  shouldStoreEntry
+} from './storeHeuristics'
 
 const temporaryDirectories: string[] = []
 
@@ -23,6 +29,24 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory =>
     fs.rm(directory, { recursive: true, force: true })
   ))
+})
+
+describe('isPrecompressedName', () => {
+  it('recognises the formats that carry their own compression, whatever the case', () => {
+    expect(isPrecompressedName('holiday.jpg')).toBe(true)
+    expect(isPrecompressedName('/photos/Holiday.JPEG')).toBe(true)
+    expect(isPrecompressedName('screenshot.png')).toBe(true)
+    expect(isPrecompressedName('clip.mp4')).toBe(true)
+    expect(isPrecompressedName('bundle.zip')).toBe(true)
+    expect(isPrecompressedName('report.docx')).toBe(true)
+  })
+
+  it('leaves everything else to be measured', () => {
+    expect(isPrecompressedName('notes.txt')).toBe(false)
+    expect(isPrecompressedName('data.csv')).toBe(false)
+    expect(isPrecompressedName('archive.tar')).toBe(false)
+    expect(isPrecompressedName('README')).toBe(false)
+  })
 })
 
 describe('probeOffsets', () => {
@@ -68,10 +92,15 @@ describe('shouldStoreEntry', () => {
     expect(shouldStoreEntry(text, (await fs.stat(text)).size, 6)).toBe(false)
   })
 
-  it('judges by the bytes, not by the name', async () => {
-    const named = await writeFile('photo.jpg', Buffer.alloc(128 * 1024, 0x41))
-    expect(shouldStoreEntry(named, 128 * 1024, 6)).toBe(false)
+  it('stores an already-compressed format on its name alone', async () => {
+    // Compressible bytes under a name that says otherwise. The point of the
+    // name is to skip the read: a photo library is not worth a pass over
+    // every byte for the few percent deflate would find in some of it.
+    const jpeg = await writeFile('photo.jpg', Buffer.alloc(128 * 1024, 0x41))
+    expect(shouldStoreEntry(jpeg, 128 * 1024, 6)).toBe(true)
+  })
 
+  it('measures anything the name does not settle', async () => {
     const misnamed = await writeFile('notes.txt', crypto.randomBytes(128 * 1024))
     expect(shouldStoreEntry(misnamed, 128 * 1024, 6)).toBe(true)
   })
