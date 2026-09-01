@@ -20,6 +20,10 @@ export default defineConfig({
         test: {
           name: 'libera7z',
           environment: 'node',
+          // The codecs are pure TypeScript, so a single case can spend seconds
+          // coding a hundred kilobytes; the default 5s cuts them off on the
+          // slowest CI runner.
+          testTimeout: 30_000,
           include: ['packages/libera7z/src/**/*.test.ts']
         }
       },
