@@ -548,7 +548,7 @@ describe('per-file ZIP methods', () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
-    const contents = Buffer.from('per-file compression strength 000000111111222222333333\n'.repeat(3000))
+    const contents = Buffer.from('per-file compression strength 000000111111222222333333\n'.repeat(300))
     const levels = [1, 6, 9]
     const sourcePaths = Object.fromEntries(levels.map(level => [
       level,
