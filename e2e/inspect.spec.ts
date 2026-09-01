@@ -30,8 +30,8 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
   const archivePath = path.join(workDir, 'notes.zip')
   await writeZipArchive(archivePath, { 'notes.txt': 'first line\r\nsecond line\r\n' })
 
-  // The view toggle and the copy button are expert controls, so the app has to
-  // be in that mode before they are on screen.
+  // The view toggle is an expert control, so the app has to be in that mode
+  // before it is on screen.
   await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
   await page.reload()
 
@@ -53,7 +53,6 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
   for (const width of [720, 560, 460]) {
     await page.setViewportSize({ width, height: 640 })
     expect(await size('.archive-preview__toggle-btn svg')).toEqual({ width: 13, height: 13 })
-    expect(await size('.archive-preview__copy-btn svg')).toEqual({ width: 14, height: 14 })
     expect(await size('.archive-preview__icon')).toEqual({ width: 40, height: 40 })
   }
 })

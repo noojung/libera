@@ -125,6 +125,8 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
 
   const imageLoadFailed = imageUrl !== null && failedImageUrl === imageUrl
   const isImage = result?.kind === 'image'
+  const showCopy = !loading && !errorKey && displayedText.length > 0
+  const copyLabel = copied ? t('inspector.preview.copied') : t('inspector.preview.copyContent')
 
   return (
     <div
@@ -153,34 +155,22 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
             {/* Images carry no expert controls: hex is reserved for text, and
                 there is nothing else to switch a picture between. */}
             {isExpertMode && result?.kind === 'text' && rawBytes && (
-              <div className="archive-preview__expert-controls">
-                <div className="archive-preview__mode-toggle">
-                  <button
-                    type="button"
-                    className={`archive-preview__toggle-btn${viewMode === 'text' ? ' is-active' : ''}`}
-                    onClick={() => setViewMode('text')}
-                  >
-                    <FileText size={13} />
-                    {t('inspector.preview.textView')}
-                  </button>
-                  <button
-                    type="button"
-                    className={`archive-preview__toggle-btn${viewMode === 'hex' ? ' is-active' : ''}`}
-                    onClick={() => setViewMode('hex')}
-                  >
-                    <Binary size={13} />
-                    {t('inspector.preview.hexView')}
-                  </button>
-                </div>
-
+              <div className="archive-preview__mode-toggle">
                 <button
                   type="button"
-                  className="btn-secondary archive-preview__copy-btn"
-                  onClick={handleCopy}
-                  title={t('inspector.preview.copyContent')}
+                  className={`archive-preview__toggle-btn${viewMode === 'text' ? ' is-active' : ''}`}
+                  onClick={() => setViewMode('text')}
                 >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copied ? t('inspector.preview.copied') : t('inspector.preview.copy')}</span>
+                  <FileText size={13} />
+                  {t('inspector.preview.textView')}
+                </button>
+                <button
+                  type="button"
+                  className={`archive-preview__toggle-btn${viewMode === 'hex' ? ' is-active' : ''}`}
+                  onClick={() => setViewMode('hex')}
+                >
+                  <Binary size={13} />
+                  {t('inspector.preview.hexView')}
                 </button>
               </div>
             )}
@@ -209,6 +199,19 @@ export const ArchivePreviewModal: React.FC<ArchivePreviewModalProps> = ({
         )}
 
         <div className={`archive-preview__body${isImage && viewMode === 'image' ? ' archive-preview__body--image' : ''}`}>
+          {/* Anchored to the text itself rather than the header, so the copy
+              sits where the content it copies is. */}
+          {showCopy && (
+            <button
+              type="button"
+              className="archive-preview__copy-btn"
+              onClick={handleCopy}
+              aria-label={copyLabel}
+              title={copyLabel}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+            </button>
+          )}
           {loading ? (
             <div role="status" className="archive-preview__state">{t('inspector.preview.loading')}</div>
           ) : errorKey ? (

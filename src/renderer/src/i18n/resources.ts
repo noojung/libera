@@ -222,7 +222,6 @@ export const resources = {
           switchEncoding: 'Encoding',
           encodingAuto: 'Auto',
           copyContent: 'Copy preview contents',
-          copy: 'Copy',
           copied: 'Copied!',
           errors: {
             entryNotFound: 'This file could not be found in the archive.',
@@ -548,7 +547,6 @@ export const resources = {
           switchEncoding: '인코딩 변경',
           encodingAuto: '자동',
           copyContent: '미리보기 내용 복사',
-          copy: '복사',
           copied: '복사됨!',
           errors: {
             entryNotFound: '압축 파일에서 이 파일을 찾을 수 없습니다.',

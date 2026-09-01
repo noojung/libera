@@ -80,12 +80,6 @@
   gap: 10px;
 }
 
-.archive-preview__expert-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .archive-preview__mode-toggle {
   display: inline-flex;
   padding: 2px;
@@ -133,21 +127,36 @@
   font-size: 11px;
 }
 
+/* Floats over the top-right corner of the text it copies, clear of the
+   scrollbar the content keeps on the right edge. */
 .archive-preview__copy-btn {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 20px;
+  display: grid;
+  width: 30px;
   height: 30px;
-  padding: 0 10px;
-  font-size: 12px;
-  white-space: nowrap;
+  place-items: center;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.85;
+  box-shadow: 1.5px 1.5px 0 var(--border-shadow);
+  transition: all 0.15s ease;
+}
+
+.archive-preview__copy-btn:hover {
+  background: var(--bg-pill);
+  color: var(--text-main);
+  opacity: 1;
 }
 
 /* Flex shrinks an svg before it wraps any text, which is what turns these
    icons into slivers when the header runs out of room. */
 .archive-preview__toggle-btn svg,
-.archive-preview__copy-btn svg,
 .archive-preview__icon svg {
   flex-shrink: 0;
 }
@@ -171,6 +180,7 @@
 }
 
 .archive-preview__body {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
