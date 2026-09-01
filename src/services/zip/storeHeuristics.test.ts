@@ -1,15 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import crypto from 'crypto'
+import zlib from 'zlib'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import {
-  isPrecompressedName,
-  PROBE_BYTES,
-  probeOffsets,
-  sampleResistsDeflate,
-  shouldStoreEntry
-} from './storeHeuristics'
+import { isPrecompressedName, maxDeflatedSize, shouldStoreEntry } from './storeHeuristics'
 
 const temporaryDirectories: string[] = []
 
@@ -49,30 +44,13 @@ describe('isPrecompressedName', () => {
   })
 })
 
-describe('probeOffsets', () => {
-  it('reads a file it can judge whole in one window', () => {
-    expect(probeOffsets(PROBE_BYTES)).toEqual([0])
-    expect(probeOffsets(1)).toEqual([0])
-  })
-
-  it('spreads its windows over the start, middle and end of a longer file', () => {
-    const size = 10 * 1024 * 1024
-    const offsets = probeOffsets(size)
-    expect(offsets).toHaveLength(3)
-    expect(offsets[0]).toBe(0)
-    expect(offsets[2]).toBe(size - 32 * 1024)
-    expect(offsets[1]).toBe(offsets[2] / 2)
-  })
-})
-
-describe('sampleResistsDeflate', () => {
-  it('holds that random bytes and empty input are not worth compressing', () => {
-    expect(sampleResistsDeflate(crypto.randomBytes(64 * 1024), 6)).toBe(true)
-    expect(sampleResistsDeflate(new Uint8Array(0), 6)).toBe(true)
-  })
-
-  it('holds that repetitive bytes are', () => {
-    expect(sampleResistsDeflate(Buffer.alloc(4096, 0x41), 6)).toBe(false)
+describe('maxDeflatedSize', () => {
+  it('leaves room for the stored blocks deflate falls back to', () => {
+    // Every 64 KiB block that cannot be compressed is framed in five bytes.
+    expect(maxDeflatedSize(0)).toBeGreaterThanOrEqual(0)
+    expect(maxDeflatedSize(65535)).toBeGreaterThan(65535)
+    expect(zlib.deflateRawSync(crypto.randomBytes(256 * 1024), { level: 6 }).length)
+      .toBeLessThanOrEqual(maxDeflatedSize(256 * 1024))
   })
 })
 
@@ -105,15 +83,19 @@ describe('shouldStoreEntry', () => {
     expect(shouldStoreEntry(misnamed, 128 * 1024, 6)).toBe(true)
   })
 
-  it('is not fooled by a compressible header on an incompressible file', async () => {
-    // What a media container looks like: metadata that deflates well, then a
-    // payload that does not. Reading only the front would deflate the lot.
+  it('weighs the whole file, not the part that happens to compress', async () => {
+    // A compressible header on an incompressible payload: worth compressing,
+    // because the header is a real saving and the payload costs nothing.
     const size = 4 * 1024 * 1024
-    const media = await writeFile('clip.bin', Buffer.concat([
+    const withHeader = await writeFile('clip.bin', Buffer.concat([
       Buffer.alloc(64 * 1024, 0x41),
       crypto.randomBytes(size - 64 * 1024)
     ]))
-    expect(shouldStoreEntry(media, size, 6)).toBe(true)
+    expect(shouldStoreEntry(withHeader, size, 6)).toBe(false)
+
+    // The same payload with nothing to find anywhere in it.
+    const payload = await writeFile('payload.bin', crypto.randomBytes(size))
+    expect(shouldStoreEntry(payload, size, 6)).toBe(true)
   })
 
   it('stores empty files and anything at level 0', async () => {
