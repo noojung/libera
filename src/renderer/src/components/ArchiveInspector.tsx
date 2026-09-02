@@ -17,6 +17,15 @@ interface ArchiveBrowserEntry extends ArchiveEntry {
   isVirtual?: boolean
 }
 
+type ArchiveBrowserGroup =
+  | { kind: 'entry'; entry: ArchiveBrowserEntry }
+  | {
+      kind: 'solid-block'
+      block: NonNullable<ArchiveEntry['solidBlock']>
+      codec?: string
+      entries: ArchiveBrowserEntry[]
+    }
+
 function normalizeArchivePath(entryPath: string): string {
   return entryPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
 }
@@ -268,6 +277,27 @@ export const ArchiveInspector: React.FC = () => {
     )
   }, [currentEntries, isSearching, language, searchQuery, searchableEntries])
   const displayedEntries = allDisplayedEntries.slice(0, visibleEntryCount)
+  const displayedGroups: ArchiveBrowserGroup[] = []
+  const displayedSolidBlocks = new Map<number, Extract<ArchiveBrowserGroup, { kind: 'solid-block' }>>()
+  for (const entry of displayedEntries) {
+    if (!entry.solidBlock) {
+      displayedGroups.push({ kind: 'entry', entry })
+      continue
+    }
+    const existing = displayedSolidBlocks.get(entry.solidBlock.id)
+    if (existing) {
+      existing.entries.push(entry)
+      continue
+    }
+    const group: Extract<ArchiveBrowserGroup, { kind: 'solid-block' }> = {
+      kind: 'solid-block',
+      block: entry.solidBlock,
+      codec: entry.codec,
+      entries: [entry]
+    }
+    displayedSolidBlocks.set(entry.solidBlock.id, group)
+    displayedGroups.push(group)
+  }
   const breadcrumbs = currentPath ? currentPath.split('/') : []
   const splitVolumes = inspectData?.volumes && inspectData.volumes.length > 1
     ? inspectData.volumes
@@ -277,6 +307,52 @@ export const ArchiveInspector: React.FC = () => {
     setCurrentPath(nextPath)
     setSearchQuery('')
     setVisibleEntryCount(ENTRY_PAGE_SIZE)
+  }
+
+  const renderEntry = (entry: ArchiveBrowserEntry) => {
+    const isNavigableDirectory = entry.isDirectory
+    return (
+      <button
+        key={entry.id || entry.path}
+        type="button"
+        onClick={() => isNavigableDirectory
+          ? moveToPath(normalizeArchivePath(entry.path))
+          : handlePreviewEntry(entry)}
+        className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ' is-previewable'}${isExpertMode ? ' is-expert' : ''}`}
+      >
+        <div className="archive-inspector__entry-main">
+          {entry.isDirectory ? <Folder className="archive-inspector__entry-icon archive-inspector__entry-icon--folder" size={16} /> : <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={16} />}
+          <span className="archive-inspector__entry-name">{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
+          {isNavigableDirectory && <ChevronRight className="archive-inspector__entry-chevron" size={15} />}
+        </div>
+        <div className="archive-inspector__entry-size">{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
+        <div className="archive-inspector__entry-compressed-size">{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
+        <div className={`archive-inspector__entry-ratio${!entry.solidBlock && entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>
+          {entry.solidBlock || entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}
+        </div>
+        {isExpertMode && (
+          <>
+            <div className="archive-inspector__align-center">
+              <span className="code-badge">{entry.codec || '-'}</span>
+            </div>
+            <div className="archive-inspector__align-center">
+              <span className="code-badge">{entry.encryptionMethod || '-'}</span>
+            </div>
+            <div className="archive-inspector__align-center archive-inspector__technical-value">
+              {entry.crc32 || '-'}
+            </div>
+            <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
+              {entry.modeString
+                ? `${entry.mode === undefined ? '' : `0${(entry.mode & 0o777).toString(8).padStart(3, '0')} / `}${entry.modeString}`
+                : '-'}
+            </div>
+            <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
+              {entry.offset === undefined ? '-' : `0x${entry.offset.toString(16).toUpperCase()}`}
+            </div>
+          </>
+        )}
+      </button>
+    )
   }
 
   return (
@@ -460,48 +536,41 @@ export const ArchiveInspector: React.FC = () => {
             </div>
 
             <div className="archive-inspector__entries">
-              {displayedEntries.map(entry => {
-                const isNavigableDirectory = entry.isDirectory
-                return (
-                <button
-                  key={entry.id || entry.path}
-                  type="button"
-                  onClick={() => isNavigableDirectory
-                    ? moveToPath(normalizeArchivePath(entry.path))
-                    : handlePreviewEntry(entry)}
-                  className={`archive-inspector__entry${isNavigableDirectory ? ' is-navigable' : ' is-previewable'}${isExpertMode ? ' is-expert' : ''}`}
-                >
-                  <div className="archive-inspector__entry-main">
-                    {entry.isDirectory ? <Folder className="archive-inspector__entry-icon archive-inspector__entry-icon--folder" size={16} /> : <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={16} />}
-                    <span className="archive-inspector__entry-name">{isSearching ? formatRelativeArchivePath(entry.path, currentPath) : entry.name}</span>
-                    {isNavigableDirectory && <ChevronRight className="archive-inspector__entry-chevron" size={15} />}
-                  </div>
-                  <div className="archive-inspector__entry-size">{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
-                  <div className="archive-inspector__entry-compressed-size">{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
-                  <div className={`archive-inspector__entry-ratio${entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>{entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}</div>
-                  {isExpertMode && (
-                    <>
-                      <div className="archive-inspector__align-center">
-                        <span className="code-badge">{entry.codec || '-'}</span>
+              {displayedGroups.map(group => {
+                if (group.kind === 'solid-block') {
+                  const { block } = group
+                  const savedSize = block.uncompressedSize - block.compressedSize
+                  const ratio = group.entries[0].ratio
+                  return (
+                    <section
+                      key={`solid-block-${block.id}`}
+                      className="archive-inspector__solid-block"
+                      aria-label={t('inspector.solidBlock', { number: block.id })}
+                    >
+                      <header className="archive-inspector__solid-block-header">
+                        <div className="archive-inspector__solid-block-main">
+                          <Files size={15} />
+                          <strong>{t('inspector.solidBlock', { number: block.id })}</strong>
+                          <span className="code-badge">{group.codec || 'LZMA2'}</span>
+                          <span>{t('inspector.fileCount', { count: block.fileCount })}</span>
+                        </div>
+                        <div className="archive-inspector__solid-block-metrics">
+                          <span>{formatBytes(block.uncompressedSize, language)} → {formatBytes(block.compressedSize, language)}</span>
+                          <strong className={savedSize >= 0 ? 'is-positive' : 'is-negative'}>
+                            {t(savedSize >= 0 ? 'inspector.solidBlockSaved' : 'inspector.solidBlockExpanded', {
+                              size: formatBytes(Math.abs(savedSize), language),
+                              ratio
+                            })}
+                          </strong>
+                        </div>
+                      </header>
+                      <div className="archive-inspector__solid-block-entries">
+                        {group.entries.map(renderEntry)}
                       </div>
-                      <div className="archive-inspector__align-center">
-                        <span className="code-badge">{entry.encryptionMethod || '-'}</span>
-                      </div>
-                      <div className="archive-inspector__align-center archive-inspector__technical-value">
-                        {entry.crc32 || '-'}
-                      </div>
-                      <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
-                        {entry.modeString
-                          ? `${entry.mode === undefined ? '' : `0${(entry.mode & 0o777).toString(8).padStart(3, '0')} / `}${entry.modeString}`
-                          : '-'}
-                      </div>
-                      <div className="archive-inspector__align-center archive-inspector__technical-value archive-inspector__technical-value--muted">
-                        {entry.offset === undefined ? '-' : `0x${entry.offset.toString(16).toUpperCase()}`}
-                      </div>
-                    </>
-                  )}
-                </button>
-                )
+                    </section>
+                  )
+                }
+                return renderEntry(group.entry)
               })}
               {displayedEntries.length < allDisplayedEntries.length && (
                 <button type="button" className="btn-secondary archive-inspector__load-more" onClick={() => setVisibleEntryCount(count => count + ENTRY_PAGE_SIZE)}>

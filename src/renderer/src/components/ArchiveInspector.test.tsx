@@ -89,6 +89,31 @@ describe('ArchiveInspector', () => {
     expect(screen.getByText('1.4% saved')).toBeInTheDocument()
   })
 
+  it('labels a shared 7Z compression ratio as a solid-block value', async () => {
+    const solidBlock = { id: 1, fileCount: 2, uncompressedSize: 9_128_803, compressedSize: 9_041_587 }
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['solid.7z']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([
+        { path: 'before.jpg', name: 'before.jpg', isDirectory: false, size: 1_000_000, compressedSize: 1_000_000, ratio: 0 },
+        { path: 'a.jpg', name: 'a.jpg', isDirectory: false, size: 4_500_000, ratio: 0.96, solidBlock },
+        { path: 'b.jpg', name: 'b.jpg', isDirectory: false, size: 4_628_803, ratio: 0.96, solidBlock },
+        { path: 'after.jpg', name: 'after.jpg', isDirectory: false, size: 1_000_000, compressedSize: 1_000_000, ratio: 0 }
+      ], { format: '7Z' }))
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+
+    const summary = await screen.findByLabelText('Solid block 1')
+    expect(summary).toHaveTextContent('LZMA2')
+    expect(summary).toHaveTextContent('2 files')
+    expect(summary).toHaveTextContent('0.96%')
+    expect(summary).toHaveTextContent(/MiB → .* MiB/)
+    expect(within(summary).getByRole('button', { name: /a\.jpg/ })).toBeInTheDocument()
+    expect(within(summary).getByRole('button', { name: /b\.jpg/ })).toBeInTheDocument()
+    expect(summary).not.toContainElement(screen.getByRole('button', { name: /before\.jpg/ }))
+    expect(summary).not.toContainElement(screen.getByRole('button', { name: /after\.jpg/ }))
+  })
+
   it('searches descendants of the current folder', async () => {
     installElectronApi({
       selectFiles: vi.fn().mockResolvedValue(['search.zip']),

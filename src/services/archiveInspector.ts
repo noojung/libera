@@ -16,6 +16,13 @@ export interface ArchiveEntry {
   isDirectory: boolean
   size: number | null
   compressedSize?: number
+  /** Aggregate sizes for a shared 7z solid block when no per-file packed size exists. */
+  solidBlock?: {
+    id: number
+    fileCount: number
+    uncompressedSize: number
+    compressedSize: number
+  }
   ratio?: number | null
   date?: string
   // Expert fields:
@@ -108,6 +115,10 @@ function formatDictionarySize(size?: number): string {
 
 function calculateOverallSavings(totalCompressedSize: number, totalUncompressedSize: number): number {
   return Math.round((1 - (totalCompressedSize / totalUncompressedSize)) * 1000) / 10
+}
+
+function calculateSolidBlockSavings(compressedSize: number, uncompressedSize: number): number {
+  return Math.round((1 - (compressedSize / uncompressedSize)) * 10_000) / 100
 }
 
 function formatSignature(bytes: Uint8Array, label: string): string {
@@ -320,6 +331,7 @@ export async function inspectArchive(
     const entries: ArchiveEntry[] = listing.entries.map((entry, index) => {
       const size = entry.isDirectory ? 0 : entry.size
       const compressedSize = entry.solid ? undefined : entry.packedSize
+      const solidBlock = entry.solidBlock
       totalUncompressedSize += size
       return {
         id: `entry-${index}`,
@@ -331,11 +343,14 @@ export async function inspectArchive(
         // Attaching that block size to its first entry makes the row wildly
         // misleading, so only expose per-entry values for non-solid folders.
         compressedSize,
-        ratio: compressedSize === undefined
-          ? null
-          : size > 0
-            ? Math.round((1 - (compressedSize / size)) * 100)
-            : 0,
+        solidBlock,
+        ratio: solidBlock !== undefined && solidBlock.uncompressedSize > 0
+          ? calculateSolidBlockSavings(solidBlock.compressedSize, solidBlock.uncompressedSize)
+          : compressedSize === undefined
+            ? null
+            : size > 0
+              ? Math.round((1 - (compressedSize / size)) * 100)
+              : 0,
         date: entry.modified,
         codec: `${entry.codec ?? 'Copy'}${formatDictionarySize(entry.dictionarySize)}`,
         encrypted: entry.encrypted,

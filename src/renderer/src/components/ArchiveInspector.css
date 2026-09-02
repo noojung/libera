@@ -10,6 +10,7 @@
   padding: 16px;
   align-items: center;
   justify-content: space-between;
+  flex: none;
 }
 
 .archive-inspector__header-main {
@@ -113,14 +114,16 @@
 
 .archive-inspector__content {
   display: flex;
+  min-height: 0;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
   flex-direction: column;
   gap: 16px;
 }
 
 .archive-inspector__stats {
   display: grid;
+  flex: none;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
@@ -248,7 +251,8 @@
 
 .archive-inspector__browser {
   display: flex;
-  flex: 1;
+  min-height: 280px;
+  flex: 1 0 280px;
   padding: 16px;
   overflow: hidden;
   flex-direction: column;
@@ -347,14 +351,102 @@
 
 .archive-inspector__entries {
   display: flex;
+  min-height: 0;
   flex: 1;
   overflow-y: auto;
   flex-direction: column;
+  scrollbar-gutter: stable;
+}
+
+.archive-inspector__solid-block {
+  margin: 7px 3px 9px 0;
+  overflow: hidden;
+  flex: none;
+  border: 1.5px solid var(--accent-peach);
+  border-left: 5px solid var(--accent-peach);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: 1.5px 1.5px 0 var(--border-shadow);
+}
+
+.archive-inspector__solid-block-header {
+  display: flex;
+  padding: 8px 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.archive-inspector__solid-block-main,
+.archive-inspector__solid-block-metrics {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.archive-inspector__solid-block-main > svg {
+  box-sizing: content-box;
+  padding: 4px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--accent-peach);
+}
+
+.archive-inspector__solid-block-main > strong {
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 13px;
+}
+
+.archive-inspector__solid-block-metrics {
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.archive-inspector__solid-block-metrics > span {
+  color: var(--text-main);
+}
+
+.archive-inspector__solid-block-metrics > strong {
+  padding: 3px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-card);
+  font-size: 11px;
+}
+
+.archive-inspector__solid-block-metrics .is-positive {
+  color: var(--accent-peach);
+}
+
+.archive-inspector__solid-block-metrics .is-negative {
+  color: var(--status-danger);
+}
+
+.archive-inspector__solid-block-entries {
+  padding: 0 10px;
+}
+
+.archive-inspector__solid-block-entries .archive-inspector__entry {
+  width: 100%;
+}
+
+.archive-inspector__solid-block-entries .archive-inspector__entry:last-child {
+  border-bottom: none;
 }
 
 .archive-inspector__entry {
   padding: 10px 0;
   align-items: center;
+  flex: none;
   border: none;
   border-bottom: 1px dashed var(--border-subtle);
   background: transparent;
@@ -386,7 +478,7 @@
 }
 
 .archive-inspector__entry-icon--file {
-  color: var(--accent-blue);
+  color: var(--accent-peach);
 }
 
 .archive-inspector__entry-name {
@@ -409,6 +501,7 @@
 .archive-inspector__entry-ratio {
   color: var(--text-muted);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .archive-inspector__entry-ratio.is-positive {
@@ -450,6 +543,7 @@
 
 .archive-inspector__diagnostics {
   margin: 0;
+  flex: none;
 }
 
 .archive-inspector__technical-value {
@@ -470,6 +564,56 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .archive-inspector__solid-block-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .archive-inspector__solid-block-main {
+    flex-wrap: wrap;
+  }
+
+  .archive-inspector__solid-block-metrics {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .archive-inspector__solid-block-metrics > span,
+  .archive-inspector__solid-block-metrics > strong {
+    white-space: nowrap;
+  }
+}
+
+@media (max-height: 700px) {
+  .archive-inspector,
+  .archive-inspector__content {
+    gap: 10px;
+  }
+
+  .archive-inspector__header {
+    padding: 12px 14px;
+  }
+
+  .archive-inspector__stats {
+    gap: 8px;
+  }
+
+  .archive-inspector__stat {
+    padding: 8px 10px;
+  }
+
+  .archive-inspector__stat-value {
+    font-size: 18px;
+  }
+
+  .archive-inspector__stat-value--size {
+    font-size: 14px;
+  }
 }
 
 .archive-inspector__diag-item {

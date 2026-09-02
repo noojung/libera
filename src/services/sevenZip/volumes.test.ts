@@ -115,9 +115,11 @@ describe('against a Libera7z split archive', () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'src')
     await fs.mkdir(sourceDir)
-    const compressedPath = path.join(sourceDir, 'compressed.txt')
+    const compressedPath = path.join(sourceDir, 'compressed-a.txt')
+    const secondCompressedPath = path.join(sourceDir, 'compressed-b.txt')
     const copiedPath = path.join(sourceDir, 'copied.bin')
     await fs.writeFile(compressedPath, 'split archive compression '.repeat(800))
+    await fs.writeFile(secondCompressedPath, 'shared solid compression '.repeat(800))
     await fs.writeFile(copiedPath, crypto.randomBytes(48 * 1024))
 
     const outputPath = path.join(directory, 'methods.7z')
@@ -126,6 +128,7 @@ describe('against a Libera7z split archive', () => {
       outputPath,
       level: 5,
       splitSize: 12 * 1024,
+      solid: true,
       methodOverrides: [
         { sourcePath: sourceDir, scope: 'tree', method: 'lzma2' },
         { sourcePath: copiedPath, scope: 'file', method: 'copy' }
@@ -140,7 +143,11 @@ describe('against a Libera7z split archive', () => {
       expect(Object.fromEntries(archive.entries
         .filter(entry => !entry.isDirectory)
         .map(entry => [path.basename(entry.path), entry.codec])))
-        .toEqual({ 'compressed.txt': 'LZMA2', 'copied.bin': 'Copy' })
+        .toEqual({ 'compressed-a.txt': 'LZMA2', 'compressed-b.txt': 'LZMA2', 'copied.bin': 'Copy' })
+      const solidEntries = archive.entries.filter(entry => entry.path.endsWith('.txt'))
+      expect(solidEntries.every(entry => entry.solid === true)).toBe(true)
+      expect(solidEntries[0].solidBlock).toEqual(solidEntries[1].solidBlock)
+      expect(solidEntries[0].solidBlock?.packedSize).toBeLessThan(solidEntries[0].solidBlock!.unpackedSize)
     } finally {
       await archive.close()
     }

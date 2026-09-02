@@ -202,7 +202,19 @@ describe('inspectArchive for 7z', () => {
     expect(files).toEqual(expect.arrayContaining([
       expect.objectContaining({ codec: expect.stringMatching(/^LZMA2 \[/) })
     ]))
-    expect(files.every(entry => entry.compressedSize === undefined && entry.ratio === null)).toBe(true)
+    const solidBlock = files[0].solidBlock!
+    expect(solidBlock).toMatchObject({ id: 1, fileCount: files.length })
+    expect(solidBlock.uncompressedSize).toBeGreaterThan(0)
+    expect(solidBlock.compressedSize).toBeGreaterThan(0)
+    expect(files.every(entry => (
+      entry.compressedSize === undefined &&
+      entry.solidBlock?.uncompressedSize === solidBlock.uncompressedSize &&
+      entry.solidBlock.compressedSize === solidBlock.compressedSize &&
+      entry.ratio === files[0].ratio
+    ))).toBe(true)
+    expect(files[0].ratio).toBe(
+      Math.round((1 - (solidBlock.compressedSize / solidBlock.uncompressedSize)) * 10_000) / 100
+    )
   }, 60_000)
 
   it('assigns positional ids in listing order, which preview resolves against', async () => {

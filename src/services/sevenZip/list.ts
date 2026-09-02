@@ -19,6 +19,12 @@ export interface SevenZipEntry {
   codec?: string
   dictionarySize?: number
   solid?: boolean
+  solidBlock?: {
+    id: number
+    fileCount: number
+    uncompressedSize: number
+    compressedSize: number
+  }
 }
 
 export interface SevenZipListing {
@@ -52,7 +58,24 @@ export async function listSevenZipEntries(
       const entries = archive.entries.map(entry => {
         const size = Number(entry.size)
         const packedSize = entry.packedSize === undefined ? undefined : Number(entry.packedSize)
-        if (!Number.isSafeInteger(size) || (packedSize !== undefined && !Number.isSafeInteger(packedSize))) {
+        const solidBlock = entry.solidBlock === undefined
+          ? undefined
+          : {
+              id: entry.solidBlock.id,
+              fileCount: entry.solidBlock.fileCount,
+              uncompressedSize: Number(entry.solidBlock.unpackedSize),
+              compressedSize: Number(entry.solidBlock.packedSize)
+            }
+        if (
+          !Number.isSafeInteger(size) ||
+          (packedSize !== undefined && !Number.isSafeInteger(packedSize)) ||
+          (solidBlock !== undefined && (
+            !Number.isSafeInteger(solidBlock.id) ||
+            !Number.isSafeInteger(solidBlock.fileCount) ||
+            !Number.isSafeInteger(solidBlock.uncompressedSize) ||
+            !Number.isSafeInteger(solidBlock.compressedSize)
+          ))
+        ) {
           throw new SevenZipError('SEVEN_ZIP_FAILED', '7z entry size exceeds JavaScript safe integer range')
         }
         return {
@@ -67,7 +90,8 @@ export async function listSevenZipEntries(
           crc: entry.crc?.toString(16).toUpperCase().padStart(8, '0'),
           codec: entry.codec,
           dictionarySize: entry.dictionarySize,
-          solid: entry.solid
+          solid: entry.solid,
+          solidBlock
         }
       })
       const volumeCount = isSevenZipVolumePath(archivePath)

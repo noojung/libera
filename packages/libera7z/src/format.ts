@@ -148,6 +148,13 @@ export interface SevenZipEntry {
   dictionarySize?: number
   /** True when this file shares a packed folder with other file substreams. */
   solid?: boolean
+  /** Aggregate sizes for the shared folder. Per-file packed sizes do not exist for solid entries. */
+  solidBlock?: {
+    id: number
+    fileCount: number
+    unpackedSize: bigint
+    packedSize: bigint
+  }
 }
 
 export interface SevenZipArchiveMetadata {
@@ -1759,21 +1766,41 @@ export class SevenZipArchive implements SevenZipReader {
       nextHeaderSize: 0n
     }
   ) {
-    this.entries = parsedFiles.map((file, id) => ({
-      id,
-      path: file.path,
-      size: file.size,
-      packedSize: file.packedSize,
-      isDirectory: file.isDirectory,
-      encrypted: file.encrypted,
-      isSymlink: file.isSymlink,
-      modified: file.modified,
-      mode: file.mode,
-      crc: file.crc,
-      codec: folderCodec(file.folder),
-      dictionarySize: folderDictionarySize(file.folder),
-      solid: (file.folder?.substreams?.length ?? 0) > 1
-    }))
+    const solidBlockIds = new Map<ParsedFolder, number>()
+    this.entries = parsedFiles.map((file, id) => {
+      const solid = (file.folder?.substreams?.length ?? 0) > 1
+      const solidPackedSize = solid
+        ? file.folder?.packedSizes?.reduce((total, value) => total + value, 0n)
+        : undefined
+      if (solid && file.folder && !solidBlockIds.has(file.folder)) {
+        solidBlockIds.set(file.folder, solidBlockIds.size + 1)
+      }
+      return {
+        id,
+        path: file.path,
+        size: file.size,
+        packedSize: file.packedSize,
+        isDirectory: file.isDirectory,
+        encrypted: file.encrypted,
+        isSymlink: file.isSymlink,
+        modified: file.modified,
+        mode: file.mode,
+        crc: file.crc,
+        codec: folderCodec(file.folder),
+        dictionarySize: folderDictionarySize(file.folder),
+        solid,
+        ...(solidPackedSize !== undefined && file.folder
+          ? {
+              solidBlock: {
+                id: solidBlockIds.get(file.folder)!,
+                fileCount: file.folder.substreams!.length,
+                unpackedSize: file.folder.unpackSize,
+                packedSize: solidPackedSize
+              }
+            }
+          : {})
+      }
+    })
   }
 
   openEntries(ids: readonly number[], options: OpenEntryOptions = {}): ReadableStream<SevenZipEntryEvent> {

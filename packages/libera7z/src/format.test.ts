@@ -124,6 +124,10 @@ describe('pure TypeScript 7z container', () => {
         expect.objectContaining({ path: 'alpha.txt', codec: 'LZMA2', dictionarySize: 4 * 1024 * 1024, solid: true }),
         expect.objectContaining({ path: 'bravo.txt', codec: 'LZMA2', dictionarySize: 4 * 1024 * 1024, solid: true })
       ]))
+      expect(archive.entries[0].solidBlock).toEqual(archive.entries[1].solidBlock)
+      expect(archive.entries[0].solidBlock).toMatchObject({ id: 1, fileCount: 2 })
+      expect(archive.entries[0].solidBlock?.unpackedSize).toBe(BigInt(alpha.length + bravo.length))
+      expect(archive.entries[0].solidBlock?.packedSize).toBeGreaterThan(0n)
       await expect(collect(archive.openEntry(0))).resolves.toEqual(alpha)
       await expect(collect(archive.openEntry(1))).resolves.toEqual(bravo)
     } finally {
@@ -209,6 +213,7 @@ describe('pure TypeScript 7z container', () => {
         { codec: 'LZMA2', solid: true },
         { codec: 'LZMA2', solid: true }
       ])
+      expect(archive.entries.map(entry => entry.solidBlock?.id)).toEqual([1, 1, undefined, 2, 2])
       for (const [index, input] of inputs.entries()) {
         await expect(collect(archive.openEntry(index))).resolves.toEqual(input.bytes)
       }
