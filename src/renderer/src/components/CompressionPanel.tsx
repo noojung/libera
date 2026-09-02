@@ -335,7 +335,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             <>
               <button
                 type="button"
-                className="compression-panel__zip-overrides"
+                className="compression-panel__zip-overrides compression-panel__zip-overrides--seven-zip"
                 aria-label={t('compression.sevenZipOverridesButton')}
                 onClick={() => setShowSevenZipMethodOverrides(true)}
                 disabled={items.length === 0}

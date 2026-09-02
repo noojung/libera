@@ -146,6 +146,10 @@
   background: var(--bg-card-hover);
 }
 
+.compression-panel__zip-overrides--seven-zip {
+  margin-bottom: 10px;
+}
+
 .compression-panel__zip-overrides:disabled {
   opacity: 0.5;
   cursor: not-allowed;
