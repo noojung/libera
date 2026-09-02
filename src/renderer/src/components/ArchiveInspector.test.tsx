@@ -103,7 +103,7 @@ describe('ArchiveInspector', () => {
     const { user } = renderWithI18n(<ArchiveInspector />)
     await user.click(screen.getByRole('button', { name: 'Open file...' }))
 
-    const summary = await screen.findByLabelText('Solid block 1')
+    const summary = await screen.findByLabelText('Block 1')
     expect(summary).toHaveTextContent('LZMA2')
     expect(summary).toHaveTextContent('2 files')
     expect(summary).toHaveTextContent('0.96%')

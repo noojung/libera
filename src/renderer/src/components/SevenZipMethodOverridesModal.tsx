@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Archive, ChevronDown, File, Folder, RotateCcw, X } from 'lucide-react'
+import { ChevronDown, File, Files, Folder, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type { SevenZipMethodOverride, SevenZipOverrideMethod } from '@services/compressor'
@@ -48,7 +48,9 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
 }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
-  const isWindows = (window as any).electronAPI?.platform === 'windows'
+  const platform = (window as any).electronAPI?.platform
+  const isWindows = platform === 'windows'
+  const isMacOS = platform === 'macos'
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
   const defaultMethod: SevenZipOverrideMethod = defaultLevel === 0 ? 'copy' : 'lzma2'
@@ -206,13 +208,17 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
           <span className="zip-method-modal__entry-size">
             {entry.isDirectory && depth > 0 ? '—' : formatBytes(entry.size, language)}
           </span>
-          <Select<MethodSelection>
-            value={selectionFor(entry.path, entry.isDirectory)}
-            ariaLabel={t('compression.sevenZipOverridesMethodFor', { name: entry.name })}
-            rootClassName="zip-method-modal__method"
-            options={optionsFor(entry.path, entry.isDirectory)}
-            onChange={value => setMethod(entry.path, entry.isDirectory, value)}
-          />
+          <div className="zip-method-modal__control zip-method-modal__method">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesMethod')}
+            </span>
+            <Select<MethodSelection>
+              value={selectionFor(entry.path, entry.isDirectory)}
+              ariaLabel={t('compression.sevenZipOverridesMethodFor', { name: entry.name })}
+              options={optionsFor(entry.path, entry.isDirectory)}
+              onChange={value => setMethod(entry.path, entry.isDirectory, value)}
+            />
+          </div>
         </div>
         {entry.isDirectory && expanded && (
           <div role="group" aria-label={entry.name}>
@@ -239,7 +245,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   }
 
   return (
-    <div className="zip-method-modal zip-method-modal--seven-zip" onMouseDown={event => {
+    <div className={`zip-method-modal zip-method-modal--seven-zip${isMacOS ? ' zip-method-modal--macos' : ''}`} onMouseDown={event => {
       if (event.target === event.currentTarget) onClose()
     }}>
       <section
@@ -250,7 +256,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
       >
         <header className="zip-method-modal__header">
           <div className="zip-method-modal__heading">
-            <span className="zip-method-modal__heading-icon"><Archive size={20} /></span>
+            <span className="zip-method-modal__heading-icon"><Files size={20} /></span>
             <div>
               <h2 id="seven-zip-method-modal-title" className="zip-method-modal__title">
                 {t('compression.sevenZipOverridesTitle')}

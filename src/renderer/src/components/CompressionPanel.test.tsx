@@ -306,6 +306,7 @@ describe('CompressionPanel', () => {
     const source = { path: '/source', name: 'source', isDirectory: true, size: 4096 }
     const photo = { path: '/source/photo.jpg', name: 'photo.jpg', isDirectory: false, size: 2048 }
     const api = installElectronApi({
+      platform: 'macos',
       getDefaultOutputDir: vi.fn().mockResolvedValue('/output'),
       listArchiveInputChildren: vi.fn().mockResolvedValue([photo])
     })
@@ -313,7 +314,9 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[source]} onStartCompress={onStart} />)
 
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
-    expect(screen.getByRole('dialog', { name: 'Per-file ZIP compression settings' })).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Per-file compression settings' })
+    expect(dialog.parentElement).toHaveClass('zip-method-modal--macos')
+    expect(dialog.querySelector('.lucide-files')).toBeInTheDocument()
 
     await user.click(screen.getByRole('combobox', { name: 'Compression method for source' }))
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
@@ -413,7 +416,7 @@ describe('CompressionPanel', () => {
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
     expect(screen.queryByRole('combobox', { name: 'Compression method / Codec' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Per-file 7Z compression settings' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     await user.click(screen.getByRole('combobox', { name: '7Z compression method for input.txt' }))
     await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -440,6 +443,7 @@ describe('CompressionPanel', () => {
     const source = { path: '/source', name: 'source', isDirectory: true, size: 4096 }
     const child = { path: '/source/archive.bin', name: 'archive.bin', isDirectory: false, size: 2048 }
     const api = installElectronApi({
+      platform: 'macos',
       getDefaultOutputDir: vi.fn().mockResolvedValue('/output'),
       listArchiveInputChildren: vi.fn().mockResolvedValue([child])
     })
@@ -447,8 +451,10 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[source]} onStartCompress={onStart} />)
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
-    await user.click(screen.getByRole('button', { name: 'Per-file 7Z compression settings' }))
-    expect(screen.getByRole('dialog', { name: 'Per-file 7Z compression settings' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Per-file compression settings' })
+    expect(dialog.parentElement).toHaveClass('zip-method-modal--macos')
+    expect(dialog.querySelector('.lucide-files')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '7Z compression method for source' }))
       .toHaveTextContent('LZMA2 (High efficiency)')
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Archive, ChevronDown, File, Folder, RotateCcw, X } from 'lucide-react'
+import { ChevronDown, File, Files, Folder, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type { DeflateStrategy, ZipMethodOverride, ZipOverrideMethod } from '@services/compressor'
@@ -50,7 +50,9 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
 }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
-  const isWindows = (window as any).electronAPI?.platform === 'windows'
+  const platform = (window as any).electronAPI?.platform
+  const isWindows = platform === 'windows'
+  const isMacOS = platform === 'macos'
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
 
@@ -381,35 +383,47 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
           <span className="zip-method-modal__entry-size">
             {entry.isDirectory && depth > 0 ? '—' : formatBytes(entry.size, language)}
           </span>
-          <Select<MethodSelection>
-            value={selection}
-            ariaLabel={t('compression.zipOverridesMethodFor', { name: entry.name })}
-            rootClassName="zip-method-modal__method"
-            options={optionsFor(entry.path, entry.isDirectory)}
-            onChange={value => setMethod(entry.path, entry.isDirectory, value)}
-          />
-          {strategySelection === null ? (
-            <span className="zip-method-modal__strategy-na">—</span>
-          ) : (
-            <Select<StrategySelection>
-              value={strategySelection}
-              ariaLabel={t('compression.zipOverridesStrategyFor', { name: entry.name })}
-              rootClassName="zip-method-modal__strategy"
-              options={strategyOptionsFor(entry.path, entry.isDirectory)}
-              onChange={value => setStrategy(entry.path, entry.isDirectory, value)}
+          <div className="zip-method-modal__control zip-method-modal__method">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesMethod')}
+            </span>
+            <Select<MethodSelection>
+              value={selection}
+              ariaLabel={t('compression.zipOverridesMethodFor', { name: entry.name })}
+              options={optionsFor(entry.path, entry.isDirectory)}
+              onChange={value => setMethod(entry.path, entry.isDirectory, value)}
             />
-          )}
-          {levelSelection === null ? (
-            <span className="zip-method-modal__level-na">—</span>
-          ) : (
-            <Select<LevelSelection>
-              value={levelSelection}
-              ariaLabel={t('compression.zipOverridesLevelFor', { name: entry.name })}
-              rootClassName="zip-method-modal__level"
-              options={levelOptionsFor(entry.path, entry.isDirectory)}
-              onChange={value => setLevel(entry.path, entry.isDirectory, value)}
-            />
-          )}
+          </div>
+          <div className="zip-method-modal__control zip-method-modal__strategy">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesStrategy')}
+            </span>
+            {strategySelection === null ? (
+              <span className="zip-method-modal__strategy-na">—</span>
+            ) : (
+              <Select<StrategySelection>
+                value={strategySelection}
+                ariaLabel={t('compression.zipOverridesStrategyFor', { name: entry.name })}
+                options={strategyOptionsFor(entry.path, entry.isDirectory)}
+                onChange={value => setStrategy(entry.path, entry.isDirectory, value)}
+              />
+            )}
+          </div>
+          <div className="zip-method-modal__control zip-method-modal__level">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesLevel')}
+            </span>
+            {levelSelection === null ? (
+              <span className="zip-method-modal__level-na">—</span>
+            ) : (
+              <Select<LevelSelection>
+                value={levelSelection}
+                ariaLabel={t('compression.zipOverridesLevelFor', { name: entry.name })}
+                options={levelOptionsFor(entry.path, entry.isDirectory)}
+                onChange={value => setLevel(entry.path, entry.isDirectory, value)}
+              />
+            )}
+          </div>
         </div>
         {entry.isDirectory && expanded && (
           <div role="group" aria-label={entry.name}>
@@ -436,7 +450,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
   }
 
   return (
-    <div className="zip-method-modal" onMouseDown={event => {
+    <div className={`zip-method-modal${isMacOS ? ' zip-method-modal--macos' : ''}`} onMouseDown={event => {
       if (event.target === event.currentTarget) onClose()
     }}>
       <section
@@ -447,7 +461,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
       >
         <header className="zip-method-modal__header">
           <div className="zip-method-modal__heading">
-            <span className="zip-method-modal__heading-icon"><Archive size={20} /></span>
+            <span className="zip-method-modal__heading-icon"><Files size={20} /></span>
             <div>
               <h2 id="zip-method-modal-title" className="zip-method-modal__title">{t('compression.zipOverridesTitle')}</h2>
               <p className="zip-method-modal__description">
