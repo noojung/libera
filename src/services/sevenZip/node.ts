@@ -9,8 +9,8 @@ import {
   type OpenSevenZipOptions,
   type RandomAccessSource,
   type SeekableSink,
+  type SevenZipCompressionMethod,
   type SevenZipEntryInput,
-  type SevenZipMethod,
   type SevenZipReader
 } from 'libera7z'
 import './workerSetup'
@@ -21,6 +21,11 @@ import {
   removeStaleSevenZipVolumes,
   sevenZipVolumePath
 } from './volumes'
+import {
+  resolveSevenZipMethod,
+  type SevenZipCompressionLevel,
+  type SevenZipMethodOverride
+} from './methodOverrides'
 
 async function writeFully(
   handle: fsPromises.FileHandle,
@@ -284,7 +289,11 @@ async function collectPathEntries(
   itemPath: string,
   storedPath: string,
   excludedPath: string,
-  entries: SevenZipEntryInput[]
+  entries: SevenZipEntryInput[],
+  compressionForPath?: (
+    sourcePath: string,
+    size: bigint
+  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
 ): Promise<void> {
   if (path.resolve(itemPath) === excludedPath) return
   const stat = await fsPromises.lstat(itemPath)
@@ -293,6 +302,7 @@ async function collectPathEntries(
     entries.push({
       path: storedPath,
       size: BigInt(target.length),
+      ...compressionForPath?.(itemPath, BigInt(target.length)),
       isSymlink: true,
       modified: stat.mtime,
       mode: stat.mode & 0o7777,
@@ -311,7 +321,9 @@ async function collectPathEntries(
     const children = await fsPromises.readdir(itemPath)
     children.sort((left, right) => left.localeCompare(right))
     for (const child of children) {
-      await collectPathEntries(path.join(itemPath, child), archivePath(storedPath, child), excludedPath, entries)
+      await collectPathEntries(
+        path.join(itemPath, child), archivePath(storedPath, child), excludedPath, entries, compressionForPath
+      )
     }
     return
   }
@@ -321,17 +333,25 @@ async function collectPathEntries(
   entries.push({
     path: storedPath,
     size: BigInt(stat.size),
+    ...compressionForPath?.(itemPath, BigInt(stat.size)),
     modified: stat.mtime,
     mode: stat.mode & 0o7777,
     open: () => Readable.toWeb(fs.createReadStream(itemPath)) as ReadableStream<Uint8Array>
   })
 }
 
-export async function collectSevenZipInputs(inputPaths: string[], outputPath: string): Promise<SevenZipEntryInput[]> {
+export async function collectSevenZipInputs(
+  inputPaths: string[],
+  outputPath: string,
+  compressionForPath?: (
+    sourcePath: string,
+    size: bigint
+  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+): Promise<SevenZipEntryInput[]> {
   const entries: SevenZipEntryInput[] = []
   const excludedPath = path.resolve(outputPath)
   for (const itemPath of inputPaths) {
-    await collectPathEntries(itemPath, path.basename(itemPath), excludedPath, entries)
+    await collectPathEntries(itemPath, path.basename(itemPath), excludedPath, entries, compressionForPath)
   }
   if (entries.length === 0) throw new Libera7zError('UNSUPPORTED_FEATURE', 'No supported 7z inputs remain')
   return entries
@@ -345,7 +365,8 @@ export interface WriteLibera7zOptions {
   password?: string
   encryptFileNames?: boolean
   dictionarySize?: number
-  method?: SevenZipMethod
+  method?: SevenZipCompressionMethod
+  methodOverrides?: SevenZipMethodOverride[]
   matchFinderWordSize?: 32 | 64 | 128 | 273
   searchCycles?: number
   solid?: boolean
@@ -374,24 +395,66 @@ const ENCODER_BY_LEVEL: Record<number, { searchDepth: number; niceLength: number
   9: { searchDepth: 128, niceLength: 128 }
 }
 
+const AUTOMATIC_DICTIONARIES = [
+  64 * 1024,
+  128 * 1024,
+  256 * 1024,
+  512 * 1024,
+  1024 * 1024,
+  2 * 1024 * 1024,
+  4 * 1024 * 1024,
+  8 * 1024 * 1024,
+  16 * 1024 * 1024,
+  32 * 1024 * 1024,
+  64 * 1024 * 1024,
+  128 * 1024 * 1024
+] as const
+
+export function automaticSevenZipDictionarySize(fileSize: bigint, level: SevenZipCompressionLevel): number {
+  const cap = DICTIONARY_BY_LEVEL[level]
+  const target = fileSize > BigInt(cap) ? cap : Number(fileSize)
+  return AUTOMATIC_DICTIONARIES.find(size => size >= target) ?? cap
+}
+
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
-  const entries = await collectSevenZipInputs(options.inputPaths, options.outputPath)
+  const archiveMethod: SevenZipCompressionMethod = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
+  const defaultCompressedLevel: SevenZipCompressionLevel = options.level === 0
+    ? 1
+    : (options.level as SevenZipCompressionLevel)
+  const entries = await collectSevenZipInputs(
+    options.inputPaths,
+    options.outputPath,
+    (sourcePath, fileSize) => {
+      const resolved = resolveSevenZipMethod(sourcePath, archiveMethod, options.methodOverrides)
+      if (resolved.method === 'copy') return { method: 'copy' }
+      const level = resolved.level ?? defaultCompressedLevel
+      const levelOptions = ENCODER_BY_LEVEL[level]
+      const dictionarySize = resolved.dictionarySize === undefined
+        ? (options.dictionarySize ?? automaticSevenZipDictionarySize(fileSize, level))
+        : resolved.dictionarySize === 'auto'
+          ? automaticSevenZipDictionarySize(fileSize, level)
+          : resolved.dictionarySize
+      return {
+        method: resolved.method,
+        dictionarySize,
+        lzmaEncoder: {
+          searchDepth: resolved.searchCycles ?? options.searchCycles ?? levelOptions.searchDepth,
+          niceLength: resolved.matchFinderWordSize ?? options.matchFinderWordSize ?? levelOptions.niceLength,
+          maxDistance: dictionarySize
+        }
+      }
+    }
+  )
   const sink = options.splitSize === undefined
     ? await NodeFileSink.open(options.outputPath)
     : new NodeVolumeSink(options.outputPath, options.splitSize)
   try {
-    const levelOptions = ENCODER_BY_LEVEL[options.level] ?? ENCODER_BY_LEVEL[5]
-    const encoderOptions = {
-      searchDepth: options.searchCycles ?? levelOptions.searchDepth,
-      niceLength: options.matchFinderWordSize ?? levelOptions.niceLength
-    }
     await create7z(entries, sink, {
-      method: options.method ?? (options.level === 0 ? 'copy' : 'lzma2'),
-      dictionarySize: options.dictionarySize ?? (DICTIONARY_BY_LEVEL[options.level] ?? DICTIONARY_BY_LEVEL[5]),
+      method: archiveMethod,
+      dictionarySize: options.dictionarySize ?? DICTIONARY_BY_LEVEL[defaultCompressedLevel],
       signal: options.signal,
       onProgress: options.onProgress,
-      lzmaEncoder: encoderOptions,
       password: options.password,
       encryptHeader: options.encryptFileNames,
       solid: options.solid

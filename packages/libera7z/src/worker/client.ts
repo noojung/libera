@@ -226,6 +226,9 @@ export async function createArchiveInWorker(
     const serialized: SerializedEntryInput[] = entries.map(entry => ({
       path: entry.path,
       size: entry.size,
+      method: entry.method,
+      dictionarySize: entry.dictionarySize,
+      lzmaEncoder: entry.lzmaEncoder,
       isDirectory: entry.isDirectory,
       modified: entry.modified,
       mode: entry.mode,

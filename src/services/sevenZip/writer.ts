@@ -6,6 +6,7 @@ import {
   MAX_SEVEN_ZIP_VOLUMES,
   removeStaleSevenZipVolumes
 } from './volumes'
+import type { SevenZipMethodOverride, SevenZipOverrideMethod } from './methodOverrides'
 
 // Writing .7z, the counterpart to zip/splitWriter.ts. Libera7z owns both
 // ordinary archives and numbered volume sets without invoking another tool.
@@ -20,7 +21,8 @@ export interface SevenZipWriteOptions {
   /** Encrypts the header too, so the file names need the password as well. */
   encryptFileNames?: boolean
   dictionarySize?: number
-  method?: 'lzma2' | 'copy'
+  method?: SevenZipOverrideMethod
+  methodOverrides?: SevenZipMethodOverride[]
   matchFinderWordSize?: 32 | 64 | 128 | 273
   searchCycles?: number
   solid?: boolean
@@ -56,7 +58,7 @@ export async function writeSevenZipArchive(
 ): Promise<SevenZipWriteResult> {
   const {
     inputPaths, outputPath, totalBytes, level, splitSize, password, encryptFileNames,
-    dictionarySize, method, matchFinderWordSize, searchCycles, solid
+    dictionarySize, method, methodOverrides, matchFinderWordSize, searchCycles, solid
   } = options
 
   if (splitSize !== undefined && Math.ceil(totalBytes / splitSize) > MAX_SEVEN_ZIP_VOLUMES) {
@@ -78,6 +80,7 @@ export async function writeSevenZipArchive(
       encryptFileNames,
       dictionarySize,
       method,
+      methodOverrides,
       matchFinderWordSize,
       searchCycles,
       solid,

@@ -263,6 +263,15 @@
   font-size: 12px;
 }
 
+.zip-method-modal--seven-zip .zip-method-modal__dialog {
+  width: min(760px, 100%);
+}
+
+.zip-method-modal--seven-zip .zip-method-modal__columns,
+.zip-method-modal--seven-zip .zip-method-modal__entry {
+  grid-template-columns: minmax(0, 1fr) 72px minmax(180px, 220px);
+}
+
 @media (max-width: 720px) {
   .zip-method-modal {
     padding: 12px;
@@ -276,5 +285,10 @@
   .zip-method-modal__columns span:nth-child(2),
   .zip-method-modal__entry-size {
     display: none;
+  }
+
+  .zip-method-modal--seven-zip .zip-method-modal__columns,
+  .zip-method-modal--seven-zip .zip-method-modal__entry {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 180px);
   }
 }

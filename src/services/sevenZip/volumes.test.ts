@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import crypto from 'crypto'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -110,6 +111,41 @@ describe('removeStaleSevenZipVolumes', () => {
 })
 
 describe('against a Libera7z split archive', () => {
+  it('preserves per-entry methods when opened from a later volume', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    await fs.mkdir(sourceDir)
+    const compressedPath = path.join(sourceDir, 'compressed.txt')
+    const copiedPath = path.join(sourceDir, 'copied.bin')
+    await fs.writeFile(compressedPath, 'split archive compression '.repeat(800))
+    await fs.writeFile(copiedPath, crypto.randomBytes(48 * 1024))
+
+    const outputPath = path.join(directory, 'methods.7z')
+    await writeLibera7z({
+      inputPaths: [sourceDir],
+      outputPath,
+      level: 5,
+      splitSize: 12 * 1024,
+      methodOverrides: [
+        { sourcePath: sourceDir, scope: 'tree', method: 'lzma2' },
+        { sourcePath: copiedPath, scope: 'file', method: 'copy' }
+      ]
+    })
+
+    const volumes = await discoverSevenZipVolumes(`${outputPath}.001`)
+    expect(volumes.length).toBeGreaterThan(1)
+
+    const archive = await openLibera7zFile(volumes.at(-1)!)
+    try {
+      expect(Object.fromEntries(archive.entries
+        .filter(entry => !entry.isDirectory)
+        .map(entry => [path.basename(entry.path), entry.codec])))
+        .toEqual({ 'compressed.txt': 'LZMA2', 'copied.bin': 'Copy' })
+    } finally {
+      await archive.close()
+    }
+  }, 60_000)
+
   it('lists a set opened from any volume and reports the volume count', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'src')

@@ -20,13 +20,13 @@ import {
 import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import { Select } from './Select'
-import type { ZipMethodOverride } from '@services/compressor'
+import type { SevenZipMethodOverride, ZipMethodOverride } from '@services/compressor'
 import { ZipMethodOverridesModal } from './ZipMethodOverridesModal'
+import { SevenZipMethodOverridesModal } from './SevenZipMethodOverridesModal'
 import './CompressionPanel.css'
 
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
 export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
-export type SevenZipMethod = 'lzma2' | 'copy'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface StartCompressOptions {
@@ -38,7 +38,7 @@ export interface StartCompressOptions {
   splitSize?: number
   encryptionMethod?: ZipEncryptionMethod
   zipMethodOverrides?: ZipMethodOverride[]
-  sevenZipMethod?: SevenZipMethod
+  sevenZipMethodOverrides?: SevenZipMethodOverride[]
   dictionarySize?: number
   matchFinderWordSize?: MatchFinderWordSize
   searchCycles?: number
@@ -120,7 +120,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [zipEncryptionMethod, setZipEncryptionMethod] = useState<ZipEncryptionMethod>('zip20')
   const [zipMethodOverrides, setZipMethodOverrides] = useState<ZipMethodOverride[]>([])
   const [showZipMethodOverrides, setShowZipMethodOverrides] = useState(false)
-  const [sevenZipMethod, setSevenZipMethod] = useState<SevenZipMethod>('lzma2')
+  const [sevenZipMethodOverrides, setSevenZipMethodOverrides] = useState<SevenZipMethodOverride[]>([])
+  const [showSevenZipMethodOverrides, setShowSevenZipMethodOverrides] = useState(false)
   const [dictionarySize, setDictionarySize] = useState<number>(16 * 1024 * 1024)
   const [matchFinderWordSize, setMatchFinderWordSize] = useState<MatchFinderWordSize>(32)
   const [searchCycles, setSearchCycles] = useState<number>(32)
@@ -142,16 +143,18 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '')
       return isWindows ? normalized.toLowerCase() : normalized
     }
-    // The input list is owned by App, so pruning is the synchronization this
-    // component must perform when that external selection changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setZipMethodOverrides(current => current.filter(rule => {
-      const rulePath = normalize(rule.sourcePath)
+    const belongsToInput = (sourcePath: string) => {
+      const rulePath = normalize(sourcePath)
       return items.some(item => {
         const itemPath = normalize(item.path)
         return rulePath === itemPath || (item.isDirectory && rulePath.startsWith(`${itemPath}/`))
       })
-    }))
+    }
+    // The input list is owned by App, so pruning is the synchronization these
+    // controls must perform when that external selection changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setZipMethodOverrides(current => current.filter(rule => belongsToInput(rule.sourcePath)))
+    setSevenZipMethodOverrides(current => current.filter(rule => belongsToInput(rule.sourcePath)))
   }, [items])
 
   const handleSelectSavePath = async () => {
@@ -176,6 +179,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   }
 
   const activeZipMethodOverrides = isExpertMode ? zipMethodOverrides : []
+  const activeSevenZipMethodOverrides = isExpertMode ? sevenZipMethodOverrides : []
   // ZIP Deflate tuning lives with each file rule. These global knobs only
   // remain for the single Deflate streams used by GZ and TAR.GZ.
   const deflateTuned = format === 'tgz' || format === 'gz'
@@ -221,11 +225,13 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             zipMethodOverrides: format === 'zip' && activeZipMethodOverrides.length > 0
               ? activeZipMethodOverrides
               : undefined,
-            sevenZipMethod: format === '7z' ? sevenZipMethod : undefined,
-            dictionarySize: format === '7z' && sevenZipMethod === 'lzma2' ? dictionarySize : undefined,
-            matchFinderWordSize: format === '7z' && sevenZipMethod === 'lzma2' ? matchFinderWordSize : undefined,
-            searchCycles: format === '7z' && sevenZipMethod === 'lzma2' ? searchCycles : undefined,
-            solidArchive: format === '7z' && sevenZipMethod === 'lzma2' ? solidBlock : undefined,
+            sevenZipMethodOverrides: format === '7z' && activeSevenZipMethodOverrides.length > 0
+              ? activeSevenZipMethodOverrides
+              : undefined,
+            dictionarySize: format === '7z' ? dictionarySize : undefined,
+            matchFinderWordSize: format === '7z' ? matchFinderWordSize : undefined,
+            searchCycles: format === '7z' ? searchCycles : undefined,
+            solidArchive: format === '7z' ? solidBlock : undefined,
             deflateStrategy: deflateTuned ? deflateStrategy : undefined,
             memLevel: deflateTuned ? memLevel : undefined
           }
@@ -327,74 +333,73 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {/* 7Z Codec & Dictionary Tuning */}
           {format === '7z' && (
             <>
+              <button
+                type="button"
+                className="compression-panel__zip-overrides"
+                aria-label={t('compression.sevenZipOverridesButton')}
+                onClick={() => setShowSevenZipMethodOverrides(true)}
+                disabled={items.length === 0}
+              >
+                <span className="compression-panel__zip-overrides-copy">
+                  <Files size={16} />
+                  <span>
+                    <span className="compression-panel__zip-overrides-title">{t('compression.sevenZipOverridesButton')}</span>
+                    <span className="compression-panel__zip-overrides-hint">{t('compression.sevenZipOverridesButtonHint')}</span>
+                  </span>
+                </span>
+                {sevenZipMethodOverrides.length > 0 && (
+                  <span className="compression-panel__zip-overrides-badge">
+                    {t('compression.zipOverridesCount', { count: sevenZipMethodOverrides.length })}
+                  </span>
+                )}
+              </button>
+
               <div className="compression-panel__expert-row">
-                <label className="compression-panel__expert-label" htmlFor="compression-7z-method">
-                  {t('compression.codecMethod')}
+                <label className="compression-panel__expert-label" htmlFor="compression-dictionary-size">
+                  {t('compression.dictionarySize')}
                 </label>
-                <Select<SevenZipMethod>
-                  id="compression-7z-method"
-                  ariaLabel={t('compression.codecMethod')}
-                  value={sevenZipMethod}
-                  onChange={setSevenZipMethod}
-                  options={[
-                    { value: 'lzma2', label: t('compression.methodLzma2') },
-                    { value: 'copy', label: t('compression.methodCopy') }
-                  ]}
+                <Select<number>
+                  id="compression-dictionary-size"
+                  ariaLabel={t('compression.dictionarySize')}
+                  value={dictionarySize}
+                  onChange={setDictionarySize}
+                  options={DICTIONARY_SIZES}
                 />
               </div>
-
-              {sevenZipMethod === 'lzma2' && (
-                <>
-                  <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label" htmlFor="compression-dictionary-size">
-                      {t('compression.dictionarySize')}
-                    </label>
-                    <Select<number>
-                      id="compression-dictionary-size"
-                      ariaLabel={t('compression.dictionarySize')}
-                      value={dictionarySize}
-                      onChange={setDictionarySize}
-                      options={DICTIONARY_SIZES}
-                    />
-                  </div>
-                  <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label" htmlFor="compression-match-finder-word-size">
-                      {t('compression.matchFinderWordSize')}
-                    </label>
-                    <Select<MatchFinderWordSize>
-                      id="compression-match-finder-word-size"
-                      ariaLabel={t('compression.matchFinderWordSize')}
-                      value={matchFinderWordSize}
-                      onChange={setMatchFinderWordSize}
-                      options={[32, 64, 128, 273].map(value => ({
-                        value: value as MatchFinderWordSize,
-                        label: String(value)
-                      }))}
-                    />
-                  </div>
-                  <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label">{t('compression.searchCycles')} ({searchCycles})</label>
-                    <input className="compression-panel__range" type="range" min="1" max="1024" value={searchCycles} onChange={(e) => setSearchCycles(Number(e.target.value))} />
-                  </div>
-                </>
-              )}
-
-              {sevenZipMethod === 'lzma2' && (
-                <label className="compression-panel__split-option compression-panel__split-option--nested">
-                  <input
-                    type="checkbox"
-                    className="compression-panel__checkbox"
-                    checked={solidBlock}
-                    onChange={(e) => setSolidBlock(e.target.checked)}
-                  />
-                  <span>
-                    <span className="compression-panel__option-title">{t('compression.solidArchive')}</span>
-                    <span className="compression-panel__option-description">
-                      {t('compression.solidArchiveHint')}
-                    </span>
-                  </span>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label" htmlFor="compression-match-finder-word-size">
+                  {t('compression.matchFinderWordSize')}
                 </label>
-              )}
+                <Select<MatchFinderWordSize>
+                  id="compression-match-finder-word-size"
+                  ariaLabel={t('compression.matchFinderWordSize')}
+                  value={matchFinderWordSize}
+                  onChange={setMatchFinderWordSize}
+                  options={[32, 64, 128, 273].map(value => ({
+                    value: value as MatchFinderWordSize,
+                    label: String(value)
+                  }))}
+                />
+              </div>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label">{t('compression.searchCycles')} ({searchCycles})</label>
+                <input className="compression-panel__range" type="range" min="1" max="1024" value={searchCycles} onChange={(e) => setSearchCycles(Number(e.target.value))} />
+              </div>
+
+              <label className="compression-panel__split-option compression-panel__split-option--nested">
+                <input
+                  type="checkbox"
+                  className="compression-panel__checkbox"
+                  checked={solidBlock}
+                  onChange={(e) => setSolidBlock(e.target.checked)}
+                />
+                <span>
+                  <span className="compression-panel__option-title">{t('compression.solidArchive')}</span>
+                  <span className="compression-panel__option-description">
+                    {t('compression.solidArchiveHint')}
+                  </span>
+                </span>
+              </label>
             </>
           )}
 
@@ -612,6 +617,15 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           defaultLevel={level}
           onChange={setZipMethodOverrides}
           onClose={() => setShowZipMethodOverrides(false)}
+        />
+      )}
+      {showSevenZipMethodOverrides && isExpertMode && format === '7z' && (
+        <SevenZipMethodOverridesModal
+          items={items}
+          overrides={sevenZipMethodOverrides}
+          defaultLevel={level}
+          onChange={setSevenZipMethodOverrides}
+          onClose={() => setShowSevenZipMethodOverrides(false)}
         />
       )}
     </div>

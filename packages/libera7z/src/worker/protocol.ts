@@ -1,5 +1,5 @@
 import { Libera7zError, type Libera7zErrorCode } from '../errors.js'
-import type { SevenZipArchiveMetadata, SevenZipEntry, SevenZipEntryEvent, SevenZipMethod } from '../format.js'
+import type { SevenZipArchiveMetadata, SevenZipCompressionMethod, SevenZipEntry, SevenZipEntryEvent } from '../format.js'
 import type { LzmaEncoderOptions } from '../lzma.js'
 
 // The worker owns the whole read or write, but a source, a sink and an entry's
@@ -27,6 +27,9 @@ export function reviveFailure(failure: WorkerFailure): Error {
 export interface SerializedEntryInput {
   path: string
   size: bigint
+  method?: SevenZipCompressionMethod
+  dictionarySize?: number
+  lzmaEncoder?: LzmaEncoderOptions
   isDirectory?: boolean
   modified?: Date
   mode?: number
@@ -35,7 +38,7 @@ export interface SerializedEntryInput {
 }
 
 export interface SerializedCreateOptions {
-  method?: SevenZipMethod
+  method?: SevenZipCompressionMethod
   dictionarySize?: number
   solid?: boolean
   lzmaEncoder?: LzmaEncoderOptions

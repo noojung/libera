@@ -12,6 +12,10 @@ import {
 } from './zip/splitWriter'
 import { writeSevenZipArchive } from './sevenZip/writer'
 import {
+  validateSevenZipMethodOverrides,
+  type SevenZipMethodOverride
+} from './sevenZip/methodOverrides'
+import {
   isZipMethod,
   validateZipMethodOverrides,
   type DeflateStrategy,
@@ -32,6 +36,13 @@ export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
 export type { ZipMethod, ZipMethodOverride, ZipOverrideMethod } from './zip/methodOverrides'
 export type { DeflateStrategy } from './zip/methodOverrides'
 export type SevenZipMethod = 'lzma2' | 'copy'
+export type {
+  SevenZipCompressionLevel,
+  SevenZipDictionarySize,
+  SevenZipMatchFinderWordSize,
+  SevenZipMethodOverride,
+  SevenZipOverrideMethod
+} from './sevenZip/methodOverrides'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface CompressionOptions {
@@ -47,6 +58,7 @@ export interface CompressionOptions {
   zipMethod?: ZipMethod
   zipMethodOverrides?: ZipMethodOverride[]
   sevenZipMethod?: SevenZipMethod
+  sevenZipMethodOverrides?: SevenZipMethodOverride[]
   dictionarySize?: number
   matchFinderWordSize?: MatchFinderWordSize
   searchCycles?: number
@@ -227,7 +239,7 @@ export async function compressArchive(
     format !== '7z' &&
     (options.sevenZipMethod !== undefined || options.dictionarySize !== undefined ||
       options.matchFinderWordSize !== undefined || options.searchCycles !== undefined ||
-      options.solidArchive !== undefined)
+      options.solidArchive !== undefined || options.sevenZipMethodOverrides !== undefined)
   ) {
     throw new Error('7Z codec options can only be used with 7Z archives.')
   }
@@ -246,6 +258,7 @@ export async function compressArchive(
   if (options.sevenZipMethod !== undefined && !['lzma2', 'copy'].includes(options.sevenZipMethod)) {
     throw new RangeError('7Z compression method is unsupported.')
   }
+  validateSevenZipMethodOverrides(options.sevenZipMethodOverrides, inputPaths)
   if (options.deflateStrategy !== undefined && !['default', 'filtered', 'huffman_only', 'rle', 'fixed'].includes(options.deflateStrategy)) {
     throw new RangeError('Deflate strategy is unsupported.')
   }
@@ -319,6 +332,7 @@ export async function compressArchive(
         encryptFileNames: options.encryptFileNames,
         dictionarySize: options.dictionarySize,
         method: options.sevenZipMethod,
+        methodOverrides: options.sevenZipMethodOverrides,
         matchFinderWordSize: options.matchFinderWordSize,
         searchCycles: options.searchCycles,
         solid: options.solidArchive

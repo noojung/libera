@@ -300,7 +300,7 @@ export const App: React.FC = () => {
         splitSize: options.splitSize,
         encryptionMethod: options.encryptionMethod,
         zipMethodOverrides: options.zipMethodOverrides,
-        sevenZipMethod: options.sevenZipMethod,
+        sevenZipMethodOverrides: options.sevenZipMethodOverrides,
         dictionarySize: options.dictionarySize,
         matchFinderWordSize: options.matchFinderWordSize,
         searchCycles: options.searchCycles,

@@ -105,7 +105,7 @@ export const resources = {
         matchFinderWordSize: 'Match finder word size',
         searchCycles: 'Search cycles',
         solidArchive: 'Solid block compression (Solid Archive)',
-        solidArchiveHint: 'Compresses all files into one continuous stream for higher compression ratio',
+        solidArchiveHint: 'Compresses adjacent LZMA2 files in shared streams for a higher compression ratio',
         deflateStrategy: 'Deflate strategy',
         strategyDefault: 'Default (LZ77 + Huffman)',
         strategyFiltered: 'Filtered (Long matches only)',
@@ -139,7 +139,16 @@ export const resources = {
         zipOverridesDone: 'Done',
         zipOverridesClose: 'Close per-file compression settings',
         zipOverridesCount_one: '{{count}} override',
-        zipOverridesCount_other: '{{count}} overrides'
+        zipOverridesCount_other: '{{count}} overrides',
+        sevenZipOverridesButton: 'Per-file 7Z compression settings',
+        sevenZipOverridesButtonHint: 'Choose Automatic, LZMA2, or Copy for individual files and folders',
+        sevenZipOverridesTitle: 'Per-file 7Z compression settings',
+        sevenZipOverridesDescription: 'Automatic tries LZMA2 with the archive tuning and uses Copy only when the complete result is larger. Folder changes apply to every child.',
+        sevenZipOverridesSolid: 'In solid mode, adjacent LZMA2 files share a block. Copy files and method boundaries start a separate block.',
+        sevenZipOverridesAutomatic: 'Automatic (LZMA2 / Copy)',
+        sevenZipOverridesMixed: 'Mixed methods',
+        sevenZipOverridesMethodFor: '7Z compression method for {{name}}',
+        sevenZipOverridesClose: 'Close per-file 7Z compression settings'
       },
       extraction: {
         title: 'Extraction options ⚙️',
@@ -461,7 +470,7 @@ export const resources = {
         matchFinderWordSize: '매치 파인더 단어 크기',
         searchCycles: '탐색 사이클',
         solidArchive: '솔리드 블록 압축 (Solid Archive)',
-        solidArchiveHint: '모든 파일을 단일 스트림으로 묶어 압축률을 극대화합니다',
+        solidArchiveHint: '인접한 LZMA2 파일을 공유 스트림으로 묶어 압축률을 높입니다',
         deflateStrategy: 'Deflate 압축 전략',
         strategyDefault: 'Default (LZ77 + 허프만)',
         strategyFiltered: 'Filtered (긴 매치만 채택)',
@@ -494,7 +503,16 @@ export const resources = {
         zipOverridesReset: '모두 초기화',
         zipOverridesDone: '완료',
         zipOverridesClose: '파일별 압축 설정 닫기',
-        zipOverridesCount: '사용자 지정 {{count}}개'
+        zipOverridesCount: '사용자 지정 {{count}}개',
+        sevenZipOverridesButton: '파일별 7Z 압축 설정',
+        sevenZipOverridesButtonHint: '개별 파일이나 폴더에 자동, LZMA2 또는 Copy 방식을 지정합니다',
+        sevenZipOverridesTitle: '파일별 7Z 압축 설정',
+        sevenZipOverridesDescription: '자동 방식은 아카이브 설정으로 LZMA2 압축한 전체 결과가 더 클 때만 Copy를 사용합니다. 폴더 변경은 모든 하위 항목에 적용됩니다.',
+        sevenZipOverridesSolid: '솔리드 모드에서는 인접한 LZMA2 파일끼리 한 블록을 공유합니다. Copy 파일과 방식 경계에서는 블록이 분리됩니다.',
+        sevenZipOverridesAutomatic: '자동 (LZMA2 / Copy)',
+        sevenZipOverridesMixed: '여러 방식 혼합',
+        sevenZipOverridesMethodFor: '{{name}}의 7Z 압축 방식',
+        sevenZipOverridesClose: '파일별 7Z 압축 설정 닫기'
       },
       extraction: {
         title: '압축 해제 옵션 ⚙️',

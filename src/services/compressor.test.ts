@@ -682,6 +682,76 @@ describe('7z compression', () => {
     ]))
   }, 60_000)
 
+  it('applies a directory method while allowing a file exception', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    const nestedDir = path.join(sourceDir, 'nested')
+    await fs.mkdir(nestedDir, { recursive: true })
+    const compressedPath = path.join(nestedDir, 'compressed.txt')
+    const copiedPath = path.join(nestedDir, 'copied.txt')
+    await fs.writeFile(compressedPath, 'compress this entry '.repeat(400))
+    await fs.writeFile(copiedPath, 'copy this entry unchanged')
+    const outputPath = path.join(directory, 'per-file-methods.7z')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: '7z',
+      sevenZipMethodOverrides: [
+        { sourcePath: sourceDir, scope: 'tree', method: 'copy' },
+        { sourcePath: compressedPath, scope: 'file', method: 'lzma2' }
+      ]
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => [path.basename(entry.path), entry.codec?.split(' ')[0]])))
+      .toEqual({ 'compressed.txt': 'LZMA2', 'copied.txt': 'Copy' })
+
+    const targetDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir })
+    await expect(fs.readFile(path.join(targetDir, 'source', 'nested', 'compressed.txt'), 'utf8'))
+      .resolves.toBe('compress this entry '.repeat(400))
+    await expect(fs.readFile(path.join(targetDir, 'source', 'nested', 'copied.txt'), 'utf8'))
+      .resolves.toBe('copy this entry unchanged')
+  }, 60_000)
+
+  it('uses Copy for an Automatic entry only when its measured LZMA2 payload grows', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'notes.txt'), 'automatic lzma2 '.repeat(400))
+    await fs.writeFile(path.join(sourceDir, 'noise.bin'), crypto.randomBytes(8 * 1024))
+    const outputPath = path.join(directory, 'automatic-methods.7z')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: '7z',
+      sevenZipMethodOverrides: [{ sourcePath: sourceDir, scope: 'tree', method: 'auto' }]
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => [path.basename(entry.path), entry.codec?.split(' ')[0]])))
+      .toEqual({ 'noise.bin': 'Copy', 'notes.txt': 'LZMA2' })
+  }, 60_000)
+
+  it('rejects 7Z method rules for another archive format', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'input.txt')
+    await fs.writeFile(inputPath, 'content')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath],
+      outputPath: path.join(directory, 'archive.zip'),
+      format: 'zip',
+      sevenZipMethodOverrides: [{ sourcePath: inputPath, scope: 'file', method: 'copy' }]
+    })).rejects.toThrow(/7Z codec options/)
+  })
+
   it.each([false, true])('creates an encrypted 7z with hidden names=%s', async encryptFileNames => {
     const directory = await createTemporaryDirectory()
     const sourcePath = path.join(directory, 'secret.txt')

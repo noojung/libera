@@ -69,6 +69,9 @@ export function installWorkerHandler(port: WorkerPort): void {
     entries.map((entry, index) => ({
       path: entry.path,
       size: entry.size,
+      method: entry.method,
+      dictionarySize: entry.dictionarySize,
+      lzmaEncoder: entry.lzmaEncoder,
       isDirectory: entry.isDirectory,
       modified: entry.modified,
       mode: entry.mode,

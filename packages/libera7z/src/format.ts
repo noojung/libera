@@ -97,10 +97,17 @@ const NID = {
 } as const
 
 export type SevenZipMethod = 'copy' | 'lzma2'
+export type SevenZipCompressionMethod = 'auto' | SevenZipMethod
 
 export interface SevenZipEntryInput {
   path: string
   size: bigint
+  /** Overrides the archive-wide compression choice for this entry. */
+  method?: SevenZipCompressionMethod
+  /** Overrides the archive-wide LZMA2 dictionary for this entry. */
+  dictionarySize?: number
+  /** Overrides individual archive-wide LZMA2 encoder settings for this entry. */
+  lzmaEncoder?: LzmaEncoderOptions
   isDirectory?: boolean
   modified?: Date
   mode?: number
@@ -109,9 +116,9 @@ export interface SevenZipEntryInput {
 }
 
 export interface CreateSevenZipOptions {
-  method?: SevenZipMethod
+  method?: SevenZipCompressionMethod
   dictionarySize?: number
-  /** Packs all non-empty files into one folder with per-file substreams. */
+  /** Packs adjacent LZMA2 files into shared folders with per-file substreams. */
   solid?: boolean
   signal?: AbortSignal
   onProgress?: (processedBytes: bigint, currentFile?: string) => void
@@ -554,6 +561,57 @@ async function consumeEntry(
   }
 }
 
+/**
+ * Measures the exact LZMA2 payload this writer would emit for one entry. The
+ * stream is opened again for the real write, so Automatic stays memory-bounded
+ * even for files larger than the available heap.
+ */
+async function automaticEntryMethod(
+  entry: SevenZipEntryInput,
+  options: CreateSevenZipOptions
+): Promise<SevenZipMethod> {
+  if (!entry.open) throw new TypeError(`File entry has no content stream: ${entry.path}`)
+  const reader = entry.open().getReader()
+  let pending = new Uint8Array(0)
+  let unpackedSize = 0n
+  let packedSize = 1n // LZMA2 end marker
+
+  const measure = (bytes: Uint8Array): void => {
+    unpackedSize += BigInt(bytes.length)
+    const joined = pending.length === 0 ? bytes : concatBytes([pending, bytes])
+    let offset = 0
+    while (joined.length - offset >= LZMA2_ENCODE_CHUNK_SIZE) {
+      const chunk = joined.subarray(offset, offset + LZMA2_ENCODE_CHUNK_SIZE)
+      packedSize += BigInt(encodeLzma2Block(chunk, options.lzmaEncoder).data.length)
+      offset += LZMA2_ENCODE_CHUNK_SIZE
+    }
+    pending = joined.slice(offset)
+  }
+
+  try {
+    while (true) {
+      throwIfCancelled(options.signal)
+      const item = await reader.read()
+      if (item.done) break
+      if (!(item.value instanceof Uint8Array)) throw new TypeError(`Entry stream did not yield Uint8Array: ${entry.path}`)
+      measure(item.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (unpackedSize !== entry.size) {
+    throw new Libera7zError(
+      'INVALID_ARCHIVE',
+      `Entry ${entry.path} yielded ${unpackedSize} bytes but declared ${entry.size}`
+    )
+  }
+  if (pending.length > 0) {
+    packedSize += BigInt(encodeLzma2Block(pending, options.lzmaEncoder).data.length)
+  }
+  return packedSize > entry.size ? 'copy' : 'lzma2'
+}
+
 async function consumeSolidEntries(
   entries: readonly SevenZipEntryInput[],
   sink: SeekableSink,
@@ -687,7 +745,6 @@ export async function create7zInProcess(
 
   const method = options.method ?? 'lzma2'
   const dictionarySize = options.dictionarySize ?? 16 * 1024 * 1024
-  const dictionaryProperty = dictionaryPropertyForSize(dictionarySize)
   const password = options.password === '' ? undefined : options.password
   if (options.encryptHeader && password === undefined) {
     throw new Libera7zError('UNSUPPORTED_FEATURE', 'Encrypting the 7z header needs a password')
@@ -711,15 +768,63 @@ export async function create7zInProcess(
   try {
     await sink.write(new Uint8Array(SIGNATURE_HEADER_SIZE), options.signal)
     const dataEntries = entries.filter(entry => !entry.isDirectory && entry.size > 0n)
-    if (options.solid && method === 'lzma2' && dataEntries.length > 1) {
-      streams.push(await consumeSolidEntries(
-        dataEntries, sink, dictionaryProperty, options, processed, encryption
-      ))
-    } else {
-      for (const entry of dataEntries) {
-        throwIfCancelled(options.signal)
-        streams.push(await consumeEntry(entry, sink, method, dictionaryProperty, options, processed, encryption))
+    const plannedEntries: Array<{
+      entry: SevenZipEntryInput
+      method: SevenZipMethod
+      dictionaryProperty: number
+      options: CreateSevenZipOptions
+    }> = []
+    for (const entry of dataEntries) {
+      const requestedMethod = entry.method ?? method
+      if (requestedMethod !== 'auto' && requestedMethod !== 'copy' && requestedMethod !== 'lzma2') {
+        throw new Libera7zError('UNSUPPORTED_FEATURE', `Unsupported 7z compression method: ${requestedMethod}`)
       }
+      const entryOptions: CreateSevenZipOptions = {
+        ...options,
+        lzmaEncoder: { ...options.lzmaEncoder, ...entry.lzmaEncoder }
+      }
+      const entryDictionaryProperty = dictionaryPropertyForSize(entry.dictionarySize ?? dictionarySize)
+      plannedEntries.push({
+        entry,
+        method: requestedMethod === 'auto' ? await automaticEntryMethod(entry, entryOptions) : requestedMethod,
+        dictionaryProperty: entryDictionaryProperty,
+        options: entryOptions
+      })
+    }
+
+    const sameLzmaSettings = (left: typeof plannedEntries[number], right: typeof plannedEntries[number]): boolean =>
+      left.dictionaryProperty === right.dictionaryProperty &&
+      left.options.lzmaEncoder?.searchDepth === right.options.lzmaEncoder?.searchDepth &&
+      left.options.lzmaEncoder?.niceLength === right.options.lzmaEncoder?.niceLength &&
+      left.options.lzmaEncoder?.maxDistance === right.options.lzmaEncoder?.maxDistance
+
+    for (let index = 0; index < plannedEntries.length;) {
+      throwIfCancelled(options.signal)
+      const planned = plannedEntries[index]
+      if (options.solid && planned.method === 'lzma2') {
+        let end = index + 1
+        while (
+          end < plannedEntries.length &&
+          plannedEntries[end].method === 'lzma2' &&
+          sameLzmaSettings(planned, plannedEntries[end])
+        ) end += 1
+        const solidEntries = plannedEntries.slice(index, end).map(item => item.entry)
+        if (solidEntries.length > 1) {
+          streams.push(await consumeSolidEntries(
+            solidEntries, sink, planned.dictionaryProperty, planned.options, processed, encryption
+          ))
+        } else {
+          streams.push(await consumeEntry(
+            planned.entry, sink, planned.method, planned.dictionaryProperty, planned.options, processed, encryption
+          ))
+        }
+        index = end
+        continue
+      }
+      streams.push(await consumeEntry(
+        planned.entry, sink, planned.method, planned.dictionaryProperty, planned.options, processed, encryption
+      ))
+      index += 1
     }
     const header = buildNextHeader(entries, streams)
     const nextHeader = encryption && options.encryptHeader

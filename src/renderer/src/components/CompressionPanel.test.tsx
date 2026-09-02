@@ -405,15 +405,18 @@ describe('CompressionPanel', () => {
     }))
   })
 
-  it('submits expert 7Z codec parameters and solid mode', async () => {
+  it('submits expert 7Z tuning, a per-file method, and solid mode', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
-    await user.click(screen.getByRole('combobox', { name: 'Compression method / Codec' }))
-    await user.click(screen.getByRole('option', { name: 'LZMA2 (High efficiency)' }))
+    expect(screen.queryByRole('combobox', { name: 'Compression method / Codec' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Per-file 7Z compression settings' }))
+    await user.click(screen.getByRole('combobox', { name: '7Z compression method for input.txt' }))
+    await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
+    await user.click(screen.getByRole('button', { name: 'Done' }))
     await user.click(screen.getByRole('combobox', { name: 'Dictionary size' }))
     await user.click(screen.getByRole('option', { name: '64 MB' }))
     await user.click(screen.getByRole('combobox', { name: 'Match finder word size' }))
@@ -424,11 +427,55 @@ describe('CompressionPanel', () => {
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       format: '7z',
-      sevenZipMethod: 'lzma2',
+      sevenZipMethodOverrides: [{ sourcePath: 'C:\\input.txt', scope: 'file', method: 'auto' }],
       dictionarySize: 64 * 1024 * 1024,
       matchFinderWordSize: 128,
       searchCycles: 96,
       solidArchive: true
+    }))
+  })
+
+  it('configures recursive and per-file 7Z methods in the expert modal', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    const source = { path: '/source', name: 'source', isDirectory: true, size: 4096 }
+    const child = { path: '/source/archive.bin', name: 'archive.bin', isDirectory: false, size: 2048 }
+    const api = installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('/output'),
+      listArchiveInputChildren: vi.fn().mockResolvedValue([child])
+    })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[source]} onStartCompress={onStart} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file 7Z compression settings' }))
+    expect(screen.getByRole('dialog', { name: 'Per-file 7Z compression settings' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '7Z compression method for source' }))
+      .toHaveTextContent('LZMA2 (High efficiency)')
+
+    await user.click(screen.getByText('/source'))
+    await waitFor(() => expect(api.listArchiveInputChildren).toHaveBeenCalledWith('/source'))
+    expect(await screen.findByRole('combobox', { name: '7Z compression method for archive.bin' }))
+      .toHaveTextContent('LZMA2 (High efficiency)')
+
+    await user.click(screen.getByRole('combobox', { name: '7Z compression method for source' }))
+    await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
+    expect(screen.getByRole('combobox', { name: '7Z compression method for archive.bin' }))
+      .toHaveTextContent('Automatic (LZMA2 / Copy)')
+
+    await user.click(screen.getByRole('combobox', { name: '7Z compression method for archive.bin' }))
+    await user.click(screen.getByRole('option', { name: 'Copy (No compression)' }))
+    expect(screen.getByRole('combobox', { name: '7Z compression method for source' }))
+      .toHaveTextContent('Mixed methods')
+
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.getByText('2 overrides')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Start compression/ }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: '7z',
+      sevenZipMethodOverrides: [
+        { sourcePath: '/source', scope: 'tree', method: 'auto' },
+        { sourcePath: '/source/archive.bin', scope: 'file', method: 'copy' }
+      ]
     }))
   })
 })

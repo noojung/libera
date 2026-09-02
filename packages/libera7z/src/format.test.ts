@@ -131,6 +131,92 @@ describe('pure TypeScript 7z container', () => {
     }
   }, 60_000)
 
+  it('writes a different compression method for each entry', async () => {
+    const compressed = new TextEncoder().encode('entry-specific lzma2 '.repeat(400))
+    const copied = pseudoRandomBytes(8 * 1024)
+    const sink = new MemorySink()
+    await create7z([
+      {
+        path: 'compressed.txt',
+        size: BigInt(compressed.length),
+        method: 'lzma2',
+        open: () => stream(compressed)
+      },
+      {
+        path: 'copied.bin',
+        size: BigInt(copied.length),
+        method: 'copy',
+        open: () => stream(copied)
+      }
+    ], sink, { method: 'copy' })
+
+    const archive = await open7z(new MemorySource(sink.data()))
+    try {
+      expect(archive.entries.map(entry => entry.codec)).toEqual(['LZMA2', 'Copy'])
+      await expect(collect(archive.openEntry(0))).resolves.toEqual(compressed)
+      await expect(collect(archive.openEntry(1))).resolves.toEqual(copied)
+    } finally {
+      await archive.close()
+    }
+  })
+
+  it('uses Copy for Automatic only when the complete LZMA2 payload grows', async () => {
+    const compressed = new TextEncoder().encode('automatic lzma2 '.repeat(400))
+    const copied = pseudoRandomBytes(8 * 1024)
+    const sink = new MemorySink()
+    await create7z([
+      { path: 'compressed.txt', size: BigInt(compressed.length), open: () => stream(compressed) },
+      { path: 'copied.bin', size: BigInt(copied.length), open: () => stream(copied) }
+    ], sink, { method: 'auto' })
+
+    const archive = await open7z(new MemorySource(sink.data()))
+    try {
+      expect(archive.entries.map(entry => entry.codec)).toEqual(['LZMA2', 'Copy'])
+      await expect(collect(archive.openEntry(0))).resolves.toEqual(compressed)
+      await expect(collect(archive.openEntry(1))).resolves.toEqual(copied)
+    } finally {
+      await archive.close()
+    }
+  })
+
+  it('keeps adjacent LZMA2 entries solid around a Copy exception', async () => {
+    const alpha = new TextEncoder().encode('alpha '.repeat(500))
+    const bravo = new TextEncoder().encode('bravo '.repeat(500))
+    const copied = pseudoRandomBytes(1024)
+    const charlie = new TextEncoder().encode('charlie '.repeat(500))
+    const delta = new TextEncoder().encode('delta '.repeat(500))
+    const inputs = [
+      { path: 'alpha.txt', bytes: alpha, method: 'lzma2' as const },
+      { path: 'bravo.txt', bytes: bravo, method: 'lzma2' as const },
+      { path: 'copied.bin', bytes: copied, method: 'copy' as const },
+      { path: 'charlie.txt', bytes: charlie, method: 'lzma2' as const },
+      { path: 'delta.txt', bytes: delta, method: 'lzma2' as const }
+    ]
+    const sink = new MemorySink()
+    await create7z(inputs.map(input => ({
+      path: input.path,
+      size: BigInt(input.bytes.length),
+      method: input.method,
+      open: () => stream(input.bytes)
+    })), sink, { solid: true })
+
+    const archive = await open7z(new MemorySource(sink.data()))
+    try {
+      expect(archive.entries.map(entry => ({ codec: entry.codec, solid: entry.solid }))).toEqual([
+        { codec: 'LZMA2', solid: true },
+        { codec: 'LZMA2', solid: true },
+        { codec: 'Copy', solid: false },
+        { codec: 'LZMA2', solid: true },
+        { codec: 'LZMA2', solid: true }
+      ])
+      for (const [index, input] of inputs.entries()) {
+        await expect(collect(archive.openEntry(index))).resolves.toEqual(input.bytes)
+      }
+    } finally {
+      await archive.close()
+    }
+  })
+
   it.skipIf(!['darwin', 'win32'].includes(process.platform))(
     'writes a solid archive extractable by the platform libarchive',
     async () => {
