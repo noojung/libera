@@ -70,23 +70,21 @@
 
 .zip-method-modal__close {
   display: grid;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.zip-method-modal__close {
   width: 34px;
   height: 34px;
+  padding: 0;
   flex: 0 0 auto;
-  border-radius: 9px;
+  place-items: center;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  cursor: pointer;
+  box-shadow: 1.5px 1.5px 0 var(--border-shadow);
 }
 
 .zip-method-modal__close:hover {
-  color: var(--accent-peach);
+  background: var(--bg-pill);
 }
 
 .zip-method-modal__notice {
@@ -111,25 +109,35 @@
   flex: 1;
   overflow: hidden;
   flex-direction: column;
-  border: 1.5px solid var(--border-doodle);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: var(--bg-surface-subtle);
+  background: var(--bg-card);
 }
 
 .zip-method-modal__columns {
-  padding: 8px 10px;
+  padding: 10px 14px;
   flex: 0 0 auto;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-dim);
-  font-size: 11px;
+  border-bottom: 2px solid var(--border-doodle);
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
+}
+
+/* Clears the row's icon and gap so the heading sits over the names, and
+   right-aligns the size heading over its right-aligned values. */
+.zip-method-modal__columns > :first-child {
+  padding-left: 25px;
+}
+
+.zip-method-modal__columns > :nth-child(2) {
+  text-align: right;
 }
 
 .zip-method-modal__breadcrumbs {
   display: flex;
-  min-height: 38px;
-  padding: 4px 8px;
+  min-height: 40px;
+  padding: 6px 10px;
   flex: 0 0 auto;
   border-bottom: 1px dashed var(--border-subtle);
   align-items: center;
@@ -179,10 +187,14 @@
 
 .zip-method-modal__entry {
   min-height: 58px;
-  padding: 8px 10px;
+  padding: 10px 14px;
   align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  border-bottom: 1px dashed var(--border-subtle);
+  background: transparent;
+}
+
+.zip-method-modal__entry:hover {
+  background: var(--bg-card-hover);
 }
 
 .zip-method-modal__entry-main {
@@ -299,7 +311,7 @@
 }
 
 .zip-method-modal__branch-state {
-  padding: 14px 12px;
+  padding: 16px 14px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-dim);
   font-size: 12px;

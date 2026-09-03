@@ -275,7 +275,9 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
           : <File className="zip-method-modal__entry-icon" size={17} />}
         <div className="zip-method-modal__entry-text">
           <span className="zip-method-modal__entry-name">{entry.name}</span>
-          <span className="zip-method-modal__entry-path">{entry.path}</span>
+          {/* Inside a folder the breadcrumb already states the location, so the
+              full path only earns its place across the selected roots. */}
+          {!currentFolder && <span className="zip-method-modal__entry-path">{entry.path}</span>}
           {nestedCount > 0 && (
             <span className="zip-method-modal__entry-nested">
               {t('compression.zipOverridesNested', { count: nestedCount })}
