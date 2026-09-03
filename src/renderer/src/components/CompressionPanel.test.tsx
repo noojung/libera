@@ -120,7 +120,7 @@ describe('CompressionPanel', () => {
     }))
   })
 
-  it('drops the name-hiding option when switching away from 7z', async () => {
+  it('resets encryption settings when switching away from 7z', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi()
     const onStart = vi.fn()
@@ -135,15 +135,18 @@ describe('CompressionPanel', () => {
     await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
     await user.click(screen.getByText('Hide the file names too'))
 
-    // ZIP keeps the password but has no header to encrypt.
+    // A newly selected format starts from its own encryption defaults.
     await user.click(screen.getByRole('button', { name: '.ZIP' }))
     expect(screen.queryByText('Hide the file names too')).not.toBeInTheDocument()
-    expect(screen.getByText(/Compatibility-focused ZIP encryption/)).toBeInTheDocument()
+    expect(screen.queryByText(/Compatibility-focused ZIP encryption/)).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Enter password')).toHaveValue('')
+    expect(screen.getByPlaceholderText('Confirm password')).toHaveValue('')
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
 
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       format: 'zip',
-      password: 'secret',
+      password: undefined,
+      encryptionMethod: 'zip20',
       encryptFileNames: undefined
     }))
   })
@@ -173,16 +176,81 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('9 - Ultra')).toBeInTheDocument()
   })
 
-  it('carries the level to the closest step the new format has', async () => {
+  it('uses the selected format default instead of carrying the previous level', async () => {
     installElectronApi()
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '9' } })
+    expect(screen.getByText('9 - Maximum')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '.7Z' }))
     expect(screen.getByText('5 - Normal')).toBeInTheDocument()
 
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '5' } })
+    expect(screen.getByText('9 - Ultra')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '.GZ' }))
+    expect(screen.getByText('6 - Normal')).toBeInTheDocument()
+
     await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
-    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ format: '7z', level: 5 }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ format: 'gz', level: 6 }))
+  })
+
+  it('resets shared and expert options whenever the format changes', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output'),
+      selectSaveLocation: vi.fn().mockResolvedValue('D:\\custom.zip')
+    })
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '9' } })
+    await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
+    await user.type(screen.getByPlaceholderText('Confirm password'), 'secret')
+    await user.click(screen.getByRole('combobox', { name: 'Encryption algorithm' }))
+    await user.click(screen.getByRole('option', { name: 'AES-128 (WinZip AES 128-bit)' }))
+    await user.click(screen.getByRole('checkbox', { name: /Split into volumes/ }))
+    await user.click(screen.getByRole('button', { name: '700 MB (CD)' }))
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => expect(screen.getByPlaceholderText('Click Browse to choose a save location')).toHaveValue('D:\\custom.zip'))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+    await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
+    await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.getByText('1 override')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(screen.getByText('5 - Normal')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Enter password')).toHaveValue('')
+    expect(screen.getByPlaceholderText('Confirm password')).toHaveValue('')
+    expect(screen.getByRole('checkbox', { name: /Split into volumes/ })).not.toBeChecked()
+    expect(screen.getByPlaceholderText('Click Browse to choose a save location')).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Dictionary size' })).toHaveTextContent('16 MB')
+    expect(screen.getByRole('combobox', { name: 'Match finder word size' })).toHaveTextContent('32')
+    expect(screen.getByText('Search cycles (32)')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Solid block compression/ })).not.toBeChecked()
+    expect(screen.queryByText('1 override')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox', { name: 'Dictionary size' }))
+    await user.click(screen.getByRole('option', { name: '64 MB' }))
+    await user.click(screen.getByRole('checkbox', { name: /Solid block compression/ }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+    await user.click(screen.getByRole('combobox', { name: '7Z compression method for input.txt' }))
+    await user.click(screen.getByRole('option', { name: 'Copy (No compression)' }))
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.getByText('1 override')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.ZIP' }))
+    expect(screen.getByText('6 - Normal')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Encryption algorithm' })).toHaveTextContent('ZipCrypto')
+    expect(screen.getByPlaceholderText('Enter password')).toHaveValue('')
+    expect(screen.getByRole('checkbox', { name: /Split into volumes/ })).not.toBeChecked()
+    expect(screen.getByPlaceholderText('Click Browse to choose a save location')).toHaveValue('')
+    expect(screen.queryByText('1 override')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(screen.getByRole('combobox', { name: 'Dictionary size' })).toHaveTextContent('16 MB')
+    expect(screen.getByRole('checkbox', { name: /Solid block compression/ })).not.toBeChecked()
+    expect(screen.queryByText('1 override')).not.toBeInTheDocument()
   })
 
   it('hides the compression level for TAR, which cannot compress', async () => {

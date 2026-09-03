@@ -9,7 +9,6 @@ import {
   formatLabel,
   saveDialogExtension,
   compressionLevels,
-  nearestLevel,
   supportsHeaderEncryption,
   supportsLevel,
   supportsPassword,
@@ -65,6 +64,19 @@ const SPLIT_CHOICES = [
 
 type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 
+const DEFAULT_LEVELS: Record<ArchiveFormat, number> = {
+  zip: 6,
+  tar: 0,
+  gz: 6,
+  tgz: 6,
+  '7z': 5
+}
+
+const DEFAULT_DICTIONARY_SIZE = 16 * 1024 * 1024
+const DEFAULT_MATCH_FINDER_WORD_SIZE: MatchFinderWordSize = 32
+const DEFAULT_SEARCH_CYCLES = 32
+const DEFAULT_MEM_LEVEL = 8
+
 const DICTIONARY_SIZES = [
   { label: '64 KB', value: 64 * 1024 },
   { label: '1 MB', value: 1024 * 1024 },
@@ -104,7 +116,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [isExpertMode] = useExpertMode()
 
   const [format, setFormat] = useState<ArchiveFormat>('zip')
-  const [level, setLevel] = useState<number>(6)
+  const [level, setLevel] = useState<number>(DEFAULT_LEVELS.zip)
   const [customName] = useState<string>('archive')
   const [outputPath, setOutputPath] = useState<string>('')
   const [defaultDir, setDefaultDir] = useState<string>('')
@@ -122,12 +134,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [showZipMethodOverrides, setShowZipMethodOverrides] = useState(false)
   const [sevenZipMethodOverrides, setSevenZipMethodOverrides] = useState<SevenZipMethodOverride[]>([])
   const [showSevenZipMethodOverrides, setShowSevenZipMethodOverrides] = useState(false)
-  const [dictionarySize, setDictionarySize] = useState<number>(16 * 1024 * 1024)
-  const [matchFinderWordSize, setMatchFinderWordSize] = useState<MatchFinderWordSize>(32)
-  const [searchCycles, setSearchCycles] = useState<number>(32)
+  const [dictionarySize, setDictionarySize] = useState<number>(DEFAULT_DICTIONARY_SIZE)
+  const [matchFinderWordSize, setMatchFinderWordSize] = useState<MatchFinderWordSize>(DEFAULT_MATCH_FINDER_WORD_SIZE)
+  const [searchCycles, setSearchCycles] = useState<number>(DEFAULT_SEARCH_CYCLES)
   const [solidBlock, setSolidBlock] = useState<boolean>(false)
   const [deflateStrategy, setDeflateStrategy] = useState<DeflateStrategy>('default')
-  const [memLevel, setMemLevel] = useState<number>(8)
+  const [memLevel, setMemLevel] = useState<number>(DEFAULT_MEM_LEVEL)
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -169,6 +181,32 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         setOutputPath(withArchiveExtension(chosenPath, format))
       }
     }
+  }
+
+  const handleFormatChange = (nextFormat: ArchiveFormat) => {
+    if (nextFormat === format) return
+
+    setFormat(nextFormat)
+    setLevel(DEFAULT_LEVELS[nextFormat])
+    setOutputPath('')
+    setPassword('')
+    setPasswordConfirmation('')
+    setEncryptFileNames(false)
+    setSplitEnabled(false)
+    setSplitPreset('100mb')
+    setSplitCustomValue('100')
+    setSplitCustomUnit('MB')
+    setZipEncryptionMethod('zip20')
+    setZipMethodOverrides([])
+    setShowZipMethodOverrides(false)
+    setSevenZipMethodOverrides([])
+    setShowSevenZipMethodOverrides(false)
+    setDictionarySize(DEFAULT_DICTIONARY_SIZE)
+    setMatchFinderWordSize(DEFAULT_MATCH_FINDER_WORD_SIZE)
+    setSearchCycles(DEFAULT_SEARCH_CYCLES)
+    setSolidBlock(false)
+    setDeflateStrategy('default')
+    setMemLevel(DEFAULT_MEM_LEVEL)
   }
 
   const getLevelLabel = (lvl: number) => {
@@ -262,11 +300,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           {COMPRESSION_FORMATS.map((fmt) => (
             <button
               key={fmt}
-              onClick={() => {
-                setFormat(fmt)
-                setLevel(current => nearestLevel(current, fmt))
-                if (!supportsHeaderEncryption(fmt)) setEncryptFileNames(false)
-              }}
+              onClick={() => handleFormatChange(fmt)}
               className={`compression-panel__format-button${format === fmt ? ' is-active' : ''}`}
             >
               .{formatLabel(fmt)}
