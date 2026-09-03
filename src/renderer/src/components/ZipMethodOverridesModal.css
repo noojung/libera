@@ -109,16 +109,16 @@
   flex-direction: column;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: var(--bg-surface-subtle);
+  background: var(--bg-card);
 }
 
 .zip-method-modal__columns {
-  padding: 10px 18px;
+  padding: 10px 18px 9px;
   flex: 0 0 auto;
-  border-bottom: 1px dashed var(--border-subtle);
-  color: var(--text-muted);
+  border-bottom: 2px solid var(--border-doodle);
+  color: var(--text-main);
   font-family: var(--font-cute);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
