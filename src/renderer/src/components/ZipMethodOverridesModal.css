@@ -113,6 +113,11 @@
   box-shadow: 3px 3px 0 var(--border-shadow);
 }
 
+/* The inspector aligns a heading the way it aligns the column's values. */
+.zip-method-modal__columns > :nth-child(2) {
+  text-align: right;
+}
+
 .zip-method-modal__columns {
   padding: 10px 18px 9px;
   flex: 0 0 auto;
@@ -121,11 +126,6 @@
   font-family: var(--font-cute);
   font-size: 13px;
   font-weight: 700;
-}
-
-/* Right-aligns the size heading over its right-aligned values. */
-.zip-method-modal__columns > :nth-child(2) {
-  text-align: right;
 }
 
 .zip-method-modal__breadcrumbs {
