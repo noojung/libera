@@ -97,7 +97,7 @@
 .zip-method-modal__columns,
 .zip-method-modal__entry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px minmax(140px, 172px) minmax(140px, 172px) minmax(100px, 118px) minmax(90px, 108px);
+  grid-template-columns: minmax(0, 1fr) 68px minmax(165px, 200px) minmax(170px, 200px) minmax(100px, 116px) minmax(76px, 90px);
   gap: 16px;
 }
 

@@ -452,6 +452,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
           <Select<MethodSelection>
             value={selection}
             ariaLabel={t('compression.zipOverridesMethodFor', { name: entry.name })}
+            title={selection === 'mixed' ? t('compression.zipOverridesMixed') : methodLabel(selection)}
             options={optionsFor(entry.path, entry.isDirectory)}
             onChange={value => setMethod(entry.path, entry.isDirectory, value)}
           />
@@ -466,6 +467,11 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
             <Select<StrategySelection>
               value={strategySelection}
               ariaLabel={t('compression.zipOverridesStrategyFor', { name: entry.name })}
+              // The longest names outrun the column, so the full text stays
+              // reachable on hover.
+              title={strategySelection === 'mixed'
+                ? t('compression.zipOverridesStrategyMixed')
+                : strategyLabel(strategySelection)}
               options={strategyOptionsFor(entry.path, entry.isDirectory)}
               onChange={value => setStrategy(entry.path, entry.isDirectory, value)}
             />
