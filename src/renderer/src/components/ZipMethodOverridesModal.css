@@ -123,12 +123,7 @@
   font-weight: 700;
 }
 
-/* Clears the row's icon and gap so the heading sits over the names, and
-   right-aligns the size heading over its right-aligned values. */
-.zip-method-modal__columns > :first-child {
-  padding-left: 25px;
-}
-
+/* Right-aligns the size heading over its right-aligned values. */
 .zip-method-modal__columns > :nth-child(2) {
   text-align: right;
 }
