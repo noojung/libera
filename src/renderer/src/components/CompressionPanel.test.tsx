@@ -501,16 +501,23 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression strength for source' }))
     await user.click(screen.getByRole('option', { name: '9 - Maximum' }))
-    // The whole folder identity area, including its displayed path, toggles
-    // expansion instead of requiring a precise click on the chevron.
-    await user.click(screen.getByText('/source'))
+
+    // Opening a folder replaces the listing with its children rather than
+    // indenting them underneath, so the folder's own row leaves the screen.
+    await user.click(screen.getByRole('button', { name: 'Open source' }))
     await waitFor(() => expect(api.listArchiveInputChildren).toHaveBeenCalledWith('/source'))
+    expect(screen.queryByRole('combobox', { name: 'Compression method for source' })).not.toBeInTheDocument()
 
     expect(await screen.findByRole('combobox', { name: 'Compression strength for photo.jpg' }))
       .toHaveTextContent('9 - Maximum')
     await user.click(await screen.findByRole('combobox', { name: 'Compression method for photo.jpg' }))
     await user.click(screen.getByRole('option', { name: 'Store (0)' }))
+
+    // The breadcrumb walks back up, where the folder now reports both the
+    // mixed methods and how many rules it hides.
+    await user.click(screen.getByRole('button', { name: 'All selected items' }))
     expect(screen.getByRole('combobox', { name: 'Compression method for source' })).toHaveTextContent('Mixed methods')
+    expect(screen.getByText('1 setting inside')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.getByText('2 overrides')).toBeInTheDocument()
@@ -542,8 +549,6 @@ describe('CompressionPanel', () => {
       .toHaveTextContent('Automatic (Deflate / Store)')
     expect(screen.queryByText(/Inherit/)).not.toBeInTheDocument()
 
-    await user.click(screen.getByText('/source'))
-    await screen.findByRole('combobox', { name: 'Compression method for notes.txt' })
     await user.click(screen.getByRole('combobox', { name: 'Deflate strategy for source' }))
     await user.click(screen.getByRole('option', { name: 'RLE (Match distance 1 only)' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression strength for source' }))
@@ -551,6 +556,8 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('combobox', { name: 'Memory level for source' }))
     await user.click(screen.getByRole('option', { name: '4' }))
 
+    await user.click(screen.getByRole('button', { name: 'Open source' }))
+    await screen.findByRole('combobox', { name: 'Compression method for notes.txt' })
     expect(screen.getByRole('combobox', { name: 'Deflate strategy for notes.txt' }))
       .toHaveTextContent('RLE (Match distance 1 only)')
     expect(screen.getByRole('combobox', { name: 'Compression strength for notes.txt' }))
@@ -660,18 +667,23 @@ describe('CompressionPanel', () => {
     expect(screen.getByRole('combobox', { name: 'Compression strength for source' }))
       .toHaveTextContent('5 - Normal')
 
-    await user.click(screen.getByText('/source'))
+    // Drilling in shows the archive defaults reaching the child untouched.
+    await user.click(screen.getByRole('button', { name: 'Open source' }))
     await waitFor(() => expect(api.listArchiveInputChildren).toHaveBeenCalledWith('/source'))
     expect(await screen.findByRole('combobox', { name: 'Compression method for archive.bin' }))
       .toHaveTextContent('LZMA2 (High efficiency)')
     expect(screen.getByRole('combobox', { name: 'Compression strength for archive.bin' }))
       .toHaveTextContent('5 - Normal')
 
+    // Walking back up to set a folder rule, then down again to see it cascade.
+    await user.click(screen.getByRole('button', { name: 'All selected items' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for source' }))
     await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression strength for source' }))
     await user.click(screen.getByRole('option', { name: '9 - Ultra' }))
-    expect(screen.getByRole('combobox', { name: 'Compression method for archive.bin' }))
+
+    await user.click(screen.getByRole('button', { name: 'Open source' }))
+    expect(await screen.findByRole('combobox', { name: 'Compression method for archive.bin' }))
       .toHaveTextContent('Automatic (LZMA2 / Copy)')
     expect(screen.getByRole('combobox', { name: 'Compression strength for archive.bin' }))
       .toHaveTextContent('9 - Ultra')
@@ -679,6 +691,8 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('combobox', { name: 'Compression method for archive.bin' }))
     await user.click(screen.getByRole('option', { name: 'Copy (No compression)' }))
     expect(screen.queryByRole('combobox', { name: 'Compression strength for archive.bin' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'All selected items' }))
     expect(screen.getByRole('combobox', { name: 'Compression method for source' }))
       .toHaveTextContent('Mixed methods')
 

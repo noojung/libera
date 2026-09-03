@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, File, Files, Folder, RotateCcw, X } from 'lucide-react'
+import { ChevronRight, File, Files, Folder, Home, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type { DeflateStrategy, ZipMethodOverride, ZipOverrideMethod } from '@services/compressor'
@@ -40,10 +40,6 @@ function isDescendant(parentPath: string, candidatePath: string, isWindows: bool
   return candidate.startsWith(`${parent}/`)
 }
 
-function depthClass(depth: number): string {
-  return `zip-method-modal__depth-${Math.min(8, Math.max(0, depth))}`
-}
-
 export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = ({
   items,
   overrides,
@@ -56,7 +52,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
   const platform = (window as any).electronAPI?.platform
   const isWindows = platform === 'windows'
   const isMacOS = platform === 'macos'
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
+  const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
 
   useEffect(() => {
@@ -114,6 +110,10 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     }
     return winner
   }
+
+  /** How many rules sit under a folder, so its row can advertise what it hides. */
+  const nestedOverrideCount = (sourcePath: string): number =>
+    overrides.filter(rule => isDescendant(sourcePath, rule.sourcePath, isWindows)).length
 
   const effectiveMethod = (sourcePath: string, isDirectory: boolean): ZipOverrideMethod => {
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
@@ -365,36 +365,30 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     }])
   }
 
-  const toggleDirectory = async (directoryPath: string) => {
-    if (expandedPaths.has(directoryPath)) {
-      setExpandedPaths(current => {
-        const next = new Set(current)
-        next.delete(directoryPath)
-        return next
-      })
-      return
-    }
-
-    setExpandedPaths(current => new Set(current).add(directoryPath))
-    if (childrenByPath[directoryPath]?.status === 'loaded') return
+  const openDirectory = async (entry: ArchiveInputTreeEntry) => {
+    setTrail(current => [...current, entry])
+    if (childrenByPath[entry.path]?.status === 'loaded') return
 
     setChildrenByPath(current => ({
       ...current,
-      [directoryPath]: { status: 'loading', entries: [] }
+      [entry.path]: { status: 'loading', entries: [] }
     }))
     try {
-      const entries = await (window as any).electronAPI.listArchiveInputChildren(directoryPath)
+      const entries = await (window as any).electronAPI.listArchiveInputChildren(entry.path)
       setChildrenByPath(current => ({
         ...current,
-        [directoryPath]: { status: 'loaded', entries }
+        [entry.path]: { status: 'loaded', entries }
       }))
     } catch {
       setChildrenByPath(current => ({
         ...current,
-        [directoryPath]: { status: 'error', entries: [] }
+        [entry.path]: { status: 'error', entries: [] }
       }))
     }
   }
+
+  /** Truncating the trail walks back up; depth zero returns to the roots. */
+  const moveToDepth = (depth: number) => setTrail(current => current.slice(0, depth))
 
   const roots = useMemo<ArchiveInputTreeEntry[]>(() => items.map(item => ({
     path: item.path,
@@ -403,130 +397,112 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     size: item.size
   })), [items])
 
-  const renderEntry = (entry: ArchiveInputTreeEntry, depth: number): React.ReactNode => {
-    const expanded = expandedPaths.has(entry.path)
-    const childState = childrenByPath[entry.path]
+  const currentFolder = trail.length > 0 ? trail[trail.length - 1] : undefined
+  const currentState = currentFolder ? childrenByPath[currentFolder.path] : undefined
+  const visibleEntries = currentFolder ? currentState?.entries ?? [] : roots
+
+  const renderEntry = (entry: ArchiveInputTreeEntry): React.ReactNode => {
     const selection = selectionFor(entry.path, entry.isDirectory)
     const strategySelection = strategySelectionFor(entry.path, entry.isDirectory)
     const levelSelection = levelSelectionFor(entry.path, entry.isDirectory)
     const memorySelection = memorySelectionFor(entry.path, entry.isDirectory)
+    const nestedCount = entry.isDirectory ? nestedOverrideCount(entry.path) : 0
     const entryMainContents = (
       <>
-        {entry.isDirectory ? (
-          <span className="zip-method-modal__expand" aria-hidden="true">
-            <ChevronDown className={expanded ? 'is-expanded' : ''} size={15} />
-          </span>
-        ) : (
-          <span className="zip-method-modal__expand-spacer" />
-        )}
         {entry.isDirectory
           ? <Folder className="zip-method-modal__entry-icon zip-method-modal__entry-icon--folder" size={17} />
           : <File className="zip-method-modal__entry-icon" size={17} />}
         <div className="zip-method-modal__entry-text">
           <span className="zip-method-modal__entry-name">{entry.name}</span>
           <span className="zip-method-modal__entry-path">{entry.path}</span>
+          {nestedCount > 0 && (
+            <span className="zip-method-modal__entry-nested">
+              {t('compression.zipOverridesNested', { count: nestedCount })}
+            </span>
+          )}
         </div>
+        {entry.isDirectory && (
+          <ChevronRight className="zip-method-modal__entry-chevron" size={15} aria-hidden="true" />
+        )}
       </>
     )
     return (
-      <React.Fragment key={entry.path}>
-        <div className={`zip-method-modal__entry ${depthClass(depth)}`}>
-          {entry.isDirectory ? (
-            <button
-              type="button"
-              className="zip-method-modal__entry-main zip-method-modal__entry-toggle"
-              aria-label={t(expanded ? 'compression.zipOverridesCollapse' : 'compression.zipOverridesExpand', { name: entry.name })}
-              aria-expanded={expanded}
-              onClick={() => void toggleDirectory(entry.path)}
-            >
-              {entryMainContents}
-            </button>
-          ) : (
-            <div className="zip-method-modal__entry-main">{entryMainContents}</div>
-          )}
-          <span className="zip-method-modal__entry-size">
-            {entry.isDirectory && depth > 0 ? '—' : formatBytes(entry.size, language)}
-          </span>
-          <div className="zip-method-modal__control zip-method-modal__method">
-            <span className="zip-method-modal__control-label" aria-hidden="true">
-              {t('compression.zipOverridesMethod')}
-            </span>
-            <Select<MethodSelection>
-              value={selection}
-              ariaLabel={t('compression.zipOverridesMethodFor', { name: entry.name })}
-              options={optionsFor(entry.path, entry.isDirectory)}
-              onChange={value => setMethod(entry.path, entry.isDirectory, value)}
-            />
-          </div>
-          <div className="zip-method-modal__control zip-method-modal__strategy">
-            <span className="zip-method-modal__control-label" aria-hidden="true">
-              {t('compression.zipOverridesStrategy')}
-            </span>
-            {strategySelection === null ? (
-              <span className="zip-method-modal__strategy-na">—</span>
-            ) : (
-              <Select<StrategySelection>
-                value={strategySelection}
-                ariaLabel={t('compression.zipOverridesStrategyFor', { name: entry.name })}
-                options={strategyOptionsFor(entry.path, entry.isDirectory)}
-                onChange={value => setStrategy(entry.path, entry.isDirectory, value)}
-              />
-            )}
-          </div>
-          <div className="zip-method-modal__control zip-method-modal__level">
-            <span className="zip-method-modal__control-label" aria-hidden="true">
-              {t('compression.zipOverridesLevel')}
-            </span>
-            {levelSelection === null ? (
-              <span className="zip-method-modal__level-na">—</span>
-            ) : (
-              <Select<LevelSelection>
-                value={levelSelection}
-                ariaLabel={t('compression.zipOverridesLevelFor', { name: entry.name })}
-                options={levelOptionsFor(entry.path, entry.isDirectory)}
-                onChange={value => setLevel(entry.path, entry.isDirectory, value)}
-              />
-            )}
-          </div>
-          <div className="zip-method-modal__control zip-method-modal__memory">
-            <span className="zip-method-modal__control-label" aria-hidden="true">
-              {t('compression.zipOverridesMemory')}
-            </span>
-            {memorySelection === null ? (
-              <span className="zip-method-modal__memory-na">—</span>
-            ) : (
-              <Select<MemorySelection>
-                value={memorySelection}
-                ariaLabel={t('compression.zipOverridesMemoryFor', { name: entry.name })}
-                options={memoryOptionsFor(entry.path, entry.isDirectory)}
-                onChange={value => setMemory(entry.path, entry.isDirectory, value)}
-              />
-            )}
-          </div>
-        </div>
-        {entry.isDirectory && expanded && (
-          <div role="group" aria-label={entry.name}>
-            {childState?.status === 'loading' && (
-              <div className={`zip-method-modal__branch-state ${depthClass(depth + 1)}`}>
-                {t('compression.zipOverridesLoading')}
-              </div>
-            )}
-            {childState?.status === 'error' && (
-              <div className={`zip-method-modal__branch-state zip-method-modal__branch-state--error ${depthClass(depth + 1)}`}>
-                {t('compression.zipOverridesLoadError')}
-              </div>
-            )}
-            {childState?.status === 'loaded' && childState.entries.length === 0 && (
-              <div className={`zip-method-modal__branch-state ${depthClass(depth + 1)}`}>
-                {t('compression.zipOverridesEmpty')}
-              </div>
-            )}
-            {childState?.status === 'loaded' && childState.entries.map(child => renderEntry(child, depth + 1))}
-          </div>
+      <div className="zip-method-modal__entry" key={entry.path}>
+        {entry.isDirectory ? (
+          <button
+            type="button"
+            className="zip-method-modal__entry-main zip-method-modal__entry-toggle"
+            aria-label={t('compression.zipOverridesOpen', { name: entry.name })}
+            onClick={() => void openDirectory(entry)}
+          >
+            {entryMainContents}
+          </button>
+        ) : (
+          <div className="zip-method-modal__entry-main">{entryMainContents}</div>
         )}
-      </React.Fragment>
+        <span className="zip-method-modal__entry-size">
+          {entry.isDirectory && currentFolder ? '—' : formatBytes(entry.size, language)}
+        </span>
+        <div className="zip-method-modal__control zip-method-modal__method">
+          <span className="zip-method-modal__control-label" aria-hidden="true">
+            {t('compression.zipOverridesMethod')}
+          </span>
+          <Select<MethodSelection>
+            value={selection}
+            ariaLabel={t('compression.zipOverridesMethodFor', { name: entry.name })}
+            options={optionsFor(entry.path, entry.isDirectory)}
+            onChange={value => setMethod(entry.path, entry.isDirectory, value)}
+          />
+        </div>
+        <div className="zip-method-modal__control zip-method-modal__strategy">
+          <span className="zip-method-modal__control-label" aria-hidden="true">
+            {t('compression.zipOverridesStrategy')}
+          </span>
+          {strategySelection === null ? (
+            <span className="zip-method-modal__strategy-na">—</span>
+          ) : (
+            <Select<StrategySelection>
+              value={strategySelection}
+              ariaLabel={t('compression.zipOverridesStrategyFor', { name: entry.name })}
+              options={strategyOptionsFor(entry.path, entry.isDirectory)}
+              onChange={value => setStrategy(entry.path, entry.isDirectory, value)}
+            />
+          )}
+        </div>
+        <div className="zip-method-modal__control zip-method-modal__level">
+          <span className="zip-method-modal__control-label" aria-hidden="true">
+            {t('compression.zipOverridesLevel')}
+          </span>
+          {levelSelection === null ? (
+            <span className="zip-method-modal__level-na">—</span>
+          ) : (
+            <Select<LevelSelection>
+              value={levelSelection}
+              ariaLabel={t('compression.zipOverridesLevelFor', { name: entry.name })}
+              options={levelOptionsFor(entry.path, entry.isDirectory)}
+              onChange={value => setLevel(entry.path, entry.isDirectory, value)}
+            />
+          )}
+        </div>
+        <div className="zip-method-modal__control zip-method-modal__memory">
+          <span className="zip-method-modal__control-label" aria-hidden="true">
+            {t('compression.zipOverridesMemory')}
+          </span>
+          {memorySelection === null ? (
+            <span className="zip-method-modal__memory-na">—</span>
+          ) : (
+            <Select<MemorySelection>
+              value={memorySelection}
+              ariaLabel={t('compression.zipOverridesMemoryFor', { name: entry.name })}
+              options={memoryOptionsFor(entry.path, entry.isDirectory)}
+              onChange={value => setMemory(entry.path, entry.isDirectory, value)}
+            />
+          )}
+        </div>
+      </div>
     )
   }
+
 
   return (
     <div className={`zip-method-modal${isMacOS ? ' zip-method-modal--macos' : ''}`} onMouseDown={event => {
@@ -555,6 +531,30 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
 
         <div className="zip-method-modal__notice">{t('compression.zipOverridesCompatibility')}</div>
 
+        <nav className="zip-method-modal__breadcrumbs" aria-label={t('compression.zipOverridesBreadcrumb')}>
+          <button
+            type="button"
+            className={`zip-method-modal__breadcrumb${trail.length === 0 ? ' is-active' : ''}`}
+            aria-label={t('compression.zipOverridesRoot')}
+            title={t('compression.zipOverridesRoot')}
+            onClick={() => moveToDepth(0)}
+          >
+            <Home size={15} />
+          </button>
+          {trail.map((entry, index) => (
+            <React.Fragment key={entry.path}>
+              <ChevronRight className="zip-method-modal__breadcrumb-separator" size={15} aria-hidden="true" />
+              <button
+                type="button"
+                className={`zip-method-modal__breadcrumb${index === trail.length - 1 ? ' is-active' : ''}`}
+                onClick={() => moveToDepth(index + 1)}
+              >
+                {entry.name}
+              </button>
+            </React.Fragment>
+          ))}
+        </nav>
+
         <div className="zip-method-modal__columns" aria-hidden="true">
           <span>{t('compression.zipOverridesItem')}</span>
           <span>{t('compression.zipOverridesSize')}</span>
@@ -564,7 +564,18 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
           <span>{t('compression.zipOverridesMemory')}</span>
         </div>
         <div className="zip-method-modal__tree">
-          {roots.map(root => renderEntry(root, 0))}
+          {currentState?.status === 'loading' && (
+            <div className="zip-method-modal__branch-state">{t('compression.zipOverridesLoading')}</div>
+          )}
+          {currentState?.status === 'error' && (
+            <div className="zip-method-modal__branch-state zip-method-modal__branch-state--error">
+              {t('compression.zipOverridesLoadError')}
+            </div>
+          )}
+          {currentState?.status !== 'loading' && currentState?.status !== 'error' && visibleEntries.length === 0 && (
+            <div className="zip-method-modal__branch-state">{t('compression.zipOverridesEmpty')}</div>
+          )}
+          {visibleEntries.map(entry => renderEntry(entry))}
         </div>
 
         <footer className="zip-method-modal__footer">
