@@ -368,49 +368,51 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
         </header>
 
         <div className="zip-method-modal__notice">{t('compression.sevenZipOverridesSolid')}</div>
-        <nav className="zip-method-modal__breadcrumbs" aria-label={t('compression.zipOverridesBreadcrumb')}>
-          <button
-            type="button"
-            className={`zip-method-modal__breadcrumb${trail.length === 0 ? ' is-active' : ''}`}
-            aria-label={t('compression.zipOverridesRoot')}
-            title={t('compression.zipOverridesRoot')}
-            onClick={() => moveToDepth(0)}
-          >
-            <Home size={15} />
-          </button>
-          {trail.map((entry, index) => (
-            <React.Fragment key={entry.path}>
-              <ChevronRight className="zip-method-modal__breadcrumb-separator" size={15} aria-hidden="true" />
-              <button
-                type="button"
-                className={`zip-method-modal__breadcrumb${index === trail.length - 1 ? ' is-active' : ''}`}
-                onClick={() => moveToDepth(index + 1)}
-              >
-                {entry.name}
-              </button>
-            </React.Fragment>
-          ))}
-        </nav>
+        <div className="zip-method-modal__browser">
+          <nav className="zip-method-modal__breadcrumbs" aria-label={t('compression.zipOverridesBreadcrumb')}>
+            <button
+              type="button"
+              className={`zip-method-modal__breadcrumb${trail.length === 0 ? ' is-active' : ''}`}
+              aria-label={t('compression.zipOverridesRoot')}
+              title={t('compression.zipOverridesRoot')}
+              onClick={() => moveToDepth(0)}
+            >
+              <Home size={15} />
+            </button>
+            {trail.map((entry, index) => (
+              <React.Fragment key={entry.path}>
+                <ChevronRight className="zip-method-modal__breadcrumb-separator" size={15} aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`zip-method-modal__breadcrumb${index === trail.length - 1 ? ' is-active' : ''}`}
+                  onClick={() => moveToDepth(index + 1)}
+                >
+                  {entry.name}
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
 
-        <div className="zip-method-modal__columns" aria-hidden="true">
-          <span>{t('compression.zipOverridesItem')}</span>
-          <span>{t('compression.zipOverridesSize')}</span>
-          <span>{t('compression.zipOverridesMethod')}</span>
-          <span>{t('compression.zipOverridesLevel')}</span>
-        </div>
-        <div className="zip-method-modal__tree">
-          {currentState?.status === 'loading' && (
-            <div className="zip-method-modal__branch-state">{t('compression.zipOverridesLoading')}</div>
-          )}
-          {currentState?.status === 'error' && (
-            <div className="zip-method-modal__branch-state zip-method-modal__branch-state--error">
-              {t('compression.zipOverridesLoadError')}
-            </div>
-          )}
-          {currentState?.status !== 'loading' && currentState?.status !== 'error' && visibleEntries.length === 0 && (
-            <div className="zip-method-modal__branch-state">{t('compression.zipOverridesEmpty')}</div>
-          )}
-          {visibleEntries.map(entry => renderEntry(entry))}
+          <div className="zip-method-modal__columns" aria-hidden="true">
+            <span>{t('compression.zipOverridesItem')}</span>
+            <span>{t('compression.zipOverridesSize')}</span>
+            <span>{t('compression.zipOverridesMethod')}</span>
+            <span>{t('compression.zipOverridesLevel')}</span>
+          </div>
+          <div className="zip-method-modal__tree">
+            {currentState?.status === 'loading' && (
+              <div className="zip-method-modal__branch-state">{t('compression.zipOverridesLoading')}</div>
+            )}
+            {currentState?.status === 'error' && (
+              <div className="zip-method-modal__branch-state zip-method-modal__branch-state--error">
+                {t('compression.zipOverridesLoadError')}
+              </div>
+            )}
+            {currentState?.status !== 'loading' && currentState?.status !== 'error' && visibleEntries.length === 0 && (
+              <div className="zip-method-modal__branch-state">{t('compression.zipOverridesEmpty')}</div>
+            )}
+            {visibleEntries.map(entry => renderEntry(entry))}
+          </div>
         </div>
 
         <footer className="zip-method-modal__footer">

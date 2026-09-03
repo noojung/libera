@@ -105,8 +105,21 @@
   gap: 12px;
 }
 
+.zip-method-modal__browser {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1.5px solid var(--border-doodle);
+  border-radius: 12px;
+  background: var(--bg-surface-subtle);
+}
+
 .zip-method-modal__columns {
-  padding: 0 10px;
+  padding: 8px 10px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-dim);
   font-size: 11px;
   font-weight: 700;
@@ -115,7 +128,10 @@
 
 .zip-method-modal__breadcrumbs {
   display: flex;
-  min-height: 30px;
+  min-height: 38px;
+  padding: 4px 8px;
+  flex: 0 0 auto;
+  border-bottom: 1px dashed var(--border-subtle);
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
@@ -154,9 +170,11 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  border: 1.5px solid var(--border-doodle);
-  border-radius: 12px;
-  background: var(--bg-surface-subtle);
+}
+
+/* The card supplies the closing edge, so the last row must not double it. */
+.zip-method-modal__tree > *:last-child {
+  border-bottom: 0;
 }
 
 .zip-method-modal__entry {
