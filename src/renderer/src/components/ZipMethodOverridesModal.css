@@ -103,7 +103,7 @@
 .zip-method-modal__columns,
 .zip-method-modal__entry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px minmax(150px, 190px) minmax(150px, 190px) minmax(110px, 130px);
+  grid-template-columns: minmax(0, 1fr) 72px minmax(140px, 175px) minmax(140px, 175px) minmax(100px, 120px) minmax(90px, 110px);
   gap: 12px;
 }
 
@@ -235,13 +235,15 @@
 
 .zip-method-modal__method .select__trigger,
 .zip-method-modal__strategy .select__trigger,
-.zip-method-modal__level .select__trigger {
+.zip-method-modal__level .select__trigger,
+.zip-method-modal__memory .select__trigger {
   padding-block: 6px;
   font-size: 12px;
 }
 
 .zip-method-modal__strategy-na,
-.zip-method-modal__level-na {
+.zip-method-modal__level-na,
+.zip-method-modal__memory-na {
   display: grid;
   min-height: 32px;
   place-items: center;
@@ -278,12 +280,12 @@
 }
 
 .zip-method-modal--seven-zip .zip-method-modal__dialog {
-  width: min(760px, 100%);
+  width: min(900px, 100%);
 }
 
 .zip-method-modal--seven-zip .zip-method-modal__columns,
 .zip-method-modal--seven-zip .zip-method-modal__entry {
-  grid-template-columns: minmax(0, 1fr) 72px minmax(180px, 220px);
+  grid-template-columns: minmax(0, 1fr) 72px minmax(180px, 220px) minmax(120px, 150px);
 }
 
 @media (max-width: 1000px) {
@@ -295,18 +297,18 @@
   .zip-method-modal--seven-zip .zip-method-modal__entry {
     min-height: 94px;
     align-items: start;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     column-gap: 12px;
     row-gap: 9px;
   }
 
   .zip-method-modal__entry-main {
-    grid-column: 1 / 6;
+    grid-column: 1 / 8;
     align-self: center;
   }
 
   .zip-method-modal__entry-size {
-    grid-column: 6;
+    grid-column: 8;
     align-self: center;
   }
 
@@ -322,8 +324,16 @@
     grid-column: 5 / 7;
   }
 
+  .zip-method-modal__memory {
+    grid-column: 7 / 9;
+  }
+
   .zip-method-modal--seven-zip .zip-method-modal__method {
-    grid-column: 1 / -1;
+    grid-column: 1 / 5;
+  }
+
+  .zip-method-modal--seven-zip .zip-method-modal__level {
+    grid-column: 5 / 9;
   }
 
   .zip-method-modal__control-label {
@@ -367,7 +377,9 @@
   .zip-method-modal__method,
   .zip-method-modal__strategy,
   .zip-method-modal__level,
-  .zip-method-modal--seven-zip .zip-method-modal__method {
+  .zip-method-modal__memory,
+  .zip-method-modal--seven-zip .zip-method-modal__method,
+  .zip-method-modal--seven-zip .zip-method-modal__level {
     grid-column: 1 / -1;
   }
 }

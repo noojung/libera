@@ -12,6 +12,9 @@ import './ZipMethodOverridesModal.css'
 type MethodSelection = ZipOverrideMethod | 'mixed'
 type StrategySelection = DeflateStrategy | 'mixed'
 type LevelSelection = number | 'mixed'
+type MemorySelection = number | 'mixed'
+
+const DEFAULT_MEMORY_LEVEL = 8
 
 interface ZipMethodOverridesModalProps {
   items: SelectedItem[]
@@ -177,6 +180,34 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     ]
   }
 
+  const memorySelectionFor = (sourcePath: string, isDirectory: boolean): MemorySelection | null => {
+    const method = effectiveMethod(sourcePath, isDirectory)
+    if (selectionFor(sourcePath, isDirectory) === 'mixed' || (method !== 'auto' && method !== 'deflate')) return null
+    const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
+    const inheritedRule = inheritedTreeRule(sourcePath, rule => rule.memLevel !== undefined)
+    const baseMemory = directRule?.memLevel ?? inheritedRule?.memLevel ?? DEFAULT_MEMORY_LEVEL
+    if (!isDirectory) return baseMemory
+
+    const memoryLevels = new Set<number>([baseMemory])
+    for (const rule of overrides) {
+      if ((rule.method === 'auto' || rule.method === 'deflate') && rule.memLevel !== undefined &&
+          isDescendant(sourcePath, rule.sourcePath, isWindows)) {
+        memoryLevels.add(rule.memLevel)
+      }
+    }
+    return memoryLevels.size > 1 ? 'mixed' : baseMemory
+  }
+
+  const memoryOptionsFor = (sourcePath: string, isDirectory: boolean): SelectOption<MemorySelection>[] => {
+    const selection = memorySelectionFor(sourcePath, isDirectory)
+    return [
+      ...(selection === 'mixed'
+        ? [{ value: 'mixed' as const, label: t('compression.zipOverridesMemoryMixed'), disabled: true }]
+        : []),
+      ...Array.from({ length: 9 }, (_, index) => ({ value: index + 1, label: String(index + 1) }))
+    ]
+  }
+
   const effectiveCompressionLevel = (sourcePath: string, isDirectory: boolean): number => {
     const inheritedLevel = inheritedTreeRule(sourcePath, rule => rule.level !== undefined)?.level
     if (inheritedLevel !== undefined) return inheritedLevel
@@ -238,6 +269,9 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
       ...(selection === 'deflate' || selection === 'auto'
         ? directRule?.deflateStrategy !== undefined ? { deflateStrategy: directRule.deflateStrategy } : {}
         : {}),
+      ...(selection === 'deflate' || selection === 'auto'
+        ? directRule?.memLevel !== undefined ? { memLevel: directRule.memLevel } : {}
+        : {}),
       ...(selection !== 'store'
         ? directRule?.level !== undefined
           ? { level: selection !== 'auto' && directRule.level === 0 ? 1 : directRule.level }
@@ -268,9 +302,38 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
       scope,
       method,
       deflateStrategy: strategy,
+      ...(directRule?.memLevel !== undefined ? { memLevel: directRule.memLevel } : {}),
       ...(directRule?.level !== undefined
         ? { level: directRule.level }
         : method !== 'auto' && inheritedLevel === undefined && defaultLevel === 0 ? { level: 1 } : {})
+    }])
+  }
+
+  const setMemory = (sourcePath: string, isDirectory: boolean, memLevel: MemorySelection) => {
+    if (memLevel === 'mixed') return
+    const scope: ZipMethodOverride['scope'] = isDirectory ? 'tree' : 'file'
+    const isDirect = (rule: ZipMethodOverride) => (
+      rule.scope === scope &&
+      comparablePath(rule.sourcePath, isWindows) === comparablePath(sourcePath, isWindows)
+    )
+    const stripMemory = (rule: ZipMethodOverride): ZipMethodOverride => {
+      const next = { ...rule }
+      delete next.memLevel
+      return next
+    }
+
+    const directRule = matchingRule(sourcePath, scope)
+    const method = directRule?.method ?? effectiveMethod(sourcePath, isDirectory)
+    if (method !== 'auto' && method !== 'deflate') return
+    const base = overrides
+      .filter(rule => !isDirect(rule))
+      .map(rule => isDirectory && isDescendant(sourcePath, rule.sourcePath, isWindows) ? stripMemory(rule) : rule)
+    onChange([...base, {
+      ...(directRule ?? { sourcePath, scope, method }),
+      sourcePath,
+      scope,
+      method,
+      memLevel
     }])
   }
 
@@ -346,6 +409,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     const selection = selectionFor(entry.path, entry.isDirectory)
     const strategySelection = strategySelectionFor(entry.path, entry.isDirectory)
     const levelSelection = levelSelectionFor(entry.path, entry.isDirectory)
+    const memorySelection = memorySelectionFor(entry.path, entry.isDirectory)
     const entryMainContents = (
       <>
         {entry.isDirectory ? (
@@ -424,6 +488,21 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
               />
             )}
           </div>
+          <div className="zip-method-modal__control zip-method-modal__memory">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesMemory')}
+            </span>
+            {memorySelection === null ? (
+              <span className="zip-method-modal__memory-na">—</span>
+            ) : (
+              <Select<MemorySelection>
+                value={memorySelection}
+                ariaLabel={t('compression.zipOverridesMemoryFor', { name: entry.name })}
+                options={memoryOptionsFor(entry.path, entry.isDirectory)}
+                onChange={value => setMemory(entry.path, entry.isDirectory, value)}
+              />
+            )}
+          </div>
         </div>
         {entry.isDirectory && expanded && (
           <div role="group" aria-label={entry.name}>
@@ -482,6 +561,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
           <span>{t('compression.zipOverridesMethod')}</span>
           <span>{t('compression.zipOverridesStrategy')}</span>
           <span>{t('compression.zipOverridesLevel')}</span>
+          <span>{t('compression.zipOverridesMemory')}</span>
         </div>
         <div className="zip-method-modal__tree">
           {roots.map(root => renderEntry(root, 0))}

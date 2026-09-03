@@ -586,6 +586,48 @@ describe('per-file ZIP methods', () => {
     }
   })
 
+  it('applies memory level independently to each ZIP entry', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    const contents = Buffer.from('per-file memory tuning aaaabbbbccccdddd-0123456789\n'.repeat(2000))
+    const memoryLevels = [1, 9]
+    const sourcePaths = Object.fromEntries(memoryLevels.map(memLevel => [
+      memLevel,
+      path.join(sourceDir, `memory-${memLevel}.txt`)
+    ]))
+    await Promise.all(Object.values(sourcePaths).map(sourcePath => fs.writeFile(sourcePath, contents)))
+    const outputPath = path.join(directory, 'memory-levels.zip')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      level: 6,
+      zipMethodOverrides: memoryLevels.map(memLevel => ({
+        sourcePath: sourcePaths[memLevel],
+        scope: 'file',
+        method: 'deflate',
+        memLevel
+      }))
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(Object.fromEntries(inspected.entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => [path.basename(entry.path, '.txt'), entry.compressedSize])))
+      .toEqual(Object.fromEntries(memoryLevels.map(memLevel => [
+        `memory-${memLevel}`,
+        zlib.deflateRawSync(contents, { level: 6, memLevel }).length
+      ])))
+
+    const outputDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir: outputDir })
+    for (const memLevel of memoryLevels) {
+      await expect(fs.readFile(path.join(outputDir, 'source', `memory-${memLevel}.txt`))).resolves.toEqual(contents)
+    }
+  })
+
   it('keeps automatic entries stored at level zero while compressing an explicit file at the minimum strength', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')

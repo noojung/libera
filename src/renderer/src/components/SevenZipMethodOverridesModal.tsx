@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, File, Files, Folder, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
-import type { SevenZipMethodOverride, SevenZipOverrideMethod } from '@services/compressor'
+import type {
+  SevenZipCompressionLevel,
+  SevenZipMethodOverride,
+  SevenZipOverrideMethod
+} from '@services/compressor'
 import type { SelectedItem } from '@/types'
 import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
@@ -10,6 +14,9 @@ import { Select, type SelectOption } from './Select'
 import './ZipMethodOverridesModal.css'
 
 type MethodSelection = SevenZipOverrideMethod | 'mixed'
+type LevelSelection = SevenZipCompressionLevel | 'mixed'
+
+const SEVEN_ZIP_LEVELS: readonly SevenZipCompressionLevel[] = [1, 3, 5, 7, 9]
 
 interface SevenZipMethodOverridesModalProps {
   items: SelectedItem[]
@@ -54,6 +61,9 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set())
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
   const defaultMethod: SevenZipOverrideMethod = defaultLevel === 0 ? 'copy' : 'lzma2'
+  const defaultCompressionLevel: SevenZipCompressionLevel = SEVEN_ZIP_LEVELS.includes(defaultLevel as SevenZipCompressionLevel)
+    ? defaultLevel as SevenZipCompressionLevel
+    : 1
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -74,10 +84,13 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     return undefined
   }
 
-  const containingTreeRule = (sourcePath: string): SevenZipMethodOverride | undefined => {
+  const containingTreeRule = (
+    sourcePath: string,
+    predicate: (rule: SevenZipMethodOverride) => boolean = () => true
+  ): SevenZipMethodOverride | undefined => {
     let winner: SevenZipMethodOverride | undefined
     for (const rule of overrides) {
-      if (rule.scope !== 'tree' || !isDescendant(rule.sourcePath, sourcePath, isWindows)) continue
+      if (rule.scope !== 'tree' || !predicate(rule) || !isDescendant(rule.sourcePath, sourcePath, isWindows)) continue
       if (!winner || comparablePath(rule.sourcePath, isWindows).length >= comparablePath(winner.sourcePath, isWindows).length) {
         winner = rule
       }
@@ -107,6 +120,14 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     return t('compression.methodLzma2')
   }
 
+  const levelLabel = (level: SevenZipCompressionLevel): string => {
+    if (level === 1) return t('compression.levelFastest', { level })
+    if (level === 3) return t('compression.levelFast', { level })
+    if (level === 5) return t('compression.levelNormal', { level })
+    if (level === 7) return t('compression.levelMaximum', { level })
+    return t('compression.levelUltra', { level })
+  }
+
   const optionsFor = (sourcePath: string, isDirectory: boolean): SelectOption<MethodSelection>[] => {
     const selection = selectionFor(sourcePath, isDirectory)
     return [
@@ -119,15 +140,94 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     ]
   }
 
+  const effectiveCompressionLevel = (
+    sourcePath: string,
+    isDirectory: boolean
+  ): SevenZipCompressionLevel => {
+    const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
+    return directRule?.level ??
+      containingTreeRule(sourcePath, rule => rule.level !== undefined)?.level ??
+      defaultCompressionLevel
+  }
+
+  const levelSelectionFor = (sourcePath: string, isDirectory: boolean): LevelSelection | null => {
+    if (selectionFor(sourcePath, isDirectory) === 'mixed' || effectiveMethod(sourcePath, isDirectory) === 'copy') {
+      return null
+    }
+    const baseLevel = effectiveCompressionLevel(sourcePath, isDirectory)
+    if (!isDirectory) return baseLevel
+
+    const levels = new Set<SevenZipCompressionLevel>([baseLevel])
+    for (const rule of overrides) {
+      if (rule.level !== undefined && isDescendant(sourcePath, rule.sourcePath, isWindows)) {
+        levels.add(rule.level)
+      }
+    }
+    return levels.size > 1 ? 'mixed' : baseLevel
+  }
+
+  const levelOptionsFor = (sourcePath: string, isDirectory: boolean): SelectOption<LevelSelection>[] => {
+    const selection = levelSelectionFor(sourcePath, isDirectory)
+    return [
+      ...(selection === 'mixed'
+        ? [{ value: 'mixed' as const, label: t('compression.zipOverridesLevelMixed'), disabled: true }]
+        : []),
+      ...SEVEN_ZIP_LEVELS.map(level => ({ value: level, label: levelLabel(level) }))
+    ]
+  }
+
   const setMethod = (sourcePath: string, isDirectory: boolean, method: MethodSelection) => {
     if (method === 'mixed') return
     const scope: SevenZipMethodOverride['scope'] = isDirectory ? 'tree' : 'file'
+    const directRule = matchingRule(sourcePath, scope)
     const remaining = overrides.filter(rule => !(
       (rule.scope === scope &&
        comparablePath(rule.sourcePath, isWindows) === comparablePath(sourcePath, isWindows)) ||
       (isDirectory && isDescendant(sourcePath, rule.sourcePath, isWindows))
     ))
-    onChange([...remaining, { sourcePath, scope, method }])
+    onChange([...remaining, {
+      sourcePath,
+      scope,
+      method,
+      ...(method !== 'copy' && directRule?.level !== undefined ? { level: directRule.level } : {}),
+      ...(method !== 'copy' && directRule?.dictionarySize !== undefined
+        ? { dictionarySize: directRule.dictionarySize }
+        : {}),
+      ...(method !== 'copy' && directRule?.matchFinderWordSize !== undefined
+        ? { matchFinderWordSize: directRule.matchFinderWordSize }
+        : {}),
+      ...(method !== 'copy' && directRule?.searchCycles !== undefined
+        ? { searchCycles: directRule.searchCycles }
+        : {})
+    }])
+  }
+
+  const setLevel = (sourcePath: string, isDirectory: boolean, level: LevelSelection) => {
+    if (level === 'mixed') return
+    const scope: SevenZipMethodOverride['scope'] = isDirectory ? 'tree' : 'file'
+    const isDirect = (rule: SevenZipMethodOverride) => (
+      rule.scope === scope &&
+      comparablePath(rule.sourcePath, isWindows) === comparablePath(sourcePath, isWindows)
+    )
+    const stripLevel = (rule: SevenZipMethodOverride): SevenZipMethodOverride => {
+      const next = { ...rule }
+      delete next.level
+      return next
+    }
+
+    const directRule = matchingRule(sourcePath, scope)
+    const method = directRule?.method ?? effectiveMethod(sourcePath, isDirectory)
+    if (method === 'copy') return
+    const base = overrides
+      .filter(rule => !isDirect(rule))
+      .map(rule => isDirectory && isDescendant(sourcePath, rule.sourcePath, isWindows) ? stripLevel(rule) : rule)
+    onChange([...base, {
+      ...(directRule ?? { sourcePath, scope, method }),
+      sourcePath,
+      scope,
+      method,
+      level
+    }])
   }
 
   const toggleDirectory = async (directoryPath: string) => {
@@ -170,6 +270,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const renderEntry = (entry: ArchiveInputTreeEntry, depth: number): React.ReactNode => {
     const expanded = expandedPaths.has(entry.path)
     const childState = childrenByPath[entry.path]
+    const levelSelection = levelSelectionFor(entry.path, entry.isDirectory)
     const entryMainContents = (
       <>
         {entry.isDirectory ? (
@@ -218,6 +319,21 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
               options={optionsFor(entry.path, entry.isDirectory)}
               onChange={value => setMethod(entry.path, entry.isDirectory, value)}
             />
+          </div>
+          <div className="zip-method-modal__control zip-method-modal__level">
+            <span className="zip-method-modal__control-label" aria-hidden="true">
+              {t('compression.zipOverridesLevel')}
+            </span>
+            {levelSelection === null ? (
+              <span className="zip-method-modal__level-na">—</span>
+            ) : (
+              <Select<LevelSelection>
+                value={levelSelection}
+                ariaLabel={t('compression.zipOverridesLevelFor', { name: entry.name })}
+                options={levelOptionsFor(entry.path, entry.isDirectory)}
+                onChange={value => setLevel(entry.path, entry.isDirectory, value)}
+              />
+            )}
           </div>
         </div>
         {entry.isDirectory && expanded && (
@@ -281,6 +397,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
           <span>{t('compression.zipOverridesItem')}</span>
           <span>{t('compression.zipOverridesSize')}</span>
           <span>{t('compression.zipOverridesMethod')}</span>
+          <span>{t('compression.zipOverridesLevel')}</span>
         </div>
         <div className="zip-method-modal__tree">
           {roots.map(root => renderEntry(root, 0))}

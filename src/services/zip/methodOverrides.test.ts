@@ -56,7 +56,7 @@ describe('ZIP method overrides', () => {
     })
   })
 
-  it('allows Automatic to carry a Deflate strategy and strength', () => {
+  it('allows Automatic to carry Deflate tuning and strength', () => {
     const root = path.resolve('/input')
     const file = path.join(root, 'notes.txt')
     const rules: ZipMethodOverride[] = [{
@@ -64,6 +64,7 @@ describe('ZIP method overrides', () => {
       scope: 'tree',
       method: 'auto',
       deflateStrategy: 'rle',
+      memLevel: 3,
       level: 8
     }]
 
@@ -71,7 +72,25 @@ describe('ZIP method overrides', () => {
       method: 'auto',
       explicit: true,
       deflateStrategy: 'rle',
+      memLevel: 3,
       level: 8
+    })
+  })
+
+  it('cascades memory level independently through folder rules', () => {
+    const root = path.resolve('/input')
+    const nested = path.join(root, 'nested')
+    const file = path.join(nested, 'notes.txt')
+    const rules: ZipMethodOverride[] = [
+      { sourcePath: root, scope: 'tree', method: 'auto', memLevel: 2 },
+      { sourcePath: nested, scope: 'tree', method: 'deflate', memLevel: 7 },
+      { sourcePath: file, scope: 'file', method: 'deflate' }
+    ]
+
+    expect(resolveZipMethod(file, 'auto', rules)).toEqual({
+      method: 'deflate',
+      explicit: true,
+      memLevel: 7
     })
   })
 
@@ -131,5 +150,19 @@ describe('ZIP method overrides', () => {
       method: 'store',
       level: 5
     }], [root])).toThrow(/Store method/)
+
+    expect(() => validateZipMethodOverrides([{
+      sourcePath: file,
+      scope: 'file',
+      method: 'deflate',
+      memLevel: 0
+    }], [root])).toThrow(/memory level override must be between 1 and 9/)
+
+    expect(() => validateZipMethodOverrides([{
+      sourcePath: file,
+      scope: 'file',
+      method: 'lzma',
+      memLevel: 8
+    }], [root])).toThrow(/memory level can only be used/)
   })
 })

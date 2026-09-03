@@ -116,10 +116,11 @@ async function entryMethodOptions(
   if (resolvedMethod.method === 'auto') {
     const level = resolvedMethod.level ?? squeeze.level
     const deflateStrategy = resolvedMethod.deflateStrategy ?? squeeze.deflateStrategy
+    const memLevel = resolvedMethod.memLevel ?? squeeze.memLevel
     const store = await shouldStoreAfterDeflate(entry.absolutePath, entry.size, {
       level,
       strategy: deflateStrategy,
-      memLevel: squeeze.memLevel,
+      memLevel,
       signal
     })
     return store
@@ -127,7 +128,7 @@ async function entryMethodOptions(
       : {
           options: zipMethodOptions({ ...squeeze, method: 'deflate', level: Math.max(1, level) }, true),
           ...(deflateStrategy ? { deflateStrategy } : {}),
-          ...(squeeze.memLevel !== undefined ? { memLevel: squeeze.memLevel } : {})
+          ...(memLevel !== undefined ? { memLevel } : {})
         }
   }
   if (resolvedMethod.explicit) {
@@ -141,8 +142,8 @@ async function entryMethodOptions(
         : resolvedMethod.method === 'deflate' && squeeze.deflateStrategy
           ? { deflateStrategy: squeeze.deflateStrategy }
           : {}),
-      ...(resolvedMethod.method === 'deflate' && squeeze.memLevel !== undefined
-        ? { memLevel: squeeze.memLevel }
+      ...(resolvedMethod.method === 'deflate' && (resolvedMethod.memLevel ?? squeeze.memLevel) !== undefined
+        ? { memLevel: resolvedMethod.memLevel ?? squeeze.memLevel }
         : {})
     }
   }

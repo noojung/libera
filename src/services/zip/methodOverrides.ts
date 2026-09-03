@@ -9,6 +9,8 @@ export interface ZipMethodOverride {
   scope: 'file' | 'tree'
   method: ZipOverrideMethod
   deflateStrategy?: DeflateStrategy
+  /** Per-entry zlib working-memory level. Only Automatic and Deflate use it. */
+  memLevel?: number
   /** Per-entry compression strength. Store has no level; compressed methods use 1-9. */
   level?: number
 }
@@ -17,6 +19,7 @@ export interface ResolvedZipMethod {
   method: ZipOverrideMethod
   explicit: boolean
   deflateStrategy?: DeflateStrategy
+  memLevel?: number
   level?: number
 }
 
@@ -66,6 +69,16 @@ export function validateZipMethodOverrides(
     if (override.deflateStrategy !== undefined && override.method !== 'deflate' && override.method !== 'auto') {
       throw new RangeError('ZIP Deflate strategy can only be used with the Automatic or Deflate method.')
     }
+    if (override.memLevel !== undefined && (
+      !Number.isInteger(override.memLevel) ||
+      override.memLevel < 1 ||
+      override.memLevel > 9
+    )) {
+      throw new RangeError('ZIP memory level override must be between 1 and 9.')
+    }
+    if (override.memLevel !== undefined && override.method !== 'deflate' && override.method !== 'auto') {
+      throw new RangeError('ZIP memory level can only be used with the Automatic or Deflate method.')
+    }
     if (override.level !== undefined && (
       !Number.isInteger(override.level) ||
       override.level < 0 ||
@@ -101,6 +114,7 @@ export function resolveZipMethod(
   const contenders: Array<{
     method: ZipOverrideMethod
     deflateStrategy?: DeflateStrategy
+    memLevel?: number
     level?: number
     exact: boolean
     depth: number
@@ -117,6 +131,7 @@ export function resolveZipMethod(
     contenders.push({
       method: override.method,
       ...(override.deflateStrategy ? { deflateStrategy: override.deflateStrategy } : {}),
+      ...(override.memLevel !== undefined ? { memLevel: override.memLevel } : {}),
       ...(override.level !== undefined ? { level: override.level } : {}),
       exact: override.scope === 'file' && exact,
       depth: overridePath.length,
@@ -132,8 +147,8 @@ export function resolveZipMethod(
   const winner = contenders[0]
   if (!winner) return { method: defaultMethod, explicit: false }
 
-  // Strength and Deflate strategy cascade independently. A file can override
-  // its method while a containing folder still supplies the other settings.
+  // Strength, Deflate strategy, and memory level cascade independently. A
+  // file can override its method while a containing folder supplies tuning.
   const level = winner.method === 'store'
     ? undefined
     : contenders.find(contender => contender.level !== undefined)?.level
@@ -143,10 +158,17 @@ export function resolveZipMethod(
         contender.deflateStrategy !== undefined
       ))?.deflateStrategy
     : undefined
+  const memLevel = winner.method === 'deflate' || winner.method === 'auto'
+    ? contenders.find(contender => (
+        (contender.method === 'deflate' || contender.method === 'auto') &&
+        contender.memLevel !== undefined
+      ))?.memLevel
+    : undefined
   return {
     method: winner.method,
     explicit: true,
     ...(deflateStrategy ? { deflateStrategy } : {}),
+    ...(memLevel !== undefined ? { memLevel } : {}),
     ...(level !== undefined ? { level } : {})
   }
 }

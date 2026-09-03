@@ -26,5 +26,8 @@ describe('translation resources', () => {
 
     await instance.changeLanguage('ko')
     expect(instance.t('dropZone.selectedItems', { count: 2 })).toBe('선택한 항목 (2개)')
+    expect(instance.t('compression.expertTitle')).toBe('전문가용 압축 설정')
+    expect(instance.t('compression.expertEncryptionTitle')).toBe('전문가용 암호화 설정')
+    expect(instance.t('extraction.expertTitle')).toBe('전문가용 압축 해제 설정')
   })
 })
