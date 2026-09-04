@@ -12,7 +12,8 @@ import {
   nearestLevel,
   type ProgressData
 } from './compressor'
-import { inspectArchive } from './archiveInspector'
+import { inspectArchive, type ArchiveEntry } from './archiveInspector'
+import { planSevenZipSolidBlocks } from './sevenZip/node'
 import { extractArchive } from './extractor'
 import { MIN_SPLIT_SIZE } from './zip/splitWriter'
 import { supportsZstd } from './zip/codecs'
@@ -858,4 +859,138 @@ describe('7z compression', () => {
     const paths = (await inspectArchive(outputPath)).entries.map(entry => path.basename(entry.path))
     expect(paths).not.toContain('self.7z')
   }, 60_000)
+})
+
+describe('7z solid block preview', () => {
+  /** The blocks an archive really holds, read back from its own folders. */
+  function blocksFromInspection(entries: ArchiveEntry[]): string[][] {
+    const blocks: string[][] = []
+    const byBlockId = new Map<number, string[]>()
+    for (const entry of entries) {
+      if (entry.isDirectory) continue
+      if (entry.solidBlock === undefined) {
+        blocks.push([entry.path])
+        continue
+      }
+      const started = byBlockId.get(entry.solidBlock.id)
+      if (started) {
+        started.push(entry.path)
+        continue
+      }
+      const block = [entry.path]
+      byBlockId.set(entry.solidBlock.id, block)
+      blocks.push(block)
+    }
+    return blocks
+  }
+
+  it('names the blocks the archive turns out to hold', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    // The automatic dictionary follows the whole solid run, so a large file
+    // does not split otherwise identical adjacent LZMA2 entries.
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'shared settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, 'b.txt'), 'shared settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, 'c.txt'), 'a larger file '.repeat(20000))
+    await fs.writeFile(path.join(sourceDir, 'd.bin'), crypto.randomBytes(4096))
+    await fs.writeFile(path.join(sourceDir, 'e.txt'), 'shared settings '.repeat(60))
+    const outputPath = path.join(directory, 'blocks.7z')
+    const methodOverrides = [{
+      sourcePath: path.join(sourceDir, 'd.bin'),
+      scope: 'file' as const,
+      method: 'copy' as const
+    }]
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath,
+      level: 5,
+      solid: true,
+      methodOverrides
+    })
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: '7z',
+      level: 5,
+      solidArchive: true,
+      sevenZipMethodOverrides: methodOverrides
+    })
+
+    const inspected = await inspectArchive(outputPath)
+    expect(planned.map(block => block.entries.map(entry => entry.path)))
+      .toEqual(blocksFromInspection(inspected.entries))
+    expect(planned.map(block => block.entries.map(entry => entry.path))).toEqual([
+      ['source/a.txt', 'source/b.txt', 'source/c.txt'],
+      ['source/d.bin'],
+      ['source/e.txt']
+    ])
+    expect(planned.map(block => block.method)).toEqual(['lzma2', 'copy', 'lzma2'])
+    expect(planned[0].dictionarySize).toBe(512 * 1024)
+    expect(planned[1].dictionarySize).toBeUndefined()
+    expect(planned[2].dictionarySize).toBe(64 * 1024)
+  }, 60_000)
+
+  it('still starts a new solid block at an explicit LZMA2 strength boundary', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) {
+      await fs.writeFile(path.join(sourceDir, name), 'shared settings '.repeat(60))
+    }
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'blocks.7z'),
+      level: 5,
+      solid: true,
+      methodOverrides: [{
+        sourcePath: path.join(sourceDir, 'b.txt'),
+        scope: 'file',
+        method: 'lzma2',
+        level: 9
+      }]
+    })
+
+    expect(planned.map(block => block.entries.map(entry => entry.path)))
+      .toEqual([['source/a.txt'], ['source/b.txt'], ['source/c.txt']])
+  })
+
+  it('leaves every entry on its own without solid mode', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'shared settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, 'b.txt'), 'shared settings '.repeat(20000))
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'blocks.7z'),
+      level: 5,
+      solid: false
+    })
+
+    expect(planned.map(block => block.entries.map(entry => entry.path)))
+      .toEqual([['source/a.txt'], ['source/b.txt']])
+    expect(planned.map(block => block.dictionarySize)).toEqual([64 * 1024, 512 * 1024])
+  })
+
+  it('skips directories and empty files, which carry no stream', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, 'nested'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'empty.txt'), '')
+    await fs.writeFile(path.join(sourceDir, 'nested', 'kept.txt'), 'shared settings '.repeat(60))
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'blocks.7z'),
+      level: 5,
+      solid: true
+    })
+
+    expect(planned.map(block => block.entries.map(entry => entry.path)))
+      .toEqual([['source/nested/kept.txt']])
+  })
 })

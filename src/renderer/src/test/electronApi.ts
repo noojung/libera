@@ -22,6 +22,7 @@ export function createElectronApiMock(overrides: Partial<ElectronAPI> = {}) {
     getDefaultOutputDir: vi.fn().mockResolvedValue(''),
     getItemStat: vi.fn().mockResolvedValue([]),
     listArchiveInputChildren: vi.fn().mockResolvedValue([]),
+    planSevenZipSolidBlocks: vi.fn().mockResolvedValue([]),
     resolveExtractionInputs: vi.fn(async (itemPaths: string[]) => ({
       items: itemPaths.map(itemPath => {
         const archivePath = canonicalArchivePath(itemPath)

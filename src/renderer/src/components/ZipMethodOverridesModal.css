@@ -315,6 +315,145 @@
   color: var(--status-danger);
 }
 
+/* The block preview closes the dialog: a browse-order tree above, the order the
+   archive is actually written in below. */
+.zip-method-modal__blocks {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  border: 2px solid var(--border-doodle);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: 3px 3px 0 var(--border-shadow);
+}
+
+.zip-method-modal__blocks.is-open {
+  min-height: 0;
+  flex: 0 1 260px;
+}
+
+.zip-method-modal__blocks-toggle {
+  display: flex;
+  width: 100%;
+  padding: 10px 14px;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zip-method-modal__blocks-toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.zip-method-modal__blocks-title {
+  flex: 0 0 auto;
+}
+
+.zip-method-modal__blocks-summary {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zip-method-modal__blocks-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.zip-method-modal__blocks-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zip-method-modal__block {
+  padding: 10px 14px;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.zip-method-modal__blocks-list > .zip-method-modal__block:last-child {
+  border-bottom: 0;
+}
+
+.zip-method-modal__block-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.zip-method-modal__block-name {
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zip-method-modal__block-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zip-method-modal__block-entries {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zip-method-modal__block-entry {
+  display: flex;
+  padding: 2px 0 2px 10px;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-main);
+  font-size: 12px;
+}
+
+.zip-method-modal__block-entry-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+}
+
+/* The folders give way first; the name a reader is looking for never does. */
+.zip-method-modal__block-entry-folder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zip-method-modal__block-entry-file {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.zip-method-modal__block-entry-size {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .zip-method-modal__footer {
   gap: 10px;
 }

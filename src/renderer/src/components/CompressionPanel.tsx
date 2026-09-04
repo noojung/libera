@@ -293,6 +293,16 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   })()
   const splitInvalid = supportsSplit(format) && splitEnabled && !(splitSize >= MIN_SPLIT_SIZE)
 
+  // Where the archive would land if compression started now. The block
+  // preview needs it for the same reason the writer does: an archive written
+  // inside its own source folder must not count itself as an input.
+  const resolvedOutputPath = (() => {
+    const sep = defaultDir.includes('\\') ? '\\' : '/'
+    const defaultName = `${customName}${archiveExtension(format)}`
+    const fallbackPath = defaultDir ? `${defaultDir}${sep}${defaultName}` : defaultName
+    return outputPath || fallbackPath
+  })()
+
   const handleCompress = () => {
     if (supportsPassword(format) && password !== passwordConfirmation) {
       return
@@ -300,15 +310,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     if (splitInvalid) {
       return
     }
-    const sep = defaultDir.includes('\\') ? '\\' : '/'
-    const defaultName = `${customName}${archiveExtension(format)}`
-    const fallbackPath = defaultDir ? `${defaultDir}${sep}${defaultName}` : defaultName
-    const finalOutput = outputPath || fallbackPath
-
     onStartCompress({
       format,
       level: effectiveLevel,
-      outputPath: finalOutput,
+      outputPath: resolvedOutputPath,
       password: supportsPassword(format) ? password || undefined : undefined,
       encryptFileNames: isExpertMode && supportsHeaderEncryption(format) && password ? encryptFileNames : undefined,
       splitSize: supportsSplit(format) && splitEnabled ? splitSize : undefined,
@@ -836,6 +841,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           items={items}
           overrides={sevenZipMethodOverrides}
           defaultLevel={DEFAULT_LEVELS['7z']}
+          outputPath={resolvedOutputPath}
+          solid={solidBlock}
           onChange={setSevenZipMethodOverrides}
           onClose={() => setShowSevenZipMethodOverrides(false)}
         />

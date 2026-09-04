@@ -677,6 +677,63 @@ describe('CompressionPanel', () => {
     }))
   })
 
+  it('previews the solid blocks a 7Z write would lay down', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    const planSevenZipSolidBlocks = vi.fn().mockResolvedValue([
+      {
+        method: 'lzma2',
+        dictionarySize: 64 * 1024,
+        totalBytes: 2048,
+        entries: [{ path: 'source/a.txt', size: 1024 }, { path: 'source/b.txt', size: 1024 }]
+      },
+      { method: 'copy', totalBytes: 4096, entries: [{ path: 'source/c.bin', size: 4096 }] }
+    ])
+    installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output'),
+      planSevenZipSolidBlocks
+    })
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.click(screen.getByRole('checkbox', { name: /Solid block compression/ }))
+    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+
+    const preview = screen.getByRole('button', { name: 'Solid block preview' })
+    await waitFor(() => expect(preview).toHaveTextContent('2 blocks'))
+    await user.click(preview)
+
+    const firstBlock = screen.getByText('Block 1').closest('li')
+    expect(firstBlock).toBeInTheDocument()
+    expect(firstBlock).toHaveTextContent('source/a.txt')
+    expect(screen.getByText(/^2 files ·/)).toBeInTheDocument()
+    expect(screen.getByText(/^Copy · 1 file/)).toBeInTheDocument()
+    expect(planSevenZipSolidBlocks).toHaveBeenCalledWith(expect.objectContaining({
+      inputPaths: ['C:\\input.txt'],
+      level: 5,
+      solid: true
+    }))
+  })
+
+  it('says the preview is idle while solid mode is off', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    const planSevenZipSolidBlocks = vi.fn().mockResolvedValue([])
+    installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output'),
+      planSevenZipSolidBlocks
+    })
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+
+    const preview = screen.getByRole('button', { name: 'Solid block preview' })
+    expect(preview).toHaveTextContent('Solid block compression is off')
+    expect(preview).toBeDisabled()
+    expect(planSevenZipSolidBlocks).not.toHaveBeenCalled()
+  })
+
   it('configures recursive and per-file 7Z methods in the expert modal', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     const source = { path: '/source', name: 'source', isDirectory: true, size: 4096 }

@@ -9,6 +9,8 @@ import {
   type OpenSevenZipOptions,
   type RandomAccessSource,
   type SeekableSink,
+  planSevenZipEntries,
+  sevenZipSolidRuns,
   type SevenZipEntryInput,
   type SevenZipMethod,
   type SevenZipReader
@@ -285,11 +287,21 @@ function archivePath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name
 }
 
+interface CollectedSevenZipEntry extends SevenZipEntryInput {
+  /** App-only disk path used to settle per-file compression before writing. */
+  sourcePath: string
+}
+
+function withoutSourcePath({ sourcePath, ...entry }: CollectedSevenZipEntry): SevenZipEntryInput {
+  void sourcePath
+  return entry
+}
+
 async function collectPathEntries(
   itemPath: string,
   storedPath: string,
   excludedPath: string,
-  entries: SevenZipEntryInput[],
+  entries: CollectedSevenZipEntry[],
   compressionForPath?: (
     sourcePath: string,
     size: bigint
@@ -301,6 +313,7 @@ async function collectPathEntries(
     const target = Buffer.from(await fsPromises.readlink(itemPath), 'utf8')
     entries.push({
       path: storedPath,
+      sourcePath: itemPath,
       size: BigInt(target.length),
       ...compressionForPath?.(itemPath, BigInt(target.length)),
       isSymlink: true,
@@ -313,6 +326,7 @@ async function collectPathEntries(
   if (stat.isDirectory()) {
     entries.push({
       path: storedPath,
+      sourcePath: itemPath,
       size: 0n,
       isDirectory: true,
       modified: stat.mtime,
@@ -332,6 +346,7 @@ async function collectPathEntries(
   }
   entries.push({
     path: storedPath,
+    sourcePath: itemPath,
     size: BigInt(stat.size),
     ...compressionForPath?.(itemPath, BigInt(stat.size)),
     modified: stat.mtime,
@@ -348,7 +363,18 @@ export async function collectSevenZipInputs(
     size: bigint
   ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
 ): Promise<SevenZipEntryInput[]> {
-  const entries: SevenZipEntryInput[] = []
+  return (await collectSevenZipInputDetails(inputPaths, outputPath, compressionForPath)).map(withoutSourcePath)
+}
+
+async function collectSevenZipInputDetails(
+  inputPaths: string[],
+  outputPath: string,
+  compressionForPath?: (
+    sourcePath: string,
+    size: bigint
+  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+): Promise<CollectedSevenZipEntry[]> {
+  const entries: CollectedSevenZipEntry[] = []
   const excludedPath = path.resolve(outputPath)
   for (const itemPath of inputPaths) {
     await collectPathEntries(itemPath, path.basename(itemPath), excludedPath, entries, compressionForPath)
@@ -357,21 +383,142 @@ export async function collectSevenZipInputs(
   return entries
 }
 
-export interface WriteLibera7zOptions {
+/** Everything that decides how an entry is written, short of writing it. */
+export interface SevenZipPlanOptions {
   inputPaths: string[]
   outputPath: string
   level: number
-  splitSize?: number
-  password?: string
-  encryptFileNames?: boolean
   dictionarySize?: number
   method?: SevenZipMethod
   methodOverrides?: SevenZipMethodOverride[]
   matchFinderWordSize?: 32 | 64 | 128 | 273
   searchCycles?: number
   solid?: boolean
+}
+
+export interface WriteLibera7zOptions extends SevenZipPlanOptions {
+  splitSize?: number
+  password?: string
+  encryptFileNames?: boolean
   signal?: AbortSignal
   onProgress?: CreateSevenZipOptions['onProgress']
+}
+
+interface ArchivePlan {
+  method: SevenZipMethod
+  dictionarySize: number
+  compressionForPath: (
+    sourcePath: string,
+    fileSize: bigint
+  ) => PendingEntryCompression
+}
+
+type PendingDictionary =
+  | { kind: 'automatic'; level: SevenZipCompressionLevel }
+  | { kind: 'fixed'; size: number }
+
+interface PendingEntryCompression {
+  method: SevenZipMethod
+  dictionary?: PendingDictionary
+  searchDepth?: number
+  niceLength?: number
+}
+
+/**
+ * The archive-wide method and dictionary, plus the rule that settles each
+ * entry's own. Shared so a block preview answers with what a write would do.
+ */
+function archivePlan(options: SevenZipPlanOptions): ArchivePlan {
+  const method: SevenZipMethod = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
+  const defaultCompressedLevel: SevenZipCompressionLevel = options.level === 0
+    ? 1
+    : (options.level as SevenZipCompressionLevel)
+  return {
+    method,
+    dictionarySize: options.dictionarySize ?? DICTIONARY_BY_LEVEL[defaultCompressedLevel],
+    compressionForPath: sourcePath => {
+      const resolved = resolveSevenZipMethod(sourcePath, method, options.methodOverrides)
+      if (resolved.method === 'copy') return { method: 'copy' }
+      const level = resolved.level ?? defaultCompressedLevel
+      const levelOptions = ENCODER_BY_LEVEL[level]
+      const dictionary: PendingDictionary = resolved.dictionarySize === undefined
+        ? options.dictionarySize === undefined
+          ? { kind: 'automatic', level }
+          : { kind: 'fixed', size: options.dictionarySize }
+        : resolved.dictionarySize === 'auto'
+          ? { kind: 'automatic', level }
+          : { kind: 'fixed', size: resolved.dictionarySize }
+      return {
+        method: resolved.method,
+        dictionary,
+        searchDepth: resolved.searchCycles ?? options.searchCycles ?? levelOptions.searchDepth,
+        niceLength: resolved.matchFinderWordSize ?? options.matchFinderWordSize ?? levelOptions.niceLength
+      }
+    }
+  }
+}
+
+function samePendingDictionary(left: PendingDictionary, right: PendingDictionary): boolean {
+  if (left.kind === 'fixed') return right.kind === 'fixed' && left.size === right.size
+  return right.kind === 'automatic' && left.level === right.level
+}
+
+function canShareSolidBlock(left: PendingEntryCompression, right: PendingEntryCompression): boolean {
+  return left.method === 'lzma2' &&
+    right.method === 'lzma2' &&
+    left.dictionary !== undefined &&
+    right.dictionary !== undefined &&
+    samePendingDictionary(left.dictionary, right.dictionary) &&
+    left.searchDepth === right.searchDepth &&
+    left.niceLength === right.niceLength
+}
+
+/**
+ * Settles automatic dictionaries after solid runs are known. A solid stream
+ * needs one shared dictionary, so its total input size - not each file's size -
+ * chooses that dictionary. Non-solid entries remain independent as before.
+ */
+function settleSevenZipEntries(
+  entries: CollectedSevenZipEntry[],
+  plan: ArchivePlan,
+  solid: boolean
+): SevenZipEntryInput[] {
+  const pending = entries
+    .filter(entry => !entry.isDirectory && entry.size > 0n)
+    .map(entry => ({ entry, compression: plan.compressionForPath(entry.sourcePath, entry.size) }))
+
+  for (let index = 0; index < pending.length;) {
+    const head = pending[index]
+    if (head.compression.method === 'copy') {
+      head.entry.method = 'copy'
+      index += 1
+      continue
+    }
+
+    let end = index + 1
+    if (solid) {
+      while (end < pending.length && canShareSolidBlock(head.compression, pending[end].compression)) end += 1
+    }
+    const run = pending.slice(index, end)
+    const dictionary = head.compression.dictionary!
+    const dictionarySize = dictionary.kind === 'fixed'
+      ? dictionary.size
+      : automaticSevenZipDictionarySize(
+          run.reduce((total, item) => total + item.entry.size, 0n),
+          dictionary.level
+        )
+    for (const item of run) {
+      item.entry.method = 'lzma2'
+      item.entry.dictionarySize = dictionarySize
+      item.entry.lzmaEncoder = {
+        searchDepth: item.compression.searchDepth,
+        niceLength: item.compression.niceLength,
+        maxDistance: dictionarySize
+      }
+    }
+    index = end
+  }
+  return entries.map(withoutSourcePath)
 }
 
 export interface WriteLibera7zResult {
@@ -410,49 +557,64 @@ const AUTOMATIC_DICTIONARIES = [
   128 * 1024 * 1024
 ] as const
 
-export function automaticSevenZipDictionarySize(fileSize: bigint, level: SevenZipCompressionLevel): number {
+export function automaticSevenZipDictionarySize(inputSize: bigint, level: SevenZipCompressionLevel): number {
   const cap = DICTIONARY_BY_LEVEL[level]
-  const target = fileSize > BigInt(cap) ? cap : Number(fileSize)
+  const target = inputSize > BigInt(cap) ? cap : Number(inputSize)
   return AUTOMATIC_DICTIONARIES.find(size => size >= target) ?? cap
+}
+
+export interface SevenZipSolidBlock {
+  method: SevenZipMethod
+  /** The dictionary every entry in the block shares. Copy blocks have none. */
+  dictionarySize?: number
+  entries: { path: string; size: number }[]
+  totalBytes: number
+}
+
+/**
+ * The streams a write would lay down, without writing one. Blocks follow the
+ * archive's own entry order rather than any listing the dialog shows, and hold
+ * only the entries that carry data - directories and empty files reach none.
+ */
+export async function planSevenZipSolidBlocks(
+  options: SevenZipPlanOptions
+): Promise<SevenZipSolidBlock[]> {
+  if (options.inputPaths.length === 0) return []
+  const plan = archivePlan(options)
+  const entries = settleSevenZipEntries(
+    await collectSevenZipInputDetails(options.inputPaths, options.outputPath),
+    plan,
+    options.solid === true
+  )
+  const plans = planSevenZipEntries(entries, {
+    method: plan.method,
+    dictionarySize: plan.dictionarySize
+  })
+  return sevenZipSolidRuns(plans, options.solid === true).map(run => ({
+    method: run[0].method,
+    ...(run[0].method === 'lzma2' && run[0].lzmaEncoder.maxDistance !== undefined
+      ? { dictionarySize: run[0].lzmaEncoder.maxDistance }
+      : {}),
+    entries: run.map(plan => ({ path: plan.entry.path, size: Number(plan.entry.size) })),
+    totalBytes: run.reduce((total, plan) => total + Number(plan.entry.size), 0)
+  }))
 }
 
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
-  const archiveMethod: SevenZipMethod = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
-  const defaultCompressedLevel: SevenZipCompressionLevel = options.level === 0
-    ? 1
-    : (options.level as SevenZipCompressionLevel)
-  const entries = await collectSevenZipInputs(
-    options.inputPaths,
-    options.outputPath,
-    (sourcePath, fileSize) => {
-      const resolved = resolveSevenZipMethod(sourcePath, archiveMethod, options.methodOverrides)
-      if (resolved.method === 'copy') return { method: 'copy' }
-      const level = resolved.level ?? defaultCompressedLevel
-      const levelOptions = ENCODER_BY_LEVEL[level]
-      const dictionarySize = resolved.dictionarySize === undefined
-        ? (options.dictionarySize ?? automaticSevenZipDictionarySize(fileSize, level))
-        : resolved.dictionarySize === 'auto'
-          ? automaticSevenZipDictionarySize(fileSize, level)
-          : resolved.dictionarySize
-      return {
-        method: resolved.method,
-        dictionarySize,
-        lzmaEncoder: {
-          searchDepth: resolved.searchCycles ?? options.searchCycles ?? levelOptions.searchDepth,
-          niceLength: resolved.matchFinderWordSize ?? options.matchFinderWordSize ?? levelOptions.niceLength,
-          maxDistance: dictionarySize
-        }
-      }
-    }
+  const plan = archivePlan(options)
+  const entries = settleSevenZipEntries(
+    await collectSevenZipInputDetails(options.inputPaths, options.outputPath),
+    plan,
+    options.solid === true
   )
   const sink = options.splitSize === undefined
     ? await NodeFileSink.open(options.outputPath)
     : new NodeVolumeSink(options.outputPath, options.splitSize)
   try {
     await create7z(entries, sink, {
-      method: archiveMethod,
-      dictionarySize: options.dictionarySize ?? DICTIONARY_BY_LEVEL[defaultCompressedLevel],
+      method: plan.method,
+      dictionarySize: plan.dictionarySize,
       signal: options.signal,
       onProgress: options.onProgress,
       password: options.password,

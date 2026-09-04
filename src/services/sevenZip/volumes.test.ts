@@ -119,7 +119,9 @@ describe('against a Libera7z split archive', () => {
     const secondCompressedPath = path.join(sourceDir, 'compressed-b.txt')
     const copiedPath = path.join(sourceDir, 'copied.bin')
     await fs.writeFile(compressedPath, 'split archive compression '.repeat(800))
-    await fs.writeFile(secondCompressedPath, 'shared solid compression '.repeat(800))
+    // Large enough to choose a different per-file automatic dictionary. Solid
+    // planning must still give both LZMA2 entries one dictionary and one block.
+    await fs.writeFile(secondCompressedPath, 'shared solid compression '.repeat(8000))
     await fs.writeFile(copiedPath, crypto.randomBytes(48 * 1024))
 
     const outputPath = path.join(directory, 'methods.7z')

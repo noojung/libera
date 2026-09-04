@@ -43,6 +43,7 @@ export type {
   SevenZipMethod,
   SevenZipMethodOverride
 } from './sevenZip/methodOverrides'
+export type { SevenZipPlanOptions, SevenZipSolidBlock } from './sevenZip/node'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface CompressionOptions {

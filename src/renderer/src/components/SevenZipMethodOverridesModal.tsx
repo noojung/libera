@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, File, Files, Folder, Home, RotateCcw, X } from 'lucide-react'
+import { Boxes, ChevronDown, ChevronRight, File, Files, Folder, Home, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type {
   SevenZipCompressionLevel,
   SevenZipMethod,
-  SevenZipMethodOverride
+  SevenZipMethodOverride,
+  SevenZipPlanOptions,
+  SevenZipSolidBlock
 } from '@services/compressor'
 import type { SelectedItem } from '@/types'
 import { formatBytes } from '@/i18n/format'
@@ -19,6 +21,13 @@ type LevelSelection = SevenZipCompressionLevel | 'mixed'
 const SEVEN_ZIP_LEVELS: readonly SevenZipCompressionLevel[] = [1, 3, 5, 7, 9]
 /** What an entry is written with when no rule of its own or a folder's applies. */
 const DEFAULT_METHOD: SevenZipMethod = 'lzma2'
+/** Rules change a click at a time; the walk behind the preview is not free. */
+const PLAN_DEBOUNCE_MS = 250
+
+type BlockState =
+  | { status: 'loading' }
+  | { status: 'ready'; blocks: SevenZipSolidBlock[] }
+  | { status: 'error' }
 
 interface SevenZipMethodOverridesModalProps {
   items: SelectedItem[]
@@ -29,6 +38,9 @@ interface SevenZipMethodOverridesModalProps {
    * there while per-file mode owns them.
    */
   defaultLevel: SevenZipCompressionLevel
+  /** Where the archive would land, which the preview excludes from its inputs. */
+  outputPath: string
+  solid: boolean
   onChange: (overrides: SevenZipMethodOverride[]) => void
   onClose: () => void
 }
@@ -53,6 +65,8 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   items,
   overrides,
   defaultLevel,
+  outputPath,
+  solid,
   onChange,
   onClose
 }) => {
@@ -63,6 +77,8 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const isMacOS = platform === 'macos'
   const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
+  const [blockState, setBlockState] = useState<BlockState>({ status: 'loading' })
+  const [blocksOpen, setBlocksOpen] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -71,6 +87,39 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  // Keyed on what the request says rather than on the arrays carrying it, so a
+  // parent re-render alone never sends another walk over the inputs.
+  const planKey = useMemo(() => JSON.stringify({
+    inputPaths: items.map(item => item.path),
+    outputPath,
+    level: defaultLevel,
+    methodOverrides: overrides,
+    solid
+  } satisfies SevenZipPlanOptions), [items, outputPath, defaultLevel, overrides, solid])
+
+  useEffect(() => {
+    const request = JSON.parse(planKey) as SevenZipPlanOptions
+    if (!request.solid) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        // Held back until the debounce fires, so a run of clicks reads as the
+        // blocks it last settled on rather than as a flicker.
+        setBlockState({ status: 'loading' })
+        try {
+          const blocks = await (window as any).electronAPI.planSevenZipSolidBlocks(request)
+          if (active) setBlockState({ status: 'ready', blocks })
+        } catch {
+          if (active) setBlockState({ status: 'error' })
+        }
+      })()
+    }, PLAN_DEBOUNCE_MS)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [planKey])
 
   const matchingRule = (sourcePath: string, scope: SevenZipMethodOverride['scope']) => {
     for (let index = overrides.length - 1; index >= 0; index -= 1) {
@@ -338,6 +387,31 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     )
   }
 
+  const blocksSummary = (): string => {
+    if (!solid) return t('compression.sevenZipBlocksOff')
+    if (blockState.status === 'loading') return t('compression.sevenZipBlocksLoading')
+    if (blockState.status === 'error') return t('compression.sevenZipBlocksError')
+    if (blockState.blocks.length === 0) return t('compression.sevenZipBlocksEmpty')
+    return t('compression.sevenZipBlocksCount', { count: blockState.blocks.length })
+  }
+
+  /** Splits an archive path so the name survives while the folders truncate. */
+  const splitEntryPath = (entryPath: string): { folder: string; name: string } => {
+    const lastSlash = entryPath.lastIndexOf('/')
+    return lastSlash < 0
+      ? { folder: '', name: entryPath }
+      : { folder: entryPath.slice(0, lastSlash + 1), name: entryPath.slice(lastSlash + 1) }
+  }
+
+  const blockMeta = (block: SevenZipSolidBlock): string => [
+    block.method === 'copy' ? t('compression.sevenZipBlocksCopy') : undefined,
+    t('compression.sevenZipBlocksFiles', { count: block.entries.length }),
+    formatBytes(block.totalBytes, language),
+    block.dictionarySize !== undefined
+      ? t('compression.sevenZipBlocksDictionary', { size: formatBytes(block.dictionarySize, language) })
+      : undefined
+  ].filter(part => part !== undefined).join(' · ')
+
   return (
     <div className={`zip-method-modal zip-method-modal--seven-zip${isMacOS ? ' zip-method-modal--macos' : ''}`} onMouseDown={event => {
       if (event.target === event.currentTarget) onClose()
@@ -416,6 +490,60 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
             )}
             {visibleEntries.map(entry => renderEntry(entry))}
           </div>
+        </div>
+
+        <div className={`zip-method-modal__blocks${blocksOpen && solid ? ' is-open' : ''}`}>
+          <button
+            type="button"
+            className="zip-method-modal__blocks-toggle"
+            aria-expanded={solid && blocksOpen}
+            aria-controls="seven-zip-blocks-body"
+            aria-label={t('compression.sevenZipBlocksToggle')}
+            disabled={!solid}
+            onClick={() => setBlocksOpen(open => !open)}
+          >
+            <Boxes size={16} />
+            <span className="zip-method-modal__blocks-title">{t('compression.sevenZipBlocksTitle')}</span>
+            <span className="zip-method-modal__blocks-summary">{blocksSummary()}</span>
+            {solid && (blocksOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
+          </button>
+          {solid && blocksOpen && (
+            <div className="zip-method-modal__blocks-body" id="seven-zip-blocks-body">
+              {blockState.status !== 'ready' || blockState.blocks.length === 0
+                ? <div className="zip-method-modal__branch-state">{blocksSummary()}</div>
+                : (
+                  <ol className="zip-method-modal__blocks-list">
+                    {blockState.blocks.map((block, index) => (
+                      <li key={block.entries[0].path} className="zip-method-modal__block">
+                        <div className="zip-method-modal__block-head">
+                          <span className="zip-method-modal__block-name">
+                            {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
+                          </span>
+                          <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
+                        </div>
+                        <ul className="zip-method-modal__block-entries">
+                          {block.entries.map(entry => (
+                            <li key={entry.path} className="zip-method-modal__block-entry">
+                              <span className="zip-method-modal__block-entry-name">
+                                <span className="zip-method-modal__block-entry-folder">
+                                  {splitEntryPath(entry.path).folder}
+                                </span>
+                                <span className="zip-method-modal__block-entry-file">
+                                  {splitEntryPath(entry.path).name}
+                                </span>
+                              </span>
+                              <span className="zip-method-modal__block-entry-size">
+                                {formatBytes(entry.size, language)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+            </div>
+          )}
         </div>
 
         <footer className="zip-method-modal__footer">

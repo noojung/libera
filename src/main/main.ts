@@ -30,6 +30,7 @@ import {
 } from '../services/archiveInputResolver'
 import { canonicalArchivePath } from '../services/archiveVolumes'
 import { listArchiveInputChildren } from '../services/archiveInputTree'
+import { planSevenZipSolidBlocks, type SevenZipPlanOptions } from '../services/sevenZip/node'
 import appInfo from '../renderer/src/generated/appInfo.json'
 
 let mainWindow: BrowserWindow | null = null
@@ -508,4 +509,10 @@ ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
 
 ipcMain.handle('system:listArchiveInputChildren', async (_, directoryPath: string) => {
   return listArchiveInputChildren(directoryPath)
+})
+
+// Reads the inputs but writes nothing: the dialog asks what blocks a write
+// would produce so the answer comes from the writer's own planner.
+ipcMain.handle('archive:planSevenZipSolidBlocks', async (_, options: SevenZipPlanOptions) => {
+  return planSevenZipSolidBlocks(options)
 })

@@ -98,6 +98,72 @@ const NID = {
 
 export type SevenZipMethod = 'copy' | 'lzma2'
 
+/** One entry's settled method and encoder settings, which decide what it can share a stream with. */
+export interface SevenZipEntryPlan {
+  entry: SevenZipEntryInput
+  method: SevenZipMethod
+  dictionaryProperty: number
+  lzmaEncoder: LzmaEncoderOptions
+}
+
+/**
+ * Settles the method and encoder settings of every entry that carries data.
+ * Directories and empty files hold no stream, so they never reach a block.
+ */
+export function planSevenZipEntries(
+  entries: readonly SevenZipEntryInput[],
+  archive: { method: SevenZipMethod; dictionarySize: number; lzmaEncoder?: LzmaEncoderOptions }
+): SevenZipEntryPlan[] {
+  const plans: SevenZipEntryPlan[] = []
+  for (const entry of entries) {
+    if (entry.isDirectory || entry.size === 0n) continue
+    const method = entry.method ?? archive.method
+    if (method !== 'copy' && method !== 'lzma2') {
+      throw new Libera7zError('UNSUPPORTED_FEATURE', `Unsupported 7z compression method: ${method}`)
+    }
+    plans.push({
+      entry,
+      method,
+      dictionaryProperty: dictionaryPropertyForSize(entry.dictionarySize ?? archive.dictionarySize),
+      lzmaEncoder: { ...archive.lzmaEncoder, ...entry.lzmaEncoder }
+    })
+  }
+  return plans
+}
+
+function sameLzmaSettings(left: SevenZipEntryPlan, right: SevenZipEntryPlan): boolean {
+  return left.dictionaryProperty === right.dictionaryProperty &&
+    left.lzmaEncoder.searchDepth === right.lzmaEncoder.searchDepth &&
+    left.lzmaEncoder.niceLength === right.lzmaEncoder.niceLength &&
+    left.lzmaEncoder.maxDistance === right.lzmaEncoder.maxDistance
+}
+
+/**
+ * The runs the writer lays down as one stream each. Solid mode joins adjacent
+ * LZMA2 entries whose encoder settings match; a Copy entry, a settings change,
+ * or solid mode being off leaves an entry on its own.
+ */
+export function sevenZipSolidRuns(
+  plans: readonly SevenZipEntryPlan[],
+  solid: boolean
+): SevenZipEntryPlan[][] {
+  const runs: SevenZipEntryPlan[][] = []
+  for (let index = 0; index < plans.length;) {
+    const head = plans[index]
+    let end = index + 1
+    if (solid && head.method === 'lzma2') {
+      while (
+        end < plans.length &&
+        plans[end].method === 'lzma2' &&
+        sameLzmaSettings(head, plans[end])
+      ) end += 1
+    }
+    runs.push(plans.slice(index, end))
+    index = end
+  }
+  return runs
+}
+
 export interface SevenZipEntryInput {
   path: string
   size: bigint
@@ -722,64 +788,23 @@ export async function create7zInProcess(
 
   try {
     await sink.write(new Uint8Array(SIGNATURE_HEADER_SIZE), options.signal)
-    const dataEntries = entries.filter(entry => !entry.isDirectory && entry.size > 0n)
-    const plannedEntries: Array<{
-      entry: SevenZipEntryInput
-      method: SevenZipMethod
-      dictionaryProperty: number
-      options: CreateSevenZipOptions
-    }> = []
-    for (const entry of dataEntries) {
-      const requestedMethod = entry.method ?? method
-      if (requestedMethod !== 'copy' && requestedMethod !== 'lzma2') {
-        throw new Libera7zError('UNSUPPORTED_FEATURE', `Unsupported 7z compression method: ${requestedMethod}`)
-      }
-      const entryOptions: CreateSevenZipOptions = {
-        ...options,
-        lzmaEncoder: { ...options.lzmaEncoder, ...entry.lzmaEncoder }
-      }
-      const entryDictionaryProperty = dictionaryPropertyForSize(entry.dictionarySize ?? dictionarySize)
-      plannedEntries.push({
-        entry,
-        method: requestedMethod,
-        dictionaryProperty: entryDictionaryProperty,
-        options: entryOptions
-      })
-    }
+    const plans = planSevenZipEntries(entries, {
+      method,
+      dictionarySize,
+      lzmaEncoder: options.lzmaEncoder
+    })
 
-    const sameLzmaSettings = (left: typeof plannedEntries[number], right: typeof plannedEntries[number]): boolean =>
-      left.dictionaryProperty === right.dictionaryProperty &&
-      left.options.lzmaEncoder?.searchDepth === right.options.lzmaEncoder?.searchDepth &&
-      left.options.lzmaEncoder?.niceLength === right.options.lzmaEncoder?.niceLength &&
-      left.options.lzmaEncoder?.maxDistance === right.options.lzmaEncoder?.maxDistance
-
-    for (let index = 0; index < plannedEntries.length;) {
+    for (const run of sevenZipSolidRuns(plans, options.solid === true)) {
       throwIfCancelled(options.signal)
-      const planned = plannedEntries[index]
-      if (options.solid && planned.method === 'lzma2') {
-        let end = index + 1
-        while (
-          end < plannedEntries.length &&
-          plannedEntries[end].method === 'lzma2' &&
-          sameLzmaSettings(planned, plannedEntries[end])
-        ) end += 1
-        const solidEntries = plannedEntries.slice(index, end).map(item => item.entry)
-        if (solidEntries.length > 1) {
-          streams.push(await consumeSolidEntries(
-            solidEntries, sink, planned.dictionaryProperty, planned.options, processed, encryption
+      const head = run[0]
+      const runOptions: CreateSevenZipOptions = { ...options, lzmaEncoder: head.lzmaEncoder }
+      streams.push(run.length > 1
+        ? await consumeSolidEntries(
+            run.map(plan => plan.entry), sink, head.dictionaryProperty, runOptions, processed, encryption
+          )
+        : await consumeEntry(
+            head.entry, sink, head.method, head.dictionaryProperty, runOptions, processed, encryption
           ))
-        } else {
-          streams.push(await consumeEntry(
-            planned.entry, sink, planned.method, planned.dictionaryProperty, planned.options, processed, encryption
-          ))
-        }
-        index = end
-        continue
-      }
-      streams.push(await consumeEntry(
-        planned.entry, sink, planned.method, planned.dictionaryProperty, planned.options, processed, encryption
-      ))
-      index += 1
     }
     const header = buildNextHeader(entries, streams)
     const nextHeader = encryption && options.encryptHeader
