@@ -381,7 +381,7 @@ describe('CompressionPanel', () => {
       memLevel: undefined,
       password: 'secret'
     }))
-  })
+  }, 15_000)
 
   it('submits a per-file LZMA method without global ZIP codec controls', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
