@@ -79,6 +79,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
   const [blockState, setBlockState] = useState<BlockState>({ status: 'loading' })
   const [blocksOpen, setBlocksOpen] = useState(false)
+  const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -412,6 +413,15 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
       : undefined
   ].filter(part => part !== undefined).join(' · ')
 
+  const toggleBlock = (key: string): void => {
+    setExpandedBlocks(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   return (
     <div className={`zip-method-modal zip-method-modal--seven-zip${isMacOS ? ' zip-method-modal--macos' : ''}`} onMouseDown={event => {
       if (event.target === event.currentTarget) onClose()
@@ -513,33 +523,49 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
                 ? <div className="zip-method-modal__branch-state">{blocksSummary()}</div>
                 : (
                   <ol className="zip-method-modal__blocks-list">
-                    {blockState.blocks.map((block, index) => (
-                      <li key={block.entries[0].path} className="zip-method-modal__block">
-                        <div className="zip-method-modal__block-head">
-                          <span className="zip-method-modal__block-name">
-                            {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
-                          </span>
-                          <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
-                        </div>
-                        <ul className="zip-method-modal__block-entries">
-                          {block.entries.map(entry => (
-                            <li key={entry.path} className="zip-method-modal__block-entry">
-                              <span className="zip-method-modal__block-entry-name">
-                                <span className="zip-method-modal__block-entry-folder">
-                                  {splitEntryPath(entry.path).folder}
-                                </span>
-                                <span className="zip-method-modal__block-entry-file">
-                                  {splitEntryPath(entry.path).name}
-                                </span>
-                              </span>
-                              <span className="zip-method-modal__block-entry-size">
-                                {formatBytes(entry.size, language)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
-                    ))}
+                    {blockState.blocks.map((block, index) => {
+                      const blockKey = block.entries[0].path
+                      const expanded = expandedBlocks.has(blockKey)
+                      const bodyId = `seven-zip-block-${index + 1}-entries`
+                      return (
+                        <li key={blockKey} className="zip-method-modal__block">
+                          <button
+                            type="button"
+                            className="zip-method-modal__block-head"
+                            aria-expanded={expanded}
+                            aria-controls={bodyId}
+                            onClick={() => toggleBlock(blockKey)}
+                          >
+                            {expanded
+                              ? <ChevronDown className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />
+                              : <ChevronRight className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />}
+                            <span className="zip-method-modal__block-name">
+                              {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
+                            </span>
+                            <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
+                          </button>
+                          {expanded && (
+                            <ul className="zip-method-modal__block-entries" id={bodyId}>
+                              {block.entries.map(entry => (
+                                <li key={entry.path} className="zip-method-modal__block-entry">
+                                  <span className="zip-method-modal__block-entry-name">
+                                    <span className="zip-method-modal__block-entry-folder">
+                                      {splitEntryPath(entry.path).folder}
+                                    </span>
+                                    <span className="zip-method-modal__block-entry-file">
+                                      {splitEntryPath(entry.path).name}
+                                    </span>
+                                  </span>
+                                  <span className="zip-method-modal__block-entry-size">
+                                    {formatBytes(entry.size, language)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ol>
                 )}
             </div>

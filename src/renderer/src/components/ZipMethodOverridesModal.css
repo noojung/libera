@@ -391,8 +391,32 @@
 
 .zip-method-modal__block-head {
   display: flex;
+  width: 100%;
+  padding: 0;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zip-method-modal__block-head:hover .zip-method-modal__block-name,
+.zip-method-modal__block-head:hover .zip-method-modal__block-chevron {
+  color: var(--accent-peach);
+}
+
+.zip-method-modal__block-head:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 3px;
+}
+
+.zip-method-modal__block-chevron {
+  flex: 0 0 auto;
+  color: var(--text-dim);
 }
 
 .zip-method-modal__block-name {

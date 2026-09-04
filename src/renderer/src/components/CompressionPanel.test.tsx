@@ -704,10 +704,22 @@ describe('CompressionPanel', () => {
     await user.click(preview)
 
     const firstBlock = screen.getByText('Block 1').closest('li')
+    const firstBlockToggle = screen.getByRole('button', { name: /Block 1/ })
     expect(firstBlock).toBeInTheDocument()
-    expect(firstBlock).toHaveTextContent('source/a.txt')
+    expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(firstBlock).not.toHaveTextContent('source/a.txt')
     expect(screen.getByText(/^2 files ·/)).toBeInTheDocument()
     expect(screen.getByText(/^Copy · 1 file/)).toBeInTheDocument()
+    expect(screen.queryByText('c.bin')).not.toBeInTheDocument()
+
+    await user.click(firstBlockToggle)
+    expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(firstBlock).toHaveTextContent('source/a.txt')
+    expect(screen.queryByText('c.bin')).not.toBeInTheDocument()
+
+    await user.click(firstBlockToggle)
+    expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(firstBlock).not.toHaveTextContent('source/a.txt')
     expect(planSevenZipSolidBlocks).toHaveBeenCalledWith(expect.objectContaining({
       inputPaths: ['C:\\input.txt'],
       level: 5,
