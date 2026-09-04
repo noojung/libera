@@ -17,6 +17,8 @@ type MethodSelection = SevenZipMethod | 'mixed'
 type LevelSelection = SevenZipCompressionLevel | 'mixed'
 
 const SEVEN_ZIP_LEVELS: readonly SevenZipCompressionLevel[] = [1, 3, 5, 7, 9]
+/** What an entry is written with when no rule of its own or a folder's applies. */
+const DEFAULT_METHOD: SevenZipMethod = 'lzma2'
 
 interface SevenZipMethodOverridesModalProps {
   items: SelectedItem[]
@@ -56,7 +58,6 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const isMacOS = platform === 'macos'
   const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
-  const defaultMethod: SevenZipMethod = defaultLevel === 0 ? 'copy' : 'lzma2'
   const defaultCompressionLevel: SevenZipCompressionLevel = SEVEN_ZIP_LEVELS.includes(defaultLevel as SevenZipCompressionLevel)
     ? defaultLevel as SevenZipCompressionLevel
     : 1
@@ -96,7 +97,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
 
   const effectiveMethod = (sourcePath: string, isDirectory: boolean): SevenZipMethod => {
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
-    return directRule?.method ?? containingTreeRule(sourcePath)?.method ?? defaultMethod
+    return directRule?.method ?? containingTreeRule(sourcePath)?.method ?? DEFAULT_METHOD
   }
 
   const selectionFor = (sourcePath: string, isDirectory: boolean): MethodSelection => {

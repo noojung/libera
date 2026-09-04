@@ -15,6 +15,8 @@ type LevelSelection = number | 'mixed'
 type MemorySelection = number | 'mixed'
 
 const DEFAULT_MEMORY_LEVEL = 8
+/** What an entry is written with when no rule of its own or a folder's applies. */
+const DEFAULT_METHOD: ZipMethod = 'deflate'
 
 interface ZipMethodOverridesModalProps {
   items: SelectedItem[]
@@ -54,7 +56,6 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
   const isMacOS = platform === 'macos'
   const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
-  const defaultMethod: ZipMethod = defaultLevel === 0 ? 'store' : 'deflate'
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -117,7 +118,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
   const effectiveMethod = (sourcePath: string, isDirectory: boolean): ZipMethod => {
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
     if (directRule) return directRule.method
-    return inheritedTreeRule(sourcePath)?.method ?? defaultMethod
+    return inheritedTreeRule(sourcePath)?.method ?? DEFAULT_METHOD
   }
 
   const selectionFor = (sourcePath: string, isDirectory: boolean): MethodSelection => {
@@ -206,22 +207,14 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     ]
   }
 
-  const effectiveCompressionLevel = (sourcePath: string, isDirectory: boolean): number => {
-    const inheritedLevel = inheritedTreeRule(sourcePath, rule => rule.level !== undefined)?.level
-    if (inheritedLevel !== undefined) return inheritedLevel
-    if (defaultLevel > 0) return defaultLevel
-
-    // A forced codec cannot use Store-level zero.
-    const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
-    const inheritedRule = inheritedTreeRule(sourcePath)
-    const explicitMethod = directRule?.method ?? inheritedRule?.method
-    return explicitMethod !== undefined && explicitMethod !== 'store' ? 1 : 0
-  }
+  /** The archive's own strength, unless a folder above names another. */
+  const effectiveCompressionLevel = (sourcePath: string): number =>
+    inheritedTreeRule(sourcePath, rule => rule.level !== undefined)?.level ?? defaultLevel
 
   const levelSelectionFor = (sourcePath: string, isDirectory: boolean): LevelSelection | null => {
     if (selectionFor(sourcePath, isDirectory) === 'mixed' || effectiveMethod(sourcePath, isDirectory) === 'store') return null
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
-    const baseLevel = directRule?.level ?? effectiveCompressionLevel(sourcePath, isDirectory)
+    const baseLevel = directRule?.level ?? effectiveCompressionLevel(sourcePath)
     if (!isDirectory) return baseLevel
 
     const levels = new Set<number>([baseLevel])
@@ -249,7 +242,6 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     if (selection === 'mixed') return
     const scope: ZipMethodOverride['scope'] = isDirectory ? 'tree' : 'file'
     const directRule = matchingRule(sourcePath, scope)
-    const inheritedLevel = inheritedTreeRule(sourcePath, rule => rule.level !== undefined)?.level
     const withoutDirect = overrides.filter(rule => !(
       rule.scope === scope &&
       comparablePath(rule.sourcePath, isWindows) === comparablePath(sourcePath, isWindows)
@@ -268,10 +260,8 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
       ...(selection === 'deflate' && directRule?.memLevel !== undefined
         ? { memLevel: directRule.memLevel }
         : {}),
-      ...(selection !== 'store'
-        ? directRule?.level !== undefined
-          ? { level: directRule.level }
-          : inheritedLevel === undefined && defaultLevel === 0 ? { level: 1 } : {}
+      ...(selection !== 'store' && directRule?.level !== undefined
+        ? { level: directRule.level }
         : {})
     }])
   }
@@ -280,7 +270,6 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
     if (strategy === 'mixed') return
     const scope: ZipMethodOverride['scope'] = isDirectory ? 'tree' : 'file'
     const directRule = matchingRule(sourcePath, scope)
-    const inheritedLevel = inheritedTreeRule(sourcePath, rule => rule.level !== undefined)?.level
     const withoutDirect = overrides.filter(rule => !(
       rule.scope === scope &&
       comparablePath(rule.sourcePath, isWindows) === comparablePath(sourcePath, isWindows)
@@ -299,9 +288,7 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
       method,
       deflateStrategy: strategy,
       ...(directRule?.memLevel !== undefined ? { memLevel: directRule.memLevel } : {}),
-      ...(directRule?.level !== undefined
-        ? { level: directRule.level }
-        : inheritedLevel === undefined && defaultLevel === 0 ? { level: 1 } : {})
+      ...(directRule?.level !== undefined ? { level: directRule.level } : {})
     }])
   }
 
