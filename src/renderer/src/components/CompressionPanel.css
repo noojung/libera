@@ -103,6 +103,33 @@
   cursor: pointer;
 }
 
+/* A range the per-file dialog has taken over. The native control is dropped for
+   a bare track so the row keeps its height, while the thumb goes with the value
+   it no longer holds - a thumb parked at the minimum would read as one. */
+.compression-panel__range--cleared {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  /* Keeps the 16px the native control occupied, so nothing shifts on toggle. */
+  margin: 6px 0;
+  border-radius: 999px;
+  background: var(--border-subtle);
+  cursor: not-allowed;
+}
+
+.compression-panel__range--cleared::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+}
+
+.compression-panel__range--cleared::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: none;
+}
+
 .compression-panel__optional {
   color: var(--text-muted);
   font-family: var(--font-sans);
@@ -140,10 +167,6 @@
 
 .compression-panel__zip-overrides:hover:not(.is-disabled) {
   background: var(--bg-card-hover);
-}
-
-.compression-panel__zip-overrides--with-settings {
-  margin-bottom: 10px;
 }
 
 .compression-panel__zip-overrides.is-active {

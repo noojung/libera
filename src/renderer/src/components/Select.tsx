@@ -27,6 +27,9 @@ export interface SelectProps<T extends SelectValue> {
   className?: string
   rootClassName?: string
   disabled?: boolean
+  /** Shows the placeholder in place of the selected label, for a control whose value does not apply right now. */
+  cleared?: boolean
+  placeholder?: string
   title?: string
 }
 
@@ -51,6 +54,8 @@ export function Select<T extends SelectValue>({
   className = '',
   rootClassName = '',
   disabled = false,
+  cleared = false,
+  placeholder = '',
   title
 }: SelectProps<T>) {
   const generatedId = useId()
@@ -290,7 +295,9 @@ export function Select<T extends SelectValue>({
         }}
         onKeyDown={handleKeyDown}
       >
-        <span className="select__value">{selectedOption?.label ?? ''}</span>
+        <span className={`select__value${cleared ? ' select__value--placeholder' : ''}`}>
+          {cleared ? placeholder : selectedOption?.label ?? ''}
+        </span>
         <ChevronDown className="select__chevron" size={16} aria-hidden="true" />
       </button>
       {menu}

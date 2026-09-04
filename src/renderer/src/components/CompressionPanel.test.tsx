@@ -7,6 +7,19 @@ import { installElectronApi } from '@/test/electronApi'
 
 const item = { path: 'C:\\input.txt', name: 'input.txt', isDirectory: false, size: 2048 }
 
+/** An archive-wide row the per-file dialog has taken over: still there, still
+ *  labelled, holding no value of its own. */
+function levelReadout(): string | null {
+  const field = screen.getByText('Compression level').closest('.compression-panel__field')
+  return field?.querySelector('.compression-panel__level-value')?.textContent ?? null
+}
+
+function expectClearedControl(name: string): void {
+  const control = screen.getByRole('combobox', { name })
+  expect(control).toBeDisabled()
+  expect(control).toHaveTextContent('—')
+}
+
 describe('CompressionPanel', () => {
   beforeEach(() => {
     localStorage.removeItem('libera_expert_mode')
@@ -218,8 +231,10 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.getByText('1 override')).toBeInTheDocument()
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'ZIP compression method' })).not.toBeInTheDocument()
+    // Pressing the toggle put the slider back to the ZIP default, and the rule
+    // names no strength of its own, so the slider still decides.
+    expect(levelReadout()).toBe('6 - Normal')
+    expectClearedControl('ZIP compression method')
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
     expect(screen.getByText('5 - Normal')).toBeInTheDocument()
@@ -242,8 +257,9 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'Copy (No compression)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.getByText('1 override')).toBeInTheDocument()
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Compression method / Codec' })).not.toBeInTheDocument()
+    // Copy has no strength at all, so the slider has nothing left to decide.
+    expect(levelReadout()).toBe('—')
+    expectClearedControl('Compression method / Codec')
 
     await user.click(screen.getByRole('button', { name: '.ZIP' }))
     expect(screen.getByText('6 - Normal')).toBeInTheDocument()
@@ -340,9 +356,11 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: '3' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'ZIP compression method' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Deflate strategy' })).not.toBeInTheDocument()
+    expect(levelReadout()).toBe('—')
+    expectClearedControl('ZIP compression method')
+    expectClearedControl('Deflate strategy')
+    expect(screen.getByText('Memory level (1-9) (—)')).toBeInTheDocument()
+    for (const slider of screen.getAllByRole('slider')) expect(slider).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Enable per-file compression settings' })).toBeChecked()
 
     await user.type(screen.getByPlaceholderText('Enter password'), 'secret')
@@ -384,8 +402,8 @@ describe('CompressionPanel', () => {
     expect(screen.queryByRole('combobox', { name: 'Memory level for input.txt' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'ZIP compression method' })).not.toBeInTheDocument()
+    expect(levelReadout()).toBe('6 - Normal')
+    expectClearedControl('ZIP compression method')
 
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
@@ -395,7 +413,50 @@ describe('CompressionPanel', () => {
     }))
   })
 
-  it('switches between global and per-file ZIP settings without discarding rules', async () => {
+  it('closes the expert card with the per-file dialog for both ZIP and 7Z', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
+
+    const lastRowOfExpertCard = () =>
+      screen.getByText(/Expert compression settings/).closest('.expert-card')!.lastElementChild
+
+    expect(lastRowOfExpertCard())
+      .toContainElement(screen.getByRole('button', { name: 'Per-file compression settings' }))
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(lastRowOfExpertCard())
+      .toContainElement(screen.getByRole('button', { name: 'Per-file compression settings' }))
+  })
+
+  it('keeps the strength slider live until every input carries its own', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('/output') })
+    const pair = [
+      { path: '/one.txt', name: 'one.txt', isDirectory: false, size: 2048 },
+      { path: '/two.txt', name: 'two.txt', isDirectory: false, size: 2048 }
+    ]
+    const { user } = renderWithI18n(<CompressionPanel items={pair} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+    await user.click(screen.getByRole('combobox', { name: 'Compression strength for one.txt' }))
+    await user.click(screen.getByRole('option', { name: '9 - Maximum' }))
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+
+    // two.txt still follows the archive, so the slider keeps deciding for it.
+    expect(levelReadout()).toBe('6 - Normal')
+
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+    await user.click(screen.getByRole('combobox', { name: 'Compression strength for two.txt' }))
+    await user.click(screen.getByRole('option', { name: '1 - Fastest' }))
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(levelReadout()).toBe('—')
+    expect(screen.getAllByRole('slider')[0]).toBeDisabled()
+  })
+
+  it('resets the archive settings on each per-file toggle while keeping the rules', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
     const onStart = vi.fn()
@@ -414,17 +475,18 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'ZIP compression method' })).not.toBeInTheDocument()
+    expect(levelReadout()).toBe('6 - Normal')
+    expectClearedControl('ZIP compression method')
 
     await user.click(perFileSwitch)
 
-    expect(screen.getByText('Compression level')).toBeInTheDocument()
-    expect(screen.getByText('9 - Maximum')).toBeInTheDocument()
+    // The rules the dialog holds survive the trip; the archive-wide strength
+    // and tuning do not - both toggles hand them back to the format defaults.
+    expect(levelReadout()).toBe('6 - Normal')
     expect(screen.getByRole('combobox', { name: 'ZIP compression method' }))
       .toHaveTextContent('Deflate (8)')
     expect(screen.getByRole('combobox', { name: 'Deflate strategy' }))
-      .toHaveTextContent('RLE (Match distance 1 only)')
+      .toHaveTextContent('Default (LZ77 + Huffman)')
     expect(screen.getByText('1 override')).toBeInTheDocument()
     expect(perFileSwitch).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Per-file compression settings' })).toBeDisabled()
@@ -432,12 +494,12 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenLastCalledWith(expect.objectContaining({
       zipMethodOverrides: undefined,
-      deflateStrategy: 'rle',
-      level: 9
+      deflateStrategy: 'default',
+      level: 6
     }))
 
     await user.click(perFileSwitch)
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
+    expect(levelReadout()).toBe('6 - Normal')
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenLastCalledWith(expect.objectContaining({
       zipMethod: undefined,
@@ -585,21 +647,19 @@ describe('CompressionPanel', () => {
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[{ ...item, path: '/input.txt' }]} onStartCompress={onStart} />)
 
-    fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '0' } })
-    // Deflate cannot sit at zero, so the slider reads back as the minimum
-    // until Store is the method that was asked for.
-    expect(screen.getByText('1 - Fastest')).toBeInTheDocument()
-    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
-    await user.click(screen.getByRole('option', { name: 'Store (0)' }))
-    expect(screen.getByText('0 - Store')).toBeInTheDocument()
-
+    // With per-file mode on there is no forced codec to bump zero to one, so
+    // the archive keeps the Store level for everything no rule claims.
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
+    fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '0' } })
+    expect(levelReadout()).toBe('0 - Store')
+
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
+    // The rule now carries the only input's strength, so the slider clears.
+    expect(levelReadout()).toBe('—')
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       level: 0,
@@ -631,11 +691,11 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: '9 - Ultra' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(screen.queryByText('Compression level')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Compression method / Codec' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Dictionary size' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Match finder word size' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/Search cycles/)).not.toBeInTheDocument()
+    expect(levelReadout()).toBe('—')
+    expectClearedControl('Compression method / Codec')
+    expectClearedControl('Dictionary size')
+    expectClearedControl('Match finder word size')
+    expect(screen.getByText('Search cycles (—)')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Solid block compression/ })).toBeChecked()
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
 

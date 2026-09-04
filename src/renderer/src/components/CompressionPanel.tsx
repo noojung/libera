@@ -83,6 +83,8 @@ const DEFAULT_DICTIONARY_SIZE = 16 * 1024 * 1024
 const DEFAULT_MATCH_FINDER_WORD_SIZE: MatchFinderWordSize = 32
 const DEFAULT_SEARCH_CYCLES = 32
 const DEFAULT_MEM_LEVEL = 8
+/** Stands in for a setting the per-file dialog has taken over. */
+const CLEARED_VALUE = '—'
 
 const DICTIONARY_SIZES = [
   { label: '64 KB', value: 64 * 1024 },
@@ -224,6 +226,24 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     setMemLevel(DEFAULT_MEM_LEVEL)
   }
 
+  // Pressing the per-file toggle hands the settings between two owners, so the
+  // side being left behind goes back to what the format starts with rather than
+  // keeping values the other side has since replaced.
+  const resetArchiveSettings = () => {
+    setLevel(DEFAULT_LEVELS[format])
+    if (format === 'zip') {
+      setZipMethod('deflate')
+      setDeflateStrategy('default')
+      setMemLevel(DEFAULT_MEM_LEVEL)
+    }
+    if (format === '7z') {
+      setSevenZipMethod('lzma2')
+      setDictionarySize(DEFAULT_DICTIONARY_SIZE)
+      setMatchFinderWordSize(DEFAULT_MATCH_FINDER_WORD_SIZE)
+      setSearchCycles(DEFAULT_SEARCH_CYCLES)
+    }
+  }
+
   const getLevelLabel = (lvl: number) => {
     const names: Record<number, string> = format === '7z'
       ? { 0: 'levelStore', 1: 'levelFastest', 3: 'levelFast', 5: 'levelNormal', 7: 'levelMaximum', 9: 'levelUltra' }
@@ -233,6 +253,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
   const zipPerFileActive = isExpertMode && zipPerFileEnabled
   const sevenZipPerFileActive = isExpertMode && sevenZipPerFileEnabled
+  // The archive-wide rows stay on screen while per-file mode owns them, but
+  // they hold no value of their own.
+  const zipSettingsCleared = format === 'zip' && zipPerFileActive
+  const sevenZipSettingsCleared = format === '7z' && sevenZipPerFileActive
   const perFileCompressionActive = format === 'zip'
     ? zipPerFileActive
     : format === '7z' && sevenZipPerFileActive
@@ -247,7 +271,27 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const effectiveLevel = storeSelected ? 0 : compressedMethodSelected && level === 0 ? 1 : level
   const deflateTuned = (format === 'zip' && !zipPerFileActive && zipMethod === 'deflate') ||
     format === 'tgz' || format === 'gz'
+  const deflateTuningShown = (format === 'zip' && (zipPerFileActive || zipMethod === 'deflate')) ||
+    format === 'tgz' || format === 'gz'
   const sevenZipGlobalTuning = format === '7z' && !sevenZipPerFileActive && sevenZipMethod === 'lzma2'
+  const sevenZipTuningShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
+
+  // The strength slider keeps deciding for whatever no rule has claimed, so it
+  // only clears once every selected input carries a strength of its own -
+  // either a named one, or a method that has none.
+  const activeOverrides: readonly {
+    sourcePath: string
+    scope: 'file' | 'tree'
+    method: string
+    level?: number
+  }[] = format === 'zip' ? zipMethodOverrides : sevenZipMethodOverrides
+  const levelCleared = perFileCompressionActive && items.length > 0 && items.every(item =>
+    activeOverrides.some(rule =>
+      rule.sourcePath === item.path &&
+      rule.scope === (item.isDirectory ? 'tree' : 'file') &&
+      (rule.level !== undefined || rule.method === 'store' || rule.method === 'copy')
+    )
+  )
 
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
@@ -341,24 +385,24 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       </div>
 
       {/* Compression Level Slider */}
-      {supportsLevel(format) && !perFileCompressionActive && (
+      {supportsLevel(format) && (
         <div className="compression-panel__field">
           <div className="compression-panel__level-header">
             <label className="compression-panel__label">
               {t('compression.level')}
             </label>
             <span className="compression-panel__level-value">
-              {getLevelLabel(effectiveLevel)}
+              {levelCleared ? CLEARED_VALUE : getLevelLabel(effectiveLevel)}
             </span>
           </div>
           <input
             type="range"
             min="0"
             max={levels.length - 1}
-            value={Math.max(0, levels.indexOf(effectiveLevel))}
+            value={levelCleared ? 0 : Math.max(0, levels.indexOf(effectiveLevel))}
             onChange={(e) => setLevel(levels[parseInt(e.target.value)])}
-            className="compression-panel__range"
-            disabled={storeSelected}
+            className={`compression-panel__range${levelCleared ? ' compression-panel__range--cleared' : ''}`}
+            disabled={storeSelected || levelCleared}
           />
         </div>
       )}
@@ -374,137 +418,51 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           </div>
 
           {format === 'zip' && (
-            <>
-              <div
-                className={`compression-panel__zip-overrides${
-                  zipPerFileActive ? ' is-active' : ' compression-panel__zip-overrides--with-settings'
-                }${items.length === 0 ? ' is-disabled' : ''}`}
-              >
-                <button
-                  type="button"
-                  className="compression-panel__zip-overrides-open"
-                  aria-label={t('compression.zipOverridesButton')}
-                  onClick={() => setShowZipMethodOverrides(true)}
-                  disabled={!zipPerFileEnabled || items.length === 0}
-                >
-                  <span className="compression-panel__zip-overrides-copy">
-                    <Files size={16} />
-                    <span>
-                      <span className="compression-panel__zip-overrides-title">{t('compression.zipOverridesButton')}</span>
-                      <span className="compression-panel__zip-overrides-hint">{t('compression.zipOverridesButtonHint')}</span>
-                    </span>
-                  </span>
-                  {zipMethodOverrides.length > 0 && (
-                    <span className="compression-panel__zip-overrides-badge">
-                      {t('compression.zipOverridesCount', { count: zipMethodOverrides.length })}
-                    </span>
-                  )}
-                </button>
-                <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-label={t('compression.zipOverridesEnable')}
-                    checked={zipPerFileEnabled}
-                    disabled={items.length === 0}
-                    onChange={(event) => {
-                      setZipPerFileEnabled(event.target.checked)
-                      if (!event.target.checked) setShowZipMethodOverrides(false)
-                    }}
-                  />
-                  <span className="compression-panel__mode-toggle-track" aria-hidden="true">
-                    <span className="compression-panel__mode-toggle-thumb" />
-                  </span>
-                </label>
-              </div>
-
-              {!zipPerFileActive && (
-                <div className="compression-panel__expert-row">
-                  <label className="compression-panel__expert-label" htmlFor="compression-zip-method">
-                    {t('compression.zipMethod')}
-                  </label>
-                  <Select<ZipMethod>
-                    id="compression-zip-method"
-                    ariaLabel={t('compression.zipMethod')}
-                    value={zipMethod}
-                    onChange={setZipMethod}
-                    options={[
-                      { value: 'deflate', label: t('compression.methodDeflate') },
-                      { value: 'store', label: t('compression.methodStore') },
-                      { value: 'lzma', label: t('compression.methodZipLzma') },
-                      { value: 'zstd', label: t('compression.methodZipZstd') }
-                    ]}
-                  />
-                </div>
-              )}
-            </>
+            <div className="compression-panel__expert-row">
+              <label className="compression-panel__expert-label" htmlFor="compression-zip-method">
+                {t('compression.zipMethod')}
+              </label>
+              <Select<ZipMethod>
+                id="compression-zip-method"
+                ariaLabel={t('compression.zipMethod')}
+                value={zipMethod}
+                onChange={setZipMethod}
+                disabled={zipSettingsCleared}
+                cleared={zipSettingsCleared}
+                placeholder={CLEARED_VALUE}
+                options={[
+                  { value: 'deflate', label: t('compression.methodDeflate') },
+                  { value: 'store', label: t('compression.methodStore') },
+                  { value: 'lzma', label: t('compression.methodZipLzma') },
+                  { value: 'zstd', label: t('compression.methodZipZstd') }
+                ]}
+              />
+            </div>
           )}
 
           {/* 7Z Codec & Dictionary Tuning */}
           {format === '7z' && (
             <>
-              <div
-                className={`compression-panel__zip-overrides compression-panel__zip-overrides--with-settings${
-                  sevenZipPerFileActive ? ' is-active' : ''
-                }${items.length === 0 ? ' is-disabled' : ''}`}
-              >
-                <button
-                  type="button"
-                  className="compression-panel__zip-overrides-open"
-                  aria-label={t('compression.sevenZipOverridesButton')}
-                  onClick={() => setShowSevenZipMethodOverrides(true)}
-                  disabled={!sevenZipPerFileEnabled || items.length === 0}
-                >
-                  <span className="compression-panel__zip-overrides-copy">
-                    <Files size={16} />
-                    <span>
-                      <span className="compression-panel__zip-overrides-title">{t('compression.sevenZipOverridesButton')}</span>
-                      <span className="compression-panel__zip-overrides-hint">{t('compression.sevenZipOverridesButtonHint')}</span>
-                    </span>
-                  </span>
-                  {sevenZipMethodOverrides.length > 0 && (
-                    <span className="compression-panel__zip-overrides-badge">
-                      {t('compression.zipOverridesCount', { count: sevenZipMethodOverrides.length })}
-                    </span>
-                  )}
-                </button>
-                <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-label={t('compression.zipOverridesEnable')}
-                    checked={sevenZipPerFileEnabled}
-                    disabled={items.length === 0}
-                    onChange={(event) => {
-                      setSevenZipPerFileEnabled(event.target.checked)
-                      if (!event.target.checked) setShowSevenZipMethodOverrides(false)
-                    }}
-                  />
-                  <span className="compression-panel__mode-toggle-track" aria-hidden="true">
-                    <span className="compression-panel__mode-toggle-thumb" />
-                  </span>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label" htmlFor="compression-7z-method">
+                  {t('compression.codecMethod')}
                 </label>
+                <Select<SevenZipMethod>
+                  id="compression-7z-method"
+                  ariaLabel={t('compression.codecMethod')}
+                  value={sevenZipMethod}
+                  onChange={setSevenZipMethod}
+                  disabled={sevenZipSettingsCleared}
+                  cleared={sevenZipSettingsCleared}
+                  placeholder={CLEARED_VALUE}
+                  options={[
+                    { value: 'lzma2', label: t('compression.methodLzma2') },
+                    { value: 'copy', label: t('compression.methodCopy') }
+                  ]}
+                />
               </div>
 
-              {!sevenZipPerFileActive && (
-                <div className="compression-panel__expert-row">
-                  <label className="compression-panel__expert-label" htmlFor="compression-7z-method">
-                    {t('compression.codecMethod')}
-                  </label>
-                  <Select<SevenZipMethod>
-                    id="compression-7z-method"
-                    ariaLabel={t('compression.codecMethod')}
-                    value={sevenZipMethod}
-                    onChange={setSevenZipMethod}
-                    options={[
-                      { value: 'lzma2', label: t('compression.methodLzma2') },
-                      { value: 'copy', label: t('compression.methodCopy') }
-                    ]}
-                  />
-                </div>
-              )}
-
-              {sevenZipGlobalTuning && (
+              {sevenZipTuningShown && (
                 <>
                   <div className="compression-panel__expert-row">
                     <label className="compression-panel__expert-label" htmlFor="compression-dictionary-size">
@@ -515,6 +473,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                       ariaLabel={t('compression.dictionarySize')}
                       value={dictionarySize}
                       onChange={setDictionarySize}
+                      disabled={sevenZipSettingsCleared}
+                      cleared={sevenZipSettingsCleared}
+                      placeholder={CLEARED_VALUE}
                       options={DICTIONARY_SIZES}
                     />
                   </div>
@@ -527,6 +488,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                       ariaLabel={t('compression.matchFinderWordSize')}
                       value={matchFinderWordSize}
                       onChange={setMatchFinderWordSize}
+                      disabled={sevenZipSettingsCleared}
+                      cleared={sevenZipSettingsCleared}
+                      placeholder={CLEARED_VALUE}
                       options={[32, 64, 128, 273].map(value => ({
                         value: value as MatchFinderWordSize,
                         label: String(value)
@@ -534,8 +498,18 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                     />
                   </div>
                   <div className="compression-panel__expert-row">
-                    <label className="compression-panel__expert-label">{t('compression.searchCycles')} ({searchCycles})</label>
-                    <input className="compression-panel__range" type="range" min="1" max="1024" value={searchCycles} onChange={(e) => setSearchCycles(Number(e.target.value))} />
+                    <label className="compression-panel__expert-label">
+                      {t('compression.searchCycles')} ({sevenZipSettingsCleared ? CLEARED_VALUE : searchCycles})
+                    </label>
+                    <input
+                      className={`compression-panel__range${sevenZipSettingsCleared ? ' compression-panel__range--cleared' : ''}`}
+                      type="range"
+                      min="1"
+                      max="1024"
+                      value={sevenZipSettingsCleared ? 1 : searchCycles}
+                      disabled={sevenZipSettingsCleared}
+                      onChange={(e) => setSearchCycles(Number(e.target.value))}
+                    />
                   </div>
                 </>
               )}
@@ -559,9 +533,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             </>
           )}
 
-          {/* ZIP exposes Deflate tuning in global mode and moves it into the
-              per-file dialog once overrides are active. */}
-          {deflateTuned && (
+          {/* ZIP exposes Deflate tuning in global mode; per-file mode takes it
+              into the dialog and leaves these rows without a value. */}
+          {deflateTuningShown && (
             <>
               <div className="compression-panel__expert-row">
                 <label className="compression-panel__expert-label" htmlFor="compression-deflate-strategy">
@@ -572,6 +546,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   ariaLabel={t('compression.deflateStrategy')}
                   value={deflateStrategy}
                   onChange={setDeflateStrategy}
+                  disabled={zipSettingsCleared}
+                  cleared={zipSettingsCleared}
+                  placeholder={CLEARED_VALUE}
                   options={[
                     { value: 'default', label: t('compression.strategyDefault') },
                     { value: 'filtered', label: t('compression.strategyFiltered') },
@@ -584,18 +561,113 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
               <div className="compression-panel__expert-row">
                 <label className="compression-panel__expert-label">
-                  {t('compression.memLevel')} ({memLevel})
+                  {t('compression.memLevel')} ({zipSettingsCleared ? CLEARED_VALUE : memLevel})
                 </label>
                 <input
                   type="range"
                   min="1"
                   max="9"
-                  value={memLevel}
+                  value={zipSettingsCleared ? 1 : memLevel}
+                  disabled={zipSettingsCleared}
                   onChange={(e) => setMemLevel(Number(e.target.value))}
-                  className="compression-panel__range"
+                  className={`compression-panel__range${zipSettingsCleared ? ' compression-panel__range--cleared' : ''}`}
                 />
               </div>
             </>
+          )}
+
+          {/* The per-file dialog closes the card: switching it on hands every
+              setting above to it, so they clear rather than disappear. */}
+          {format === 'zip' && (
+            <div
+              className={`compression-panel__zip-overrides${
+                zipPerFileActive ? ' is-active' : ''
+              }${items.length === 0 ? ' is-disabled' : ''}`}
+            >
+              <button
+                type="button"
+                className="compression-panel__zip-overrides-open"
+                aria-label={t('compression.zipOverridesButton')}
+                onClick={() => setShowZipMethodOverrides(true)}
+                disabled={!zipPerFileEnabled || items.length === 0}
+              >
+                <span className="compression-panel__zip-overrides-copy">
+                  <Files size={16} />
+                  <span>
+                    <span className="compression-panel__zip-overrides-title">{t('compression.zipOverridesButton')}</span>
+                    <span className="compression-panel__zip-overrides-hint">{t('compression.zipOverridesButtonHint')}</span>
+                  </span>
+                </span>
+                {zipMethodOverrides.length > 0 && (
+                  <span className="compression-panel__zip-overrides-badge">
+                    {t('compression.zipOverridesCount', { count: zipMethodOverrides.length })}
+                  </span>
+                )}
+              </button>
+              <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={t('compression.zipOverridesEnable')}
+                  checked={zipPerFileEnabled}
+                  disabled={items.length === 0}
+                  onChange={(event) => {
+                    setZipPerFileEnabled(event.target.checked)
+                    resetArchiveSettings()
+                    if (!event.target.checked) setShowZipMethodOverrides(false)
+                  }}
+                />
+                <span className="compression-panel__mode-toggle-track" aria-hidden="true">
+                  <span className="compression-panel__mode-toggle-thumb" />
+                </span>
+              </label>
+            </div>
+          )}
+
+          {format === '7z' && (
+            <div
+              className={`compression-panel__zip-overrides${
+                sevenZipPerFileActive ? ' is-active' : ''
+              }${items.length === 0 ? ' is-disabled' : ''}`}
+            >
+              <button
+                type="button"
+                className="compression-panel__zip-overrides-open"
+                aria-label={t('compression.sevenZipOverridesButton')}
+                onClick={() => setShowSevenZipMethodOverrides(true)}
+                disabled={!sevenZipPerFileEnabled || items.length === 0}
+              >
+                <span className="compression-panel__zip-overrides-copy">
+                  <Files size={16} />
+                  <span>
+                    <span className="compression-panel__zip-overrides-title">{t('compression.sevenZipOverridesButton')}</span>
+                    <span className="compression-panel__zip-overrides-hint">{t('compression.sevenZipOverridesButtonHint')}</span>
+                  </span>
+                </span>
+                {sevenZipMethodOverrides.length > 0 && (
+                  <span className="compression-panel__zip-overrides-badge">
+                    {t('compression.zipOverridesCount', { count: sevenZipMethodOverrides.length })}
+                  </span>
+                )}
+              </button>
+              <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={t('compression.zipOverridesEnable')}
+                  checked={sevenZipPerFileEnabled}
+                  disabled={items.length === 0}
+                  onChange={(event) => {
+                    setSevenZipPerFileEnabled(event.target.checked)
+                    resetArchiveSettings()
+                    if (!event.target.checked) setShowSevenZipMethodOverrides(false)
+                  }}
+                />
+                <span className="compression-panel__mode-toggle-track" aria-hidden="true">
+                  <span className="compression-panel__mode-toggle-thumb" />
+                </span>
+              </label>
+            </div>
           )}
 
         </div>
