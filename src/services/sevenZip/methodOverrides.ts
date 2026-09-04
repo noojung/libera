@@ -1,6 +1,6 @@
 import path from 'path'
 
-export type SevenZipOverrideMethod = 'auto' | 'lzma2' | 'copy'
+export type SevenZipMethod = 'lzma2' | 'copy'
 export type SevenZipCompressionLevel = 1 | 3 | 5 | 7 | 9
 export type SevenZipDictionarySize = 'auto' | number
 export type SevenZipMatchFinderWordSize = 32 | 64 | 128 | 273
@@ -8,7 +8,7 @@ export type SevenZipMatchFinderWordSize = 32 | 64 | 128 | 273
 export interface SevenZipMethodOverride {
   sourcePath: string
   scope: 'file' | 'tree'
-  method: SevenZipOverrideMethod
+  method: SevenZipMethod
   level?: SevenZipCompressionLevel
   dictionarySize?: SevenZipDictionarySize
   matchFinderWordSize?: SevenZipMatchFinderWordSize
@@ -16,7 +16,7 @@ export interface SevenZipMethodOverride {
 }
 
 export interface ResolvedSevenZipMethod {
-  method: SevenZipOverrideMethod
+  method: SevenZipMethod
   explicit: boolean
   level?: SevenZipCompressionLevel
   dictionarySize?: SevenZipDictionarySize
@@ -24,7 +24,7 @@ export interface ResolvedSevenZipMethod {
   searchCycles?: number
 }
 
-const METHODS = new Set<SevenZipOverrideMethod>(['auto', 'lzma2', 'copy'])
+const METHODS = new Set<SevenZipMethod>(['lzma2', 'copy'])
 const LEVELS = new Set<SevenZipCompressionLevel>([1, 3, 5, 7, 9])
 const MATCH_FINDER_WORD_SIZES = new Set<SevenZipMatchFinderWordSize>([32, 64, 128, 273])
 const MIN_DICTIONARY_SIZE = 64 * 1024
@@ -40,8 +40,8 @@ function isSameOrChild(rootPath: string, candidatePath: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
-export function isSevenZipOverrideMethod(value: unknown): value is SevenZipOverrideMethod {
-  return typeof value === 'string' && METHODS.has(value as SevenZipOverrideMethod)
+export function isSevenZipMethod(value: unknown): value is SevenZipMethod {
+  return typeof value === 'string' && METHODS.has(value as SevenZipMethod)
 }
 
 export function validateSevenZipMethodOverrides(
@@ -59,7 +59,7 @@ export function validateSevenZipMethodOverrides(
     if (override.scope !== 'file' && override.scope !== 'tree') {
       throw new RangeError('7Z method override scope is unsupported.')
     }
-    if (!isSevenZipOverrideMethod(override.method)) {
+    if (!isSevenZipMethod(override.method)) {
       throw new RangeError('7Z method override is unsupported.')
     }
     if (override.method === 'copy' && (
@@ -99,7 +99,7 @@ export function validateSevenZipMethodOverrides(
 /** Exact file rules win; otherwise the nearest recursive directory rule wins. */
 export function resolveSevenZipMethod(
   sourcePath: string,
-  defaultMethod: SevenZipOverrideMethod,
+  defaultMethod: SevenZipMethod,
   overrides: readonly SevenZipMethodOverride[] | undefined
 ): ResolvedSevenZipMethod {
   if (!overrides?.length) return { method: defaultMethod, explicit: false }

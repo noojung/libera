@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type {
   SevenZipCompressionLevel,
-  SevenZipMethodOverride,
-  SevenZipOverrideMethod
+  SevenZipMethod,
+  SevenZipMethodOverride
 } from '@services/compressor'
 import type { SelectedItem } from '@/types'
 import { formatBytes } from '@/i18n/format'
@@ -13,7 +13,7 @@ import type { AppLanguage } from '@/i18n/language'
 import { Select, type SelectOption } from './Select'
 import './ZipMethodOverridesModal.css'
 
-type MethodSelection = SevenZipOverrideMethod | 'mixed'
+type MethodSelection = SevenZipMethod | 'mixed'
 type LevelSelection = SevenZipCompressionLevel | 'mixed'
 
 const SEVEN_ZIP_LEVELS: readonly SevenZipCompressionLevel[] = [1, 3, 5, 7, 9]
@@ -56,7 +56,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const isMacOS = platform === 'macos'
   const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
-  const defaultMethod: SevenZipOverrideMethod = defaultLevel === 0 ? 'copy' : 'lzma2'
+  const defaultMethod: SevenZipMethod = defaultLevel === 0 ? 'copy' : 'lzma2'
   const defaultCompressionLevel: SevenZipCompressionLevel = SEVEN_ZIP_LEVELS.includes(defaultLevel as SevenZipCompressionLevel)
     ? defaultLevel as SevenZipCompressionLevel
     : 1
@@ -94,7 +94,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     return winner
   }
 
-  const effectiveMethod = (sourcePath: string, isDirectory: boolean): SevenZipOverrideMethod => {
+  const effectiveMethod = (sourcePath: string, isDirectory: boolean): SevenZipMethod => {
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
     return directRule?.method ?? containingTreeRule(sourcePath)?.method ?? defaultMethod
   }
@@ -103,15 +103,14 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     const method = effectiveMethod(sourcePath, isDirectory)
     if (!isDirectory) return method
 
-    const methods = new Set<SevenZipOverrideMethod>([method])
+    const methods = new Set<SevenZipMethod>([method])
     for (const rule of overrides) {
       if (isDescendant(sourcePath, rule.sourcePath, isWindows)) methods.add(rule.method)
     }
     return methods.size > 1 ? 'mixed' : method
   }
 
-  const methodLabel = (method: SevenZipOverrideMethod): string => {
-    if (method === 'auto') return t('compression.sevenZipOverridesAutomatic')
+  const methodLabel = (method: SevenZipMethod): string => {
     if (method === 'copy') return t('compression.methodCopy')
     return t('compression.methodLzma2')
   }
@@ -130,7 +129,6 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
       ...(selection === 'mixed'
         ? [{ value: 'mixed' as const, label: t('compression.sevenZipOverridesMixed'), disabled: true }]
         : []),
-      { value: 'auto', label: methodLabel('auto') },
       { value: 'lzma2', label: methodLabel('lzma2') },
       { value: 'copy', label: methodLabel('copy') }
     ]

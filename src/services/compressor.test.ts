@@ -275,8 +275,8 @@ describe('compressArchive', () => {
   })
 })
 
-describe('storing what compression cannot help', () => {
-  /** A directory holding one entry of each kind the per-entry rule sorts. */
+describe('Store as an explicit choice', () => {
+  /** A directory holding a compressible, a tiny, and an incompressible entry. */
   async function createMixedSource(directory: string): Promise<string> {
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
@@ -290,7 +290,9 @@ describe('storing what compression cannot help', () => {
     return Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))
   }
 
-  it('stores the already-compressed and the too-small, and deflates the rest', async () => {
+  // Nothing is measured any more: a tiny or an already-compressed entry is
+  // deflated like the rest, and Store is reached only by asking for it.
+  it('deflates every entry when nothing asks for Store', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = await createMixedSource(directory)
     const outputPath = path.join(directory, 'mixed.zip')
@@ -300,8 +302,8 @@ describe('storing what compression cannot help', () => {
     const inspected = await inspectArchive(outputPath)
     expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
       'notes.txt': 'Deflate',
-      'tiny.txt': 'Store',
-      'photo.jpg': 'Store'
+      'tiny.txt': 'Deflate',
+      'photo.jpg': 'Deflate'
     })
 
     const outputDir = path.join(directory, 'out')
@@ -309,37 +311,23 @@ describe('storing what compression cannot help', () => {
     await expect(fs.readFile(path.join(outputDir, 'source', 'tiny.txt'), 'utf8')).resolves.toBe('hello')
   })
 
-  it('sorts a file named on its own the same way a walked one is', async () => {
-    const directory = await createTemporaryDirectory()
-    const sourceDir = await createMixedSource(directory)
-    const outputPath = path.join(directory, 'listed.zip')
-
-    await compressArchive({
-      inputPaths: [
-        path.join(sourceDir, 'notes.txt'),
-        path.join(sourceDir, 'tiny.txt'),
-        path.join(sourceDir, 'photo.jpg')
-      ],
-      outputPath,
-      format: 'zip'
-    })
-
-    const inspected = await inspectArchive(outputPath)
-    expect(codecsByName(inspected.entries)).toEqual({
-      'notes.txt': 'Deflate',
-      'tiny.txt': 'Store',
-      'photo.jpg': 'Store'
-    })
-  })
-
   // The zip.js writer, reached here by asking for a method archiver cannot
   // write. A stored entry has to drop the archive's codec, not just its level.
-  it('stores them under LZMA too, and keeps the archive readable', async () => {
+  it('stores a named entry under LZMA too, and keeps the archive readable', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = await createMixedSource(directory)
     const outputPath = path.join(directory, 'lzma.zip')
 
-    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip', zipMethod: 'lzma' })
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      zipMethod: 'lzma',
+      zipMethodOverrides: [
+        { sourcePath: path.join(sourceDir, 'tiny.txt'), scope: 'file', method: 'store' },
+        { sourcePath: path.join(sourceDir, 'photo.jpg'), scope: 'file', method: 'store' }
+      ]
+    })
 
     const inspected = await inspectArchive(outputPath)
     expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
@@ -360,7 +348,16 @@ describe('storing what compression cannot help', () => {
     const sourceDir = await createMixedSource(directory)
     const outputPath = path.join(directory, 'secret.zip')
 
-    await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'zip', password: 'hunter2' })
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'zip',
+      password: 'hunter2',
+      zipMethodOverrides: [
+        { sourcePath: path.join(sourceDir, 'tiny.txt'), scope: 'file', method: 'store' },
+        { sourcePath: path.join(sourceDir, 'photo.jpg'), scope: 'file', method: 'store' }
+      ]
+    })
 
     const inspected = await inspectArchive(outputPath, { password: 'hunter2' })
     expect(codecsByName(inspected.entries.filter(entry => !entry.isDirectory))).toEqual({
@@ -392,15 +389,15 @@ describe('storing what compression cannot help', () => {
 })
 
 describe('per-file ZIP methods', () => {
-  it('tunes Automatic per folder and stores only entries whose measured Deflate payload grows', async () => {
+  it('tunes Deflate per folder, down to the entry compression cannot help', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
-    const text = Buffer.from('automatic folder tuning '.repeat(3000))
+    const text = Buffer.from('deflate folder tuning '.repeat(3000))
     const noise = crypto.randomBytes(64 * 1024)
     await fs.writeFile(path.join(sourceDir, 'notes.txt'), text)
     await fs.writeFile(path.join(sourceDir, 'noise.bin'), noise)
-    const outputPath = path.join(directory, 'automatic-tuned.zip')
+    const outputPath = path.join(directory, 'deflate-tuned.zip')
 
     await compressArchive({
       inputPaths: [sourceDir],
@@ -409,7 +406,7 @@ describe('per-file ZIP methods', () => {
       zipMethodOverrides: [{
         sourcePath: sourceDir,
         scope: 'tree',
-        method: 'auto',
+        method: 'deflate',
         level: 9,
         deflateStrategy: 'huffman_only'
       }]
@@ -418,7 +415,7 @@ describe('per-file ZIP methods', () => {
     const entries = (await inspectArchive(outputPath)).entries.filter(entry => !entry.isDirectory)
     expect(Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
       'notes.txt': 'Deflate',
-      'noise.bin': 'Store'
+      'noise.bin': 'Deflate'
     })
     expect(entries.find(entry => entry.name === 'notes.txt')?.compressedSize).toBe(zlib.deflateRawSync(text, {
       level: 9,
@@ -433,7 +430,7 @@ describe('per-file ZIP methods', () => {
     const sources = {
       'stored.txt': 'stored bytes',
       'forced.jpg': 'a JPEG name that should still be explicitly deflated '.repeat(100),
-      'automatic.png': 'compressible content despite its extension '.repeat(100),
+      'inherited.png': 'content that takes the archive method, having no rule '.repeat(100),
       'lzma.txt': 'lzma content '.repeat(200),
       'zstd.txt': 'zstandard content '.repeat(200)
     }
@@ -458,7 +455,7 @@ describe('per-file ZIP methods', () => {
     expect(Object.fromEntries(inspected.entries.filter(entry => !entry.isDirectory).map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
       'stored.txt': 'Store',
       'forced.jpg': 'Deflate',
-      'automatic.png': 'Deflate',
+      'inherited.png': 'Deflate',
       'lzma.txt': 'LZMA',
       'zstd.txt': 'Zstd'
     })
@@ -628,12 +625,12 @@ describe('per-file ZIP methods', () => {
     }
   })
 
-  it('keeps automatic entries stored at level zero while compressing an explicit file at the minimum strength', async () => {
+  it('keeps unnamed entries stored at level zero while compressing an explicit file at the minimum strength', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     await fs.mkdir(sourceDir)
     const compressedPath = path.join(sourceDir, 'compressed.txt')
-    const storedPath = path.join(sourceDir, 'automatic.txt')
+    const storedPath = path.join(sourceDir, 'stored.txt')
     const contents = Buffer.from('minimum per-file strength '.repeat(2000))
     await Promise.all([fs.writeFile(compressedPath, contents), fs.writeFile(storedPath, contents)])
     const outputPath = path.join(directory, 'store-with-exception.zip')
@@ -649,7 +646,7 @@ describe('per-file ZIP methods', () => {
     const entries = (await inspectArchive(outputPath)).entries.filter(entry => !entry.isDirectory)
     expect(Object.fromEntries(entries.map(entry => [path.basename(entry.path), entry.codec]))).toEqual({
       'compressed.txt': 'Deflate',
-      'automatic.txt': 'Store'
+      'stored.txt': 'Store'
     })
     expect(entries.find(entry => entry.name === 'compressed.txt')?.compressedSize)
       .toBe(zlib.deflateRawSync(contents, { level: 1 }).length)
@@ -757,28 +754,6 @@ describe('7z compression', () => {
       .resolves.toBe('compress this entry '.repeat(400))
     await expect(fs.readFile(path.join(targetDir, 'source', 'nested', 'copied.txt'), 'utf8'))
       .resolves.toBe('copy this entry unchanged')
-  }, 60_000)
-
-  it('uses Copy for an Automatic entry only when its measured LZMA2 payload grows', async () => {
-    const directory = await createTemporaryDirectory()
-    const sourceDir = path.join(directory, 'source')
-    await fs.mkdir(sourceDir)
-    await fs.writeFile(path.join(sourceDir, 'notes.txt'), 'automatic lzma2 '.repeat(400))
-    await fs.writeFile(path.join(sourceDir, 'noise.bin'), crypto.randomBytes(8 * 1024))
-    const outputPath = path.join(directory, 'automatic-methods.7z')
-
-    await compressArchive({
-      inputPaths: [sourceDir],
-      outputPath,
-      format: '7z',
-      sevenZipMethodOverrides: [{ sourcePath: sourceDir, scope: 'tree', method: 'auto' }]
-    })
-
-    const inspected = await inspectArchive(outputPath)
-    expect(Object.fromEntries(inspected.entries
-      .filter(entry => !entry.isDirectory)
-      .map(entry => [path.basename(entry.path), entry.codec?.split(' ')[0]])))
-      .toEqual({ 'noise.bin': 'Copy', 'notes.txt': 'LZMA2' })
   }, 60_000)
 
   it('rejects 7Z method rules for another archive format', async () => {

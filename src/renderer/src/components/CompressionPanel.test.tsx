@@ -254,7 +254,7 @@ describe('CompressionPanel', () => {
     expect(screen.queryByText('1 override')).not.toBeInTheDocument()
     expect(screen.getByText('Compression level')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'ZIP compression method' }))
-      .toHaveTextContent('Automatic (Deflate / Store)')
+      .toHaveTextContent('Deflate (8)')
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
     expect(screen.getByRole('combobox', { name: 'Dictionary size' })).toHaveTextContent('16 MB')
@@ -326,7 +326,7 @@ describe('CompressionPanel', () => {
 
     expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'ZIP compression method' }))
-      .toHaveTextContent('Automatic (Deflate / Store)')
+      .toHaveTextContent('Deflate (8)')
     expect(screen.getByRole('combobox', { name: 'Deflate strategy' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
@@ -356,7 +356,7 @@ describe('CompressionPanel', () => {
       zipMethodOverrides: [{
         sourcePath: 'C:\\input.txt',
         scope: 'file',
-        method: 'auto',
+        method: 'deflate',
         deflateStrategy: 'rle',
         memLevel: 3,
         level: 9
@@ -375,7 +375,7 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
 
     expect(screen.getByRole('combobox', { name: 'ZIP compression method' }))
-      .toHaveTextContent('Automatic (Deflate / Store)')
+      .toHaveTextContent('Deflate (8)')
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
@@ -422,7 +422,7 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Compression level')).toBeInTheDocument()
     expect(screen.getByText('9 - Maximum')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'ZIP compression method' }))
-      .toHaveTextContent('Automatic (Deflate / Store)')
+      .toHaveTextContent('Deflate (8)')
     expect(screen.getByRole('combobox', { name: 'Deflate strategy' }))
       .toHaveTextContent('RLE (Match distance 1 only)')
     expect(screen.getByText('1 override')).toBeInTheDocument()
@@ -532,7 +532,7 @@ describe('CompressionPanel', () => {
     }))
   })
 
-  it('applies automatic folder tuning to child files without inheritance selections', async () => {
+  it('applies folder tuning to child files without inheritance selections', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     const source = { path: '/source', name: 'source', isDirectory: true, size: 4096 }
     const child = { path: '/source/notes.txt', name: 'notes.txt', isDirectory: false, size: 2048 }
@@ -546,7 +546,7 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     expect(screen.getByRole('combobox', { name: 'Compression method for source' }))
-      .toHaveTextContent('Automatic (Deflate / Store)')
+      .toHaveTextContent('Deflate (8)')
     expect(screen.queryByText(/Inherit/)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('combobox', { name: 'Deflate strategy for source' }))
@@ -571,7 +571,7 @@ describe('CompressionPanel', () => {
       zipMethodOverrides: [{
         sourcePath: '/source',
         scope: 'tree',
-        method: 'auto',
+        method: 'deflate',
         deflateStrategy: 'rle',
         memLevel: 4,
         level: 9
@@ -586,7 +586,13 @@ describe('CompressionPanel', () => {
     const { user } = renderWithI18n(<CompressionPanel items={[{ ...item, path: '/input.txt' }]} onStartCompress={onStart} />)
 
     fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '0' } })
+    // Deflate cannot sit at zero, so the slider reads back as the minimum
+    // until Store is the method that was asked for.
+    expect(screen.getByText('1 - Fastest')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
+    await user.click(screen.getByRole('option', { name: 'Store (0)' }))
     expect(screen.getByText('0 - Store')).toBeInTheDocument()
+
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
@@ -620,7 +626,7 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
-    await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
+    await user.click(screen.getByRole('option', { name: 'LZMA2 (High efficiency)' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression strength for input.txt' }))
     await user.click(screen.getByRole('option', { name: '9 - Ultra' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
@@ -636,7 +642,7 @@ describe('CompressionPanel', () => {
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       format: '7z',
       sevenZipMethod: undefined,
-      sevenZipMethodOverrides: [{ sourcePath: 'C:\\input.txt', scope: 'file', method: 'auto', level: 9 }],
+      sevenZipMethodOverrides: [{ sourcePath: 'C:\\input.txt', scope: 'file', method: 'lzma2', level: 9 }],
       dictionarySize: undefined,
       matchFinderWordSize: undefined,
       searchCycles: undefined,
@@ -678,13 +684,13 @@ describe('CompressionPanel', () => {
     // Walking back up to set a folder rule, then down again to see it cascade.
     await user.click(screen.getByRole('button', { name: 'All selected items' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression method for source' }))
-    await user.click(screen.getByRole('option', { name: 'Automatic (LZMA2 / Copy)' }))
+    await user.click(screen.getByRole('option', { name: 'LZMA2 (High efficiency)' }))
     await user.click(screen.getByRole('combobox', { name: 'Compression strength for source' }))
     await user.click(screen.getByRole('option', { name: '9 - Ultra' }))
 
     await user.click(screen.getByRole('button', { name: 'Open source' }))
     expect(await screen.findByRole('combobox', { name: 'Compression method for archive.bin' }))
-      .toHaveTextContent('Automatic (LZMA2 / Copy)')
+      .toHaveTextContent('LZMA2 (High efficiency)')
     expect(screen.getByRole('combobox', { name: 'Compression strength for archive.bin' }))
       .toHaveTextContent('9 - Ultra')
 
@@ -702,7 +708,7 @@ describe('CompressionPanel', () => {
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       format: '7z',
       sevenZipMethodOverrides: [
-        { sourcePath: '/source', scope: 'tree', method: 'auto', level: 9 },
+        { sourcePath: '/source', scope: 'tree', method: 'lzma2', level: 9 },
         { sourcePath: '/source/archive.bin', scope: 'file', method: 'copy' }
       ]
     }))

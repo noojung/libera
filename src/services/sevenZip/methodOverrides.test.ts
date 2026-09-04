@@ -13,16 +13,16 @@ describe('7z method overrides', () => {
 
   it('uses an exact file rule ahead of the nearest directory rule', () => {
     const overrides: SevenZipMethodOverride[] = [
-      { sourcePath: root, scope: 'tree', method: 'copy' },
-      { sourcePath: nested, scope: 'tree', method: 'auto' },
+      { sourcePath: root, scope: 'tree', method: 'lzma2' },
+      { sourcePath: nested, scope: 'tree', method: 'copy' },
       { sourcePath: file, scope: 'file', method: 'lzma2' }
     ]
 
-    expect(resolveSevenZipMethod(file, 'lzma2', overrides)).toEqual({ method: 'lzma2', explicit: true })
+    expect(resolveSevenZipMethod(file, 'copy', overrides)).toEqual({ method: 'lzma2', explicit: true })
     expect(resolveSevenZipMethod(path.join(nested, 'other.bin'), 'lzma2', overrides))
-      .toEqual({ method: 'auto', explicit: true })
-    expect(resolveSevenZipMethod(path.join(root, 'README.md'), 'lzma2', overrides))
       .toEqual({ method: 'copy', explicit: true })
+    expect(resolveSevenZipMethod(path.join(root, 'README.md'), 'copy', overrides))
+      .toEqual({ method: 'lzma2', explicit: true })
   })
 
   it('falls back to the archive method outside every rule', () => {
@@ -31,7 +31,7 @@ describe('7z method overrides', () => {
 
   it('accepts supported rules inside a selected input', () => {
     expect(() => validateSevenZipMethodOverrides([
-      { sourcePath: root, scope: 'tree', method: 'auto' },
+      { sourcePath: root, scope: 'tree', method: 'lzma2' },
       { sourcePath: file, scope: 'file', method: 'copy' }
     ], [root])).not.toThrow()
   })

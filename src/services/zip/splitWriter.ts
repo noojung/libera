@@ -17,7 +17,6 @@ import {
   ZIP_LZMA_METHOD,
   ZIP_ZSTD_METHOD
 } from './codecs'
-import { shouldStoreAfterDeflate } from './storeHeuristics'
 import {
   resolveZipMethod,
   type DeflateStrategy,
@@ -103,67 +102,33 @@ function zipMethodOptions(squeeze: ZipSqueezeOptions, explicit = false): Record<
 const STORE_ENTRY_OPTIONS = { level: 0, compressionMethod: 0 } as const
 
 /**
- * The method this entry is written with: the archive's, unless the file is one
- * compression cannot help - see storeHeuristics.
+ * The method this entry is written with: the archive's, unless a per-file rule
+ * names another one for this path or a folder above it.
  */
-async function entryMethodOptions(
+function entryMethodOptions(
   squeeze: ZipSqueezeOptions,
   archiveOptions: Record<string, unknown>,
-  entry: { absolutePath: string; size: number },
-  signal?: AbortSignal
-): Promise<{ options: Record<string, unknown>; deflateStrategy?: DeflateStrategy; memLevel?: number }> {
-  const resolvedMethod = resolveZipMethod(entry.absolutePath, squeeze.method ?? 'auto', squeeze.methodOverrides)
-  if (resolvedMethod.method === 'auto') {
-    const level = resolvedMethod.level ?? squeeze.level
-    const deflateStrategy = resolvedMethod.deflateStrategy ?? squeeze.deflateStrategy
-    const memLevel = resolvedMethod.memLevel ?? squeeze.memLevel
-    const store = await shouldStoreAfterDeflate(entry.absolutePath, entry.size, {
-      level,
-      strategy: deflateStrategy,
-      memLevel,
-      signal
-    })
-    return store
-      ? { options: STORE_ENTRY_OPTIONS }
-      : {
-          options: zipMethodOptions({ ...squeeze, method: 'deflate', level: Math.max(1, level) }, true),
-          ...(deflateStrategy ? { deflateStrategy } : {}),
-          ...(memLevel !== undefined ? { memLevel } : {})
-        }
+  entry: { absolutePath: string }
+): { options: Record<string, unknown>; deflateStrategy?: DeflateStrategy; memLevel?: number } {
+  const resolved = resolveZipMethod(entry.absolutePath, squeeze.method ?? 'deflate', squeeze.methodOverrides)
+  // Deflate is the only method zlib tuning reaches; the rest ignore both.
+  const deflateStrategy = resolved.method === 'deflate'
+    ? resolved.deflateStrategy ?? squeeze.deflateStrategy
+    : undefined
+  const memLevel = resolved.method === 'deflate'
+    ? resolved.memLevel ?? squeeze.memLevel
+    : undefined
+  const tuning = {
+    ...(deflateStrategy ? { deflateStrategy } : {}),
+    ...(memLevel !== undefined ? { memLevel } : {})
   }
-  if (resolvedMethod.explicit) {
-    const resolvedLevel = resolvedMethod.method === 'store'
-      ? 0
-      : resolvedMethod.level ?? Math.max(1, squeeze.level)
-    return {
-      options: zipMethodOptions({ ...squeeze, method: resolvedMethod.method, level: resolvedLevel }, true),
-      ...(resolvedMethod.method === 'deflate' && resolvedMethod.deflateStrategy
-        ? { deflateStrategy: resolvedMethod.deflateStrategy }
-        : resolvedMethod.method === 'deflate' && squeeze.deflateStrategy
-          ? { deflateStrategy: squeeze.deflateStrategy }
-          : {}),
-      ...(resolvedMethod.method === 'deflate' && (resolvedMethod.memLevel ?? squeeze.memLevel) !== undefined
-        ? { memLevel: resolvedMethod.memLevel ?? squeeze.memLevel }
-        : {})
-    }
+  if (!resolved.explicit) return { options: archiveOptions, ...tuning }
+
+  const level = resolved.method === 'store' ? 0 : resolved.level ?? Math.max(1, squeeze.level)
+  return {
+    options: zipMethodOptions({ ...squeeze, method: resolved.method, level }, true),
+    ...tuning
   }
-  if (squeeze.method === 'store' || squeeze.level <= 0) return { options: archiveOptions }
-  const deflateStrategy = resolvedMethod.method === 'deflate' ? squeeze.deflateStrategy : undefined
-  const store = await shouldStoreAfterDeflate(entry.absolutePath, entry.size, {
-    level: squeeze.level,
-    strategy: deflateStrategy,
-    memLevel: squeeze.memLevel,
-    signal
-  })
-  return store
-    ? { options: STORE_ENTRY_OPTIONS }
-    : {
-        options: archiveOptions,
-        ...(deflateStrategy ? { deflateStrategy } : {}),
-        ...(resolvedMethod.method === 'deflate' && squeeze.memLevel !== undefined
-          ? { memLevel: squeeze.memLevel }
-          : {})
-      }
 }
 
 function zipEncryptionOptions(squeeze: ZipSqueezeOptions): Record<string, unknown> {
@@ -371,7 +336,7 @@ export async function writeSplitZip(
       const reader = new NodeFileReader(entry.absolutePath)
       const entryStart = processedBytes
       try {
-        const method = await entryMethodOptions(options.squeeze, methodOptions, entry, signal)
+        const method = entryMethodOptions(options.squeeze, methodOptions, entry)
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
         await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
@@ -481,7 +446,7 @@ export async function writeZipFile(
       const reader = new NodeFileReader(entry.absolutePath)
       const entryStart = processedBytes
       try {
-        const method = await entryMethodOptions(squeeze, methodOptions, entry, signal)
+        const method = entryMethodOptions(squeeze, methodOptions, entry)
         await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
           ...method.options,
           lastModDate: entry.lastModDate,

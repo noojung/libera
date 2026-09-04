@@ -56,20 +56,20 @@ describe('ZIP method overrides', () => {
     })
   })
 
-  it('allows Automatic to carry Deflate tuning and strength', () => {
+  it('carries Deflate tuning and strength from a single folder rule', () => {
     const root = path.resolve('/input')
     const file = path.join(root, 'notes.txt')
     const rules: ZipMethodOverride[] = [{
       sourcePath: root,
       scope: 'tree',
-      method: 'auto',
+      method: 'deflate',
       deflateStrategy: 'rle',
       memLevel: 3,
       level: 8
     }]
 
-    expect(resolveZipMethod(file, 'auto', rules)).toEqual({
-      method: 'auto',
+    expect(resolveZipMethod(file, 'deflate', rules)).toEqual({
+      method: 'deflate',
       explicit: true,
       deflateStrategy: 'rle',
       memLevel: 3,
@@ -82,12 +82,12 @@ describe('ZIP method overrides', () => {
     const nested = path.join(root, 'nested')
     const file = path.join(nested, 'notes.txt')
     const rules: ZipMethodOverride[] = [
-      { sourcePath: root, scope: 'tree', method: 'auto', memLevel: 2 },
+      { sourcePath: root, scope: 'tree', method: 'deflate', memLevel: 2 },
       { sourcePath: nested, scope: 'tree', method: 'deflate', memLevel: 7 },
       { sourcePath: file, scope: 'file', method: 'deflate' }
     ]
 
-    expect(resolveZipMethod(file, 'auto', rules)).toEqual({
+    expect(resolveZipMethod(file, 'deflate', rules)).toEqual({
       method: 'deflate',
       explicit: true,
       memLevel: 7
@@ -127,7 +127,7 @@ describe('ZIP method overrides', () => {
       scope: 'file',
       method: 'store',
       deflateStrategy: 'rle'
-    }], [root])).toThrow(/Automatic or Deflate method/)
+    }], [root])).toThrow(/Deflate method/)
 
     expect(() => validateZipMethodOverrides([{
       sourcePath: file,
@@ -135,14 +135,6 @@ describe('ZIP method overrides', () => {
       method: 'deflate',
       level: 0
     }], [root])).toThrow(/between 1 and 9/)
-
-    expect(() => validateZipMethodOverrides([{
-      sourcePath: file,
-      scope: 'file',
-      method: 'auto',
-      level: 0,
-      deflateStrategy: 'rle'
-    }], [root])).not.toThrow()
 
     expect(() => validateZipMethodOverrides([{
       sourcePath: file,

@@ -32,7 +32,6 @@ import './CompressionPanel.css'
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
 export type DeflateStrategy = 'default' | 'filtered' | 'huffman_only' | 'rle' | 'fixed'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
-type ZipMethodSelection = 'auto' | ZipMethod
 
 export interface StartCompressOptions {
   format: ArchiveFormat
@@ -138,7 +137,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
   // Expert options state
   const [zipEncryptionMethod, setZipEncryptionMethod] = useState<ZipEncryptionMethod>('zip20')
-  const [zipMethod, setZipMethod] = useState<ZipMethodSelection>('auto')
+  const [zipMethod, setZipMethod] = useState<ZipMethod>('deflate')
   const [zipPerFileEnabled, setZipPerFileEnabled] = useState(false)
   const [zipMethodOverrides, setZipMethodOverrides] = useState<ZipMethodOverride[]>([])
   const [showZipMethodOverrides, setShowZipMethodOverrides] = useState(false)
@@ -209,7 +208,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     setSplitCustomValue('100')
     setSplitCustomUnit('MB')
     setZipEncryptionMethod('zip20')
-    setZipMethod('auto')
+    setZipMethod('deflate')
     setZipPerFileEnabled(false)
     setZipMethodOverrides([])
     setShowZipMethodOverrides(false)
@@ -242,11 +241,11 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     (format === '7z' && sevenZipMethod === 'copy')
   )
   const compressedMethodSelected = isExpertMode && !perFileCompressionActive && (
-    (format === 'zip' && zipMethod !== 'auto' && zipMethod !== 'store') ||
+    (format === 'zip' && zipMethod !== 'store') ||
     (format === '7z' && sevenZipMethod === 'lzma2')
   )
   const effectiveLevel = storeSelected ? 0 : compressedMethodSelected && level === 0 ? 1 : level
-  const deflateTuned = (format === 'zip' && !zipPerFileActive && (zipMethod === 'auto' || zipMethod === 'deflate')) ||
+  const deflateTuned = (format === 'zip' && !zipPerFileActive && zipMethod === 'deflate') ||
     format === 'tgz' || format === 'gz'
   const sevenZipGlobalTuning = format === '7z' && !sevenZipPerFileActive && sevenZipMethod === 'lzma2'
 
@@ -288,7 +287,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       ...(isExpertMode
         ? {
             encryptionMethod: format === 'zip' ? zipEncryptionMethod : undefined,
-            zipMethod: format === 'zip' && !zipPerFileActive && zipMethod !== 'auto' ? zipMethod : undefined,
+            zipMethod: format === 'zip' && !zipPerFileActive ? zipMethod : undefined,
             zipMethodOverrides: format === 'zip' && zipPerFileActive && zipMethodOverrides.length > 0
               ? zipMethodOverrides
               : undefined,
@@ -424,13 +423,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   <label className="compression-panel__expert-label" htmlFor="compression-zip-method">
                     {t('compression.zipMethod')}
                   </label>
-                  <Select<ZipMethodSelection>
+                  <Select<ZipMethod>
                     id="compression-zip-method"
                     ariaLabel={t('compression.zipMethod')}
                     value={zipMethod}
                     onChange={setZipMethod}
                     options={[
-                      { value: 'auto', label: t('compression.zipOverridesAutomatic') },
                       { value: 'deflate', label: t('compression.methodDeflate') },
                       { value: 'store', label: t('compression.methodStore') },
                       { value: 'lzma', label: t('compression.methodZipLzma') },

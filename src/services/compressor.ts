@@ -13,6 +13,7 @@ import {
 import { writeSevenZipArchive } from './sevenZip/writer'
 import {
   validateSevenZipMethodOverrides,
+  type SevenZipMethod,
   type SevenZipMethodOverride
 } from './sevenZip/methodOverrides'
 import {
@@ -33,15 +34,14 @@ async function totalOutputSize(outputPaths: string[]): Promise<number> {
 
 export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
-export type { ZipMethod, ZipMethodOverride, ZipOverrideMethod } from './zip/methodOverrides'
+export type { ZipMethod, ZipMethodOverride } from './zip/methodOverrides'
 export type { DeflateStrategy } from './zip/methodOverrides'
-export type SevenZipMethod = 'lzma2' | 'copy'
 export type {
   SevenZipCompressionLevel,
   SevenZipDictionarySize,
   SevenZipMatchFinderWordSize,
-  SevenZipMethodOverride,
-  SevenZipOverrideMethod
+  SevenZipMethod,
+  SevenZipMethodOverride
 } from './sevenZip/methodOverrides'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 

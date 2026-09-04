@@ -122,7 +122,7 @@ describe('split ZIP compression', () => {
     }
   }, 30000)
 
-  it('stores the entries compression cannot help across the volume set', async () => {
+  it('writes the entries a rule stores across the volume set', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = await createSource(directory, 2, 1024 * 1024)
     await fs.writeFile(path.join(sourceDir, 'notes.txt'), 'the quick brown fox\n'.repeat(500))
@@ -133,14 +133,17 @@ describe('split ZIP compression', () => {
       inputPaths: [sourceDir],
       outputPath,
       format: 'zip',
-      splitSize: 1024 * 1024
+      splitSize: 1024 * 1024,
+      zipMethodOverrides: [
+        { sourcePath: path.join(sourceDir, 'file-0.bin'), scope: 'file', method: 'store' },
+        { sourcePath: path.join(sourceDir, 'tiny.txt'), scope: 'file', method: 'store' }
+      ]
     })
 
     const { entries, close } = await readSplitZip(result.volumePaths!)
     try {
       const methodOf = (name: string) =>
         entries.find(entry => entry.filename === `source/${name}`)?.compressionMethod
-      // Random bytes under a .bin name: the probe is what catches those.
       expect(methodOf('file-0.bin')).toBe(0)
       expect(methodOf('tiny.txt')).toBe(0)
       expect(methodOf('notes.txt')).toBe(8)

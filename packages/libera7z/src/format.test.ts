@@ -164,25 +164,6 @@ describe('pure TypeScript 7z container', () => {
     }
   })
 
-  it('uses Copy for Automatic only when the complete LZMA2 payload grows', async () => {
-    const compressed = new TextEncoder().encode('automatic lzma2 '.repeat(400))
-    const copied = pseudoRandomBytes(8 * 1024)
-    const sink = new MemorySink()
-    await create7z([
-      { path: 'compressed.txt', size: BigInt(compressed.length), open: () => stream(compressed) },
-      { path: 'copied.bin', size: BigInt(copied.length), open: () => stream(copied) }
-    ], sink, { method: 'auto' })
-
-    const archive = await open7z(new MemorySource(sink.data()))
-    try {
-      expect(archive.entries.map(entry => entry.codec)).toEqual(['LZMA2', 'Copy'])
-      await expect(collect(archive.openEntry(0))).resolves.toEqual(compressed)
-      await expect(collect(archive.openEntry(1))).resolves.toEqual(copied)
-    } finally {
-      await archive.close()
-    }
-  })
-
   it('keeps adjacent LZMA2 entries solid around a Copy exception', async () => {
     const alpha = new TextEncoder().encode('alpha '.repeat(500))
     const bravo = new TextEncoder().encode('bravo '.repeat(500))

@@ -6,7 +6,7 @@ import {
   MAX_SEVEN_ZIP_VOLUMES,
   removeStaleSevenZipVolumes
 } from './volumes'
-import type { SevenZipMethodOverride, SevenZipOverrideMethod } from './methodOverrides'
+import type { SevenZipMethodOverride, SevenZipMethod } from './methodOverrides'
 
 // Writing .7z, the counterpart to zip/splitWriter.ts. Libera7z owns both
 // ordinary archives and numbered volume sets without invoking another tool.
@@ -21,7 +21,7 @@ export interface SevenZipWriteOptions {
   /** Encrypts the header too, so the file names need the password as well. */
   encryptFileNames?: boolean
   dictionarySize?: number
-  method?: SevenZipOverrideMethod
+  method?: SevenZipMethod
   methodOverrides?: SevenZipMethodOverride[]
   matchFinderWordSize?: 32 | 64 | 128 | 273
   searchCycles?: number

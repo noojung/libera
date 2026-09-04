@@ -9,8 +9,8 @@ import {
   type OpenSevenZipOptions,
   type RandomAccessSource,
   type SeekableSink,
-  type SevenZipCompressionMethod,
   type SevenZipEntryInput,
+  type SevenZipMethod,
   type SevenZipReader
 } from 'libera7z'
 import './workerSetup'
@@ -365,7 +365,7 @@ export interface WriteLibera7zOptions {
   password?: string
   encryptFileNames?: boolean
   dictionarySize?: number
-  method?: SevenZipCompressionMethod
+  method?: SevenZipMethod
   methodOverrides?: SevenZipMethodOverride[]
   matchFinderWordSize?: 32 | 64 | 128 | 273
   searchCycles?: number
@@ -418,7 +418,7 @@ export function automaticSevenZipDictionarySize(fileSize: bigint, level: SevenZi
 
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
-  const archiveMethod: SevenZipCompressionMethod = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
+  const archiveMethod: SevenZipMethod = options.method ?? (options.level === 0 ? 'copy' : 'lzma2')
   const defaultCompressedLevel: SevenZipCompressionLevel = options.level === 0
     ? 1
     : (options.level as SevenZipCompressionLevel)
