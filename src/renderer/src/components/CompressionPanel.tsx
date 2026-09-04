@@ -276,22 +276,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const sevenZipGlobalTuning = format === '7z' && !sevenZipPerFileActive && sevenZipMethod === 'lzma2'
   const sevenZipTuningShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
 
-  // The strength slider keeps deciding for whatever no rule has claimed, so it
-  // only clears once every selected input carries a strength of its own -
-  // either a named one, or a method that has none.
-  const activeOverrides: readonly {
-    sourcePath: string
-    scope: 'file' | 'tree'
-    method: string
-    level?: number
-  }[] = format === 'zip' ? zipMethodOverrides : sevenZipMethodOverrides
-  const levelCleared = perFileCompressionActive && items.length > 0 && items.every(item =>
-    activeOverrides.some(rule =>
-      rule.sourcePath === item.path &&
-      rule.scope === (item.isDirectory ? 'tree' : 'file') &&
-      (rule.level !== undefined || rule.method === 'store' || rule.method === 'copy')
-    )
-  )
 
   const splitSize = (() => {
     const preset = SPLIT_CHOICES.find((choice) => choice.id === splitPreset)
@@ -392,17 +376,17 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               {t('compression.level')}
             </label>
             <span className="compression-panel__level-value">
-              {levelCleared ? CLEARED_VALUE : getLevelLabel(effectiveLevel)}
+              {perFileCompressionActive ? CLEARED_VALUE : getLevelLabel(effectiveLevel)}
             </span>
           </div>
           <input
             type="range"
             min="0"
             max={levels.length - 1}
-            value={levelCleared ? 0 : Math.max(0, levels.indexOf(effectiveLevel))}
+            value={perFileCompressionActive ? 0 : Math.max(0, levels.indexOf(effectiveLevel))}
             onChange={(e) => setLevel(levels[parseInt(e.target.value)])}
-            className={`compression-panel__range${levelCleared ? ' compression-panel__range--cleared' : ''}`}
-            disabled={storeSelected || levelCleared}
+            className={`compression-panel__range${perFileCompressionActive ? ' compression-panel__range--cleared' : ''}`}
+            disabled={storeSelected || perFileCompressionActive}
           />
         </div>
       )}

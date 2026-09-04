@@ -231,9 +231,7 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.getByText('1 override')).toBeInTheDocument()
-    // Pressing the toggle put the slider back to the ZIP default, and the rule
-    // names no strength of its own, so the slider still decides.
-    expect(levelReadout()).toBe('6 - Normal')
+    expect(levelReadout()).toBe('—')
     expectClearedControl('ZIP compression method')
 
     await user.click(screen.getByRole('button', { name: '.7Z' }))
@@ -257,7 +255,6 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'Copy (No compression)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.getByText('1 override')).toBeInTheDocument()
-    // Copy has no strength at all, so the slider has nothing left to decide.
     expect(levelReadout()).toBe('—')
     expectClearedControl('Compression method / Codec')
 
@@ -402,7 +399,7 @@ describe('CompressionPanel', () => {
     expect(screen.queryByRole('combobox', { name: 'Memory level for input.txt' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(levelReadout()).toBe('6 - Normal')
+    expect(levelReadout()).toBe('—')
     expectClearedControl('ZIP compression method')
 
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
@@ -429,33 +426,6 @@ describe('CompressionPanel', () => {
       .toContainElement(screen.getByRole('button', { name: 'Per-file compression settings' }))
   })
 
-  it('keeps the strength slider live until every input carries its own', async () => {
-    localStorage.setItem('libera_expert_mode', 'true')
-    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('/output') })
-    const pair = [
-      { path: '/one.txt', name: 'one.txt', isDirectory: false, size: 2048 },
-      { path: '/two.txt', name: 'two.txt', isDirectory: false, size: 2048 }
-    ]
-    const { user } = renderWithI18n(<CompressionPanel items={pair} onStartCompress={vi.fn()} />)
-
-    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
-    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
-    await user.click(screen.getByRole('combobox', { name: 'Compression strength for one.txt' }))
-    await user.click(screen.getByRole('option', { name: '9 - Maximum' }))
-    await user.click(screen.getByRole('button', { name: 'Done' }))
-
-    // two.txt still follows the archive, so the slider keeps deciding for it.
-    expect(levelReadout()).toBe('6 - Normal')
-
-    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
-    await user.click(screen.getByRole('combobox', { name: 'Compression strength for two.txt' }))
-    await user.click(screen.getByRole('option', { name: '1 - Fastest' }))
-    await user.click(screen.getByRole('button', { name: 'Done' }))
-
-    expect(levelReadout()).toBe('—')
-    expect(screen.getAllByRole('slider')[0]).toBeDisabled()
-  })
-
   it('resets the archive settings on each per-file toggle while keeping the rules', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
@@ -475,7 +445,7 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(levelReadout()).toBe('6 - Normal')
+    expect(levelReadout()).toBe('—')
     expectClearedControl('ZIP compression method')
 
     await user.click(perFileSwitch)
@@ -499,7 +469,7 @@ describe('CompressionPanel', () => {
     }))
 
     await user.click(perFileSwitch)
-    expect(levelReadout()).toBe('6 - Normal')
+    expect(levelReadout()).toBe('—')
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenLastCalledWith(expect.objectContaining({
       zipMethod: undefined,
@@ -641,29 +611,26 @@ describe('CompressionPanel', () => {
     }))
   })
 
-  it('keeps the global Store level while giving an explicitly compressed file level one', async () => {
+  it('keeps Store at level zero while a forced codec takes the minimum', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('/output') })
     const onStart = vi.fn()
     const { user } = renderWithI18n(<CompressionPanel items={[{ ...item, path: '/input.txt' }]} onStartCompress={onStart} />)
 
-    // With per-file mode on there is no forced codec to bump zero to one, so
-    // the archive keeps the Store level for everything no rule claims.
-    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '0' } })
+    // Deflate cannot sit at zero, so the slider reads back as the minimum
+    // until Store is the method that was asked for.
+    expect(levelReadout()).toBe('1 - Fastest')
+    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
+    await user.click(screen.getByRole('option', { name: 'Store (0)' }))
     expect(levelReadout()).toBe('0 - Store')
+    expect(screen.getAllByRole('slider')[0]).toBeDisabled()
 
-    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
-    await user.click(screen.getByRole('combobox', { name: 'Compression method for input.txt' }))
-    await user.click(screen.getByRole('option', { name: 'LZMA (14)' }))
-    await user.click(screen.getByRole('button', { name: 'Done' }))
-
-    // The rule now carries the only input's strength, so the slider clears.
-    expect(levelReadout()).toBe('—')
     await user.click(screen.getByRole('button', { name: /Start compression/ }))
     expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
       level: 0,
-      zipMethodOverrides: [{ sourcePath: '/input.txt', scope: 'file', method: 'lzma', level: 1 }]
+      zipMethod: 'store',
+      zipMethodOverrides: undefined
     }))
   })
 
