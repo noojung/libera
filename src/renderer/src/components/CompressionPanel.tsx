@@ -71,13 +71,13 @@ const SPLIT_CHOICES = [
 
 type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 
-const DEFAULT_LEVELS: Record<ArchiveFormat, number> = {
+const DEFAULT_LEVELS = {
   zip: 6,
   tar: 0,
   gz: 6,
   tgz: 6,
   '7z': 5
-}
+} as const satisfies Record<ArchiveFormat, number>
 
 const DEFAULT_DICTIONARY_SIZE = 16 * 1024 * 1024
 const DEFAULT_MATCH_FINDER_WORD_SIZE: MatchFinderWordSize = 32
@@ -826,7 +826,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         <ZipMethodOverridesModal
           items={items}
           overrides={zipMethodOverrides}
-          defaultLevel={level}
+          defaultLevel={DEFAULT_LEVELS.zip}
           onChange={setZipMethodOverrides}
           onClose={() => setShowZipMethodOverrides(false)}
         />
@@ -835,7 +835,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         <SevenZipMethodOverridesModal
           items={items}
           overrides={sevenZipMethodOverrides}
-          defaultLevel={level}
+          defaultLevel={DEFAULT_LEVELS['7z']}
           onChange={setSevenZipMethodOverrides}
           onClose={() => setShowSevenZipMethodOverrides(false)}
         />

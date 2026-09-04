@@ -23,7 +23,12 @@ const DEFAULT_METHOD: SevenZipMethod = 'lzma2'
 interface SevenZipMethodOverridesModalProps {
   items: SelectedItem[]
   overrides: SevenZipMethodOverride[]
-  defaultLevel: number
+  /**
+   * The strength an entry inherits. It is the format default for as long as
+   * this dialog can be open, since the panel pins the archive-wide settings
+   * there while per-file mode owns them.
+   */
+  defaultLevel: SevenZipCompressionLevel
   onChange: (overrides: SevenZipMethodOverride[]) => void
   onClose: () => void
 }
@@ -58,9 +63,6 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   const isMacOS = platform === 'macos'
   const [trail, setTrail] = useState<ArchiveInputTreeEntry[]>([])
   const [childrenByPath, setChildrenByPath] = useState<Record<string, ChildState>>({})
-  const defaultCompressionLevel: SevenZipCompressionLevel = SEVEN_ZIP_LEVELS.includes(defaultLevel as SevenZipCompressionLevel)
-    ? defaultLevel as SevenZipCompressionLevel
-    : 1
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -142,7 +144,7 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     const directRule = matchingRule(sourcePath, isDirectory ? 'tree' : 'file')
     return directRule?.level ??
       containingTreeRule(sourcePath, rule => rule.level !== undefined)?.level ??
-      defaultCompressionLevel
+      defaultLevel
   }
 
   const levelSelectionFor = (sourcePath: string, isDirectory: boolean): LevelSelection | null => {

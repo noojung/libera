@@ -21,6 +21,11 @@ const DEFAULT_METHOD: ZipMethod = 'deflate'
 interface ZipMethodOverridesModalProps {
   items: SelectedItem[]
   overrides: ZipMethodOverride[]
+  /**
+   * The strength an entry inherits. It is the format default for as long as
+   * this dialog can be open, since the panel pins the archive-wide settings
+   * there while per-file mode owns them.
+   */
   defaultLevel: number
   onChange: (overrides: ZipMethodOverride[]) => void
   onClose: () => void
