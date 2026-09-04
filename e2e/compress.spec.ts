@@ -112,6 +112,28 @@ test('compresses a folder to 7z and extracts it back', async ({ app, page, workD
   expect(await findFile(extractDir, 'one.bin')).not.toBeNull()
 })
 
+test('keeps the title bar in view when enabling per-file 7z settings', async ({ app, page, workDir }) => {
+  await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
+  await page.reload()
+
+  const source = path.join(workDir, 'source')
+  await seedFiles(source, ['one.bin'], 1024)
+  await stubDialogs(app, { filePaths: [source] })
+  await page.getByRole('button', { name: 'Browse folders' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  await page.getByRole('button', { name: '.7Z' }).click()
+  const titleBar = page.locator('.titlebar')
+  await expect(titleBar).toBeInViewport()
+  expect((await titleBar.boundingBox())?.y).toBe(0)
+
+  await page.locator('.compression-panel__mode-toggle-track').click()
+
+  await expect(titleBar).toBeInViewport()
+  expect((await titleBar.boundingBox())?.y).toBe(0)
+  expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0)
+})
+
 test('compresses a folder to an encrypted 7z with hidden names and extracts it back', async ({ app, page, workDir }) => {
   const source = path.join(workDir, 'source')
   await seedFiles(source, ['one.bin', 'two.bin'], 128 * 1024)
