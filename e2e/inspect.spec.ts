@@ -4,6 +4,23 @@ import { expect, stubDialogs, test, writeZipArchive } from './fixtures'
 
 const MANIFEST = 'Manifest-Version: 1.0\nMain-Class: com.example.App\n'
 
+test('matches the empty preview prompt typography to the compression drop target', async ({ page }) => {
+  const typography = async (selector: string) => page.locator(selector).evaluate(element => {
+    const style = getComputedStyle(element)
+    return {
+      color: style.color,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight
+    }
+  })
+
+  const dropTargetTypography = await typography('.drop-zone__title')
+  await page.locator('.titlebar__tab--inspect').click()
+
+  expect(await typography('.archive-inspector__empty-title')).toEqual(dropTargetTypography)
+})
+
 test('lists a JAR under its own format and previews an entry', async ({ app, page, workDir }) => {
   const archivePath = path.join(workDir, 'library.jar')
   await writeZipArchive(archivePath, {

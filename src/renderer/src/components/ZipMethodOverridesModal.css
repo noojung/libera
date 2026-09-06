@@ -315,6 +315,37 @@
   color: var(--status-danger);
 }
 
+.zip-method-modal__branch-state--no-items {
+  display: flex;
+  height: 100%;
+  padding: 32px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 0;
+  color: var(--text-muted);
+  font-family: var(--font-cute);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.zip-method-modal__empty-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  place-items: center;
+  border: 2px solid var(--border-doodle);
+  border-radius: 18px;
+  background: var(--bg-pill);
+  color: var(--accent-peach);
+  box-shadow: 3px 3px 0 var(--border-shadow);
+  transform: rotate(-3deg);
+}
+
 /* The block preview closes the dialog: a browse-order tree above, the order the
    archive is actually written in below. */
 .zip-method-modal__blocks {

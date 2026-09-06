@@ -165,17 +165,13 @@
   overflow: hidden;
 }
 
-.compression-panel__zip-overrides:hover:not(.is-disabled) {
+.compression-panel__zip-overrides:hover {
   background: var(--bg-card-hover);
 }
 
 .compression-panel__zip-overrides.is-active {
   border-color: var(--accent-peach);
   background: var(--bg-pill);
-}
-
-.compression-panel__zip-overrides.is-disabled {
-  opacity: 0.5;
 }
 
 .compression-panel__zip-overrides-open {
@@ -289,10 +285,6 @@
 .compression-panel__mode-toggle input:focus-visible + .compression-panel__mode-toggle-track {
   outline: 2px solid var(--accent-peach);
   outline-offset: 2px;
-}
-
-.compression-panel__mode-toggle.is-disabled {
-  cursor: not-allowed;
 }
 
 .compression-panel__split-option {

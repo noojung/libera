@@ -426,6 +426,35 @@ describe('CompressionPanel', () => {
       .toContainElement(screen.getByRole('button', { name: 'Per-file compression settings' }))
   })
 
+  it('opens per-file settings without inputs and explains the empty state for ZIP and 7Z', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    const openSettings = () => screen.getByRole('button', { name: 'Per-file compression settings' })
+    const perFileSwitch = () => screen.getByRole('switch', { name: 'Enable per-file compression settings' })
+
+    expect(perFileSwitch()).toBeEnabled()
+    expect(openSettings()).toBeDisabled()
+    await user.click(perFileSwitch())
+    expect(openSettings()).toBeEnabled()
+    await user.click(openSettings())
+    const zipEmptyMessage = screen.getByText('Choose files or folders to compress first! 🐾')
+    expect(zipEmptyMessage.parentElement).toHaveClass('zip-method-modal__branch-state--no-items')
+    expect(zipEmptyMessage.parentElement?.querySelector('.zip-method-modal__empty-icon')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    expect(perFileSwitch()).toBeEnabled()
+    expect(openSettings()).toBeDisabled()
+    await user.click(perFileSwitch())
+    expect(openSettings()).toBeEnabled()
+    await user.click(openSettings())
+    const sevenZipEmptyMessage = screen.getByText('Choose files or folders to compress first! 🐾')
+    expect(sevenZipEmptyMessage.parentElement).toHaveClass('zip-method-modal__branch-state--no-items')
+    expect(sevenZipEmptyMessage.parentElement?.querySelector('.zip-method-modal__empty-icon')).toBeInTheDocument()
+  })
+
   it('resets the archive settings on each per-file toggle while keeping the rules', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, File, Files, Filter, Folder, Home, Microscope, Search, ShieldAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, File, FilePlus, Files, Filter, Folder, Home, Microscope, Search, ShieldAlert, UploadCloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveEntry, ArchiveInspectionResult } from '@services/archiveInspector'
 import type { ArchivePreviewResult } from '@services/archivePreview'
@@ -583,9 +583,20 @@ export const ArchiveInspector: React.FC = () => {
         </div>
       ) : (
         <div className="glass-panel archive-inspector__state archive-inspector__state--empty">
-          <Search className="archive-inspector__empty-icon" size={48} />
-          <h4 className="archive-inspector__empty-title">{t('inspector.noArchive')}</h4>
-          <button className="btn-primary" onClick={handleOpenArchive}>{t('inspector.selectArchive')}</button>
+          <button
+            type="button"
+            className="archive-inspector__empty-upload"
+            aria-label={t('inspector.selectArchive')}
+            onClick={handleOpenArchive}
+          >
+            <UploadCloud className="archive-inspector__empty-upload-icon" size={28} aria-hidden="true" />
+          </button>
+          <h4 className="archive-inspector__empty-title">{t('dropZone.dropArchives')}</h4>
+          <p className="archive-inspector__empty-hint">{t('dropZone.archivesHint')}</p>
+          <button type="button" className="btn-secondary" onClick={handleOpenArchive}>
+            <FilePlus size={16} aria-hidden="true" />
+            {t('dropZone.browseFiles')}
+          </button>
         </div>
       )}
       {passwordPrompt && (

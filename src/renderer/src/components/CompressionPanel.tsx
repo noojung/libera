@@ -569,16 +569,14 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               setting above to it, so they clear rather than disappear. */}
           {format === 'zip' && (
             <div
-              className={`compression-panel__zip-overrides${
-                zipPerFileActive ? ' is-active' : ''
-              }${items.length === 0 ? ' is-disabled' : ''}`}
+              className={`compression-panel__zip-overrides${zipPerFileActive ? ' is-active' : ''}`}
             >
               <button
                 type="button"
                 className="compression-panel__zip-overrides-open"
                 aria-label={t('compression.zipOverridesButton')}
                 onClick={() => setShowZipMethodOverrides(true)}
-                disabled={!zipPerFileEnabled || items.length === 0}
+                disabled={!zipPerFileEnabled}
               >
                 <span className="compression-panel__zip-overrides-copy">
                   <Files size={16} />
@@ -593,13 +591,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   </span>
                 )}
               </button>
-              <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
+              <label className="compression-panel__mode-toggle">
                 <input
                   type="checkbox"
                   role="switch"
                   aria-label={t('compression.zipOverridesEnable')}
                   checked={zipPerFileEnabled}
-                  disabled={items.length === 0}
                   onChange={(event) => {
                     setZipPerFileEnabled(event.target.checked)
                     resetArchiveSettings()
@@ -615,16 +612,14 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
           {format === '7z' && (
             <div
-              className={`compression-panel__zip-overrides${
-                sevenZipPerFileActive ? ' is-active' : ''
-              }${items.length === 0 ? ' is-disabled' : ''}`}
+              className={`compression-panel__zip-overrides${sevenZipPerFileActive ? ' is-active' : ''}`}
             >
               <button
                 type="button"
                 className="compression-panel__zip-overrides-open"
                 aria-label={t('compression.sevenZipOverridesButton')}
                 onClick={() => setShowSevenZipMethodOverrides(true)}
-                disabled={!sevenZipPerFileEnabled || items.length === 0}
+                disabled={!sevenZipPerFileEnabled}
               >
                 <span className="compression-panel__zip-overrides-copy">
                   <Files size={16} />
@@ -639,13 +634,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   </span>
                 )}
               </button>
-              <label className={`compression-panel__mode-toggle${items.length === 0 ? ' is-disabled' : ''}`}>
+              <label className="compression-panel__mode-toggle">
                 <input
                   type="checkbox"
                   role="switch"
                   aria-label={t('compression.zipOverridesEnable')}
                   checked={sevenZipPerFileEnabled}
-                  disabled={items.length === 0}
                   onChange={(event) => {
                     setSevenZipPerFileEnabled(event.target.checked)
                     resetArchiveSettings()

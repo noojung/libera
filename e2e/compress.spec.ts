@@ -134,6 +134,32 @@ test('keeps the title bar in view when enabling per-file 7z settings', async ({ 
   expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0)
 })
 
+test('centers the empty per-file settings message', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
+  await page.reload()
+
+  await page.getByRole('button', { name: '.7Z' }).click()
+  await page.locator('.compression-panel__mode-toggle-track').click()
+  await page.getByRole('button', { name: 'Per-file compression settings' }).click()
+
+  const emptyMessage = page.getByText('Choose files or folders to compress first! 🐾')
+  const layout = await emptyMessage.evaluate(element => {
+    const text = element.getBoundingClientRect()
+    const state = element.parentElement!
+    const icon = state.querySelector('.zip-method-modal__empty-icon')!.getBoundingClientRect()
+    const tree = state.parentElement!.getBoundingClientRect()
+    return {
+      fontSize: getComputedStyle(element).fontSize,
+      horizontalOffset: Math.abs(text.left + text.width / 2 - (tree.left + tree.width / 2)),
+      verticalOffset: Math.abs(icon.top + (text.bottom - icon.top) / 2 - (tree.top + tree.height / 2))
+    }
+  })
+
+  expect(layout.fontSize).toBe('18px')
+  expect(layout.horizontalOffset).toBeLessThanOrEqual(1)
+  expect(layout.verticalOffset).toBeLessThanOrEqual(1)
+})
+
 test('compresses a folder to an encrypted 7z with hidden names and extracts it back', async ({ app, page, workDir }) => {
   const source = path.join(workDir, 'source')
   await seedFiles(source, ['one.bin', 'two.bin'], 128 * 1024)

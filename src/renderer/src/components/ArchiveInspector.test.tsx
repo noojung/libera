@@ -30,6 +30,21 @@ const inspection = (entries: any[], overrides: Record<string, unknown> = {}) => 
 })
 
 describe('ArchiveInspector', () => {
+  it('matches the other drop targets when the preview is empty', async () => {
+    const api = installElectronApi()
+    const { user } = renderWithI18n(<ArchiveInspector />)
+
+    expect(screen.getByText('Drop archive files here! 🐾')).toBeInTheDocument()
+    expect(screen.getByText('ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, and GZ files only')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select an archive' })
+      .querySelector('.archive-inspector__empty-upload-icon')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
+    expect(api.selectFiles).toHaveBeenCalledWith(expect.objectContaining({
+      allowDirectories: false
+    }))
+  })
+
   it('opens an archive, displays unknown metadata, and navigates folders', async () => {
     const api = installElectronApi({
       selectFiles: vi.fn().mockResolvedValue(['C:\\archives\\sample.zip']),

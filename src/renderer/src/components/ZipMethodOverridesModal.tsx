@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, File, Files, Folder, Home, RotateCcw, X } from 'lucide-react'
+import { ChevronRight, File, FileHeart, Files, Folder, Home, RotateCcw, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveInputTreeEntry } from '@services/archiveInputTree'
 import type { DeflateStrategy, ZipMethod, ZipMethodOverride } from '@services/compressor'
@@ -570,7 +570,18 @@ export const ZipMethodOverridesModal: React.FC<ZipMethodOverridesModalProps> = (
               </div>
             )}
             {currentState?.status !== 'loading' && currentState?.status !== 'error' && visibleEntries.length === 0 && (
-              <div className="zip-method-modal__branch-state">{t('compression.zipOverridesEmpty')}</div>
+              <div className={`zip-method-modal__branch-state${currentFolder ? '' : ' zip-method-modal__branch-state--no-items'}`}>
+                {currentFolder
+                  ? t('compression.zipOverridesEmpty')
+                  : (
+                    <>
+                      <span className="zip-method-modal__empty-icon" aria-hidden="true">
+                        <FileHeart size={34} />
+                      </span>
+                      <span>{t('compression.zipOverridesNoItems')}</span>
+                    </>
+                    )}
+              </div>
             )}
             {visibleEntries.map(entry => renderEntry(entry))}
           </div>
