@@ -7,11 +7,12 @@ import {
   removeStaleSevenZipVolumes
 } from './volumes'
 import type { SevenZipMethodOverride, SevenZipMethod } from './methodOverrides'
+import type { CompressionInputFilters } from '../compressionInputs'
 
 // Writing .7z, the counterpart to zip/splitWriter.ts. Libera7z owns both
 // ordinary archives and numbered volume sets without invoking another tool.
 
-export interface SevenZipWriteOptions {
+export interface SevenZipWriteOptions extends CompressionInputFilters {
   inputPaths: string[]
   outputPath: string
   totalBytes: number
@@ -58,7 +59,8 @@ export async function writeSevenZipArchive(
 ): Promise<SevenZipWriteResult> {
   const {
     inputPaths, outputPath, totalBytes, level, splitSize, password, encryptFileNames,
-    dictionarySize, method, methodOverrides, matchFinderWordSize, searchCycles, solid
+    dictionarySize, method, methodOverrides, matchFinderWordSize, searchCycles, solid,
+    excludeSymlinks, excludeMacMetadata, excludeHiddenFiles, filterPattern
   } = options
 
   if (splitSize !== undefined && Math.ceil(totalBytes / splitSize) > MAX_SEVEN_ZIP_VOLUMES) {
@@ -84,6 +86,10 @@ export async function writeSevenZipArchive(
       matchFinderWordSize,
       searchCycles,
       solid,
+      excludeSymlinks,
+      excludeMacMetadata,
+      excludeHiddenFiles,
+      filterPattern,
       signal: context.signal,
       onProgress: (processedBytes, file) => {
         currentFile = file ?? currentFile

@@ -1,7 +1,7 @@
 import { promises as fsPromises } from 'fs'
 import type { FileHandle } from 'fs/promises'
 import path from 'path'
-import { SplitDataWriter, ZipWriter, configure, type WritableWriter } from '@zip.js/zip.js'
+import { SplitDataWriter, Uint8ArrayReader, ZipWriter, configure, type WritableWriter } from '@zip.js/zip.js'
 import { NodeFileReader } from './fileReader'
 import {
   createVolumePredicate,
@@ -23,6 +23,11 @@ import {
   type ZipMethod,
   type ZipMethodOverride
 } from './methodOverrides'
+import {
+  createCompressionInputFilter,
+  symlinkUnixMode,
+  type CompressionInputFilters
+} from '../compressionInputs'
 import type { ProgressCallback, ZipEncryptionMethod } from '../compressor'
 
 // Also configured by zipFileReader, but a caller may pull in this module
@@ -40,7 +45,7 @@ export const MIN_SPLIT_SIZE = 1024 * 1024
 export { MAX_SPLIT_VOLUMES } from './volumes'
 
 export interface SplitZipOptions {
-  source: { inputPaths: string[]; totalBytes: number }
+  source: { inputPaths: string[]; totalBytes: number; filters?: CompressionInputFilters }
   volumes: { outputPath: string; splitSize: number }
   squeeze: ZipSqueezeOptions
 }
@@ -56,7 +61,7 @@ export interface ZipSqueezeOptions {
 }
 
 export interface ZipFileOptions {
-  source: { inputPaths: string[]; totalBytes: number }
+  source: { inputPaths: string[]; totalBytes: number; filters?: CompressionInputFilters }
   outputPath: string
   squeeze: ZipSqueezeOptions
 }
@@ -70,6 +75,8 @@ interface ArchiveEntry {
   absolutePath: string
   entryName: string
   isDirectory: boolean
+  /** Set for a symbolic link, whose target is the entry's own content. */
+  linkTarget?: string
   size: number
   lastModDate: Date
   unixMode: number
@@ -100,6 +107,25 @@ function zipMethodOptions(squeeze: ZipSqueezeOptions, explicit = false): Record<
  * leave an LZMA or Zstandard entry on that codec.
  */
 const STORE_ENTRY_OPTIONS = { level: 0, compressionMethod: 0 } as const
+
+/**
+ * Writes a symbolic link the way Info-ZIP does: the target path as the entry's
+ * content, with the link type in the Unix mode. Store keeps those few bytes
+ * out of the codecs, which is the form readers expect a link entry to take.
+ */
+async function addSymlinkEntry(
+  zipWriter: ZipWriter<unknown>,
+  entry: ArchiveEntry,
+  signal?: AbortSignal
+): Promise<void> {
+  const target = new Uint8ArrayReader(Buffer.from(entry.linkTarget ?? '', 'utf8'))
+  await zipWriter.add(entry.entryName, target, {
+    ...STORE_ENTRY_OPTIONS,
+    lastModDate: entry.lastModDate,
+    unixMode: entry.unixMode,
+    signal
+  })
+}
 
 /**
  * The method this entry is written with: the archive's, unless a per-file rule
@@ -160,11 +186,13 @@ export async function removeStaleVolumes(outputPath: string): Promise<void> {
 
 async function collectEntries(
   inputPaths: string[],
-  isOwnVolume: (candidate: string) => boolean
+  isOwnVolume: (candidate: string) => boolean,
+  filters: CompressionInputFilters = {}
 ): Promise<ArchiveEntry[]> {
   const entries: ArchiveEntry[] = []
   const visitedDirectories = new Set<string>()
   const usedRootNames = new Set<string>()
+  const filter = createCompressionInputFilter(filters)
 
   // Archiver tolerated two inputs sharing a basename, zip.js rejects the
   // duplicate entry name outright, so the second root gets a suffix.
@@ -181,6 +209,7 @@ async function collectEntries(
 
   const walk = async (itemPath: string, entryName: string): Promise<void> => {
     if (isOwnVolume(itemPath)) return
+    if (!filter.allowsName(path.basename(itemPath))) return
 
     let stat
     try {
@@ -189,7 +218,26 @@ async function collectEntries(
       console.error(`Error reading ${itemPath}:`, err)
       return
     }
-    if (stat.isSymbolicLink()) return
+    if (!filter.allowsEntry(entryName, stat)) return
+    if (stat.isSymbolicLink()) {
+      let linkTarget
+      try {
+        linkTarget = await fsPromises.readlink(itemPath)
+      } catch (err) {
+        console.error(`Error reading ${itemPath}:`, err)
+        return
+      }
+      entries.push({
+        absolutePath: itemPath,
+        entryName,
+        isDirectory: false,
+        linkTarget,
+        size: Buffer.byteLength(linkTarget),
+        lastModDate: stat.mtime,
+        unixMode: symlinkUnixMode(stat.mode)
+      })
+      return
+    }
 
     if (!stat.isDirectory()) {
       entries.push({
@@ -296,12 +344,12 @@ export async function writeSplitZip(
   onProgress?: ProgressCallback,
   context: { signal?: AbortSignal } = {}
 ): Promise<SplitZipResult> {
-  const { inputPaths, totalBytes } = options.source
+  const { inputPaths, totalBytes, filters } = options.source
   const { outputPath, splitSize } = options.volumes
   const methodOptions = zipMethodOptions(options.squeeze)
   const { signal } = context
 
-  const entries = await collectEntries(inputPaths, createVolumePredicate(outputPath))
+  const entries = await collectEntries(inputPaths, createVolumePredicate(outputPath), filters)
   const { generator, volumePaths, openHandles } = createVolumeWriters(outputPath)
   const splitWriter = new SplitDataWriter(generator, splitSize)
   const zipWriter = new ZipWriter(splitWriter, {
@@ -330,6 +378,13 @@ export async function writeSplitZip(
           unixMode: entry.unixMode,
           signal
         })
+        continue
+      }
+
+      if (entry.linkTarget !== undefined) {
+        await addSymlinkEntry(zipWriter, entry, signal)
+        processedBytes += entry.size
+        report(processedBytes, entry.entryName)
         continue
       }
 
@@ -388,10 +443,14 @@ export async function writeZipFile(
   onProgress?: ProgressCallback,
   context: { signal?: AbortSignal } = {}
 ): Promise<{ outputPath: string; compressedSize: number }> {
-  const { inputPaths, totalBytes } = options.source
+  const { inputPaths, totalBytes, filters } = options.source
   const { outputPath, squeeze } = options
   const { signal } = context
-  const entries = await collectEntries(inputPaths, candidate => path.resolve(candidate) === path.resolve(outputPath))
+  const entries = await collectEntries(
+    inputPaths,
+    candidate => path.resolve(candidate) === path.resolve(outputPath),
+    filters
+  )
   let handle: FileHandle | null = null
   let processedBytes = 0
 
@@ -441,6 +500,13 @@ export async function writeZipFile(
           unixMode: entry.unixMode,
           signal
         })
+        continue
+      }
+
+      if (entry.linkTarget !== undefined) {
+        await addSymlinkEntry(zipWriter, entry, signal)
+        processedBytes += entry.size
+        report(processedBytes, entry.entryName)
         continue
       }
       const reader = new NodeFileReader(entry.absolutePath)

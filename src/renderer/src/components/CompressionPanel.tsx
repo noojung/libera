@@ -51,6 +51,10 @@ export interface StartCompressOptions {
   solidArchive?: boolean
   deflateStrategy?: DeflateStrategy
   memLevel?: number
+  excludeSymlinks?: boolean
+  excludeMacMetadata?: boolean
+  excludeHiddenFiles?: boolean
+  filterPattern?: string
 }
 
 interface CompressionPanelProps {
@@ -153,6 +157,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [solidBlock, setSolidBlock] = useState<boolean>(false)
   const [deflateStrategy, setDeflateStrategy] = useState<DeflateStrategy>('default')
   const [memLevel, setMemLevel] = useState<number>(DEFAULT_MEM_LEVEL)
+  const [excludeSymlinks, setExcludeSymlinks] = useState<boolean>(false)
+  const [excludeMacMetadata, setExcludeMacMetadata] = useState<boolean>(false)
+  const [excludeHiddenFiles, setExcludeHiddenFiles] = useState<boolean>(false)
+  const [filterPattern, setFilterPattern] = useState<string>('')
 
   useEffect(() => {
     if ((window as any).electronAPI?.getDefaultOutputDir) {
@@ -275,6 +283,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     format === 'tgz' || format === 'gz'
   const sevenZipGlobalTuning = format === '7z' && !sevenZipPerFileActive && sevenZipMethod === 'lzma2'
   const sevenZipTuningShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
+  const sourceFiltersShown = isExpertMode && format !== 'gz'
+  const solidBlockShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
 
 
   const splitSize = (() => {
@@ -335,7 +345,13 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               ? solidBlock
               : undefined,
             deflateStrategy: deflateTuned ? deflateStrategy : undefined,
-            memLevel: deflateTuned ? memLevel : undefined
+            memLevel: deflateTuned ? memLevel : undefined,
+            // GZ compresses one stream that the user picked themselves, so it
+            // has no entry list for either filter to leave anything out of.
+            excludeSymlinks: sourceFiltersShown ? excludeSymlinks : undefined,
+            excludeMacMetadata: sourceFiltersShown ? excludeMacMetadata : undefined,
+            excludeHiddenFiles: sourceFiltersShown ? excludeHiddenFiles : undefined,
+            filterPattern: sourceFiltersShown ? filterPattern.trim() || undefined : undefined
           }
         : {})
     })
@@ -396,8 +412,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
         </div>
       )}
 
-      {/* Expert Mode Compression Configuration Card */}
-      {isExpertMode && format !== 'tar' && (
+      {/* Expert Mode Compression Configuration Card. TAR has no codec to
+          configure, so for it the card holds the source filters alone. */}
+      {isExpertMode && (
         <div className="expert-card">
           <div className="expert-card__header">
             <div className="expert-card__title">
@@ -502,23 +519,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   </div>
                 </>
               )}
-
-              {(sevenZipPerFileActive || sevenZipMethod === 'lzma2') && (
-                <label className="compression-panel__split-option compression-panel__split-option--nested">
-                  <input
-                    type="checkbox"
-                    className="compression-panel__checkbox"
-                    checked={solidBlock}
-                    onChange={(e) => setSolidBlock(e.target.checked)}
-                  />
-                  <span>
-                    <span className="compression-panel__option-title">{t('compression.solidArchive')}</span>
-                    <span className="compression-panel__option-description">
-                      {t('compression.solidArchiveHint')}
-                    </span>
-                  </span>
-                </label>
-              )}
             </>
           )}
 
@@ -563,6 +563,81 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                 />
               </div>
             </>
+          )}
+
+          {/* Every toggle the card holds, as one list - the extraction panel's
+              expert card reads the same way. What each one means beyond its
+              label is a tooltip rather than a line of its own, so the list
+              stays as dense as the rows above it. */}
+          {(solidBlockShown || sourceFiltersShown) && (
+            <div className="compression-panel__expert-checkboxes">
+              {solidBlockShown && (
+                <label className="compression-panel__checkbox-row" title={t('compression.solidArchiveHint')}>
+                  <input
+                    type="checkbox"
+                    className="compression-panel__checkbox"
+                    checked={solidBlock}
+                    onChange={(e) => setSolidBlock(e.target.checked)}
+                  />
+                  <span>{t('compression.solidArchive')}</span>
+                </label>
+              )}
+
+              {/* What reaches the archive rather than how it is written, so
+                  these sit below the codec rows - and are the whole card for
+                  TAR. */}
+              {sourceFiltersShown && (
+                <>
+                  <label className="compression-panel__checkbox-row" title={t('compression.excludeSymlinksHint')}>
+                    <input
+                      type="checkbox"
+                      className="compression-panel__checkbox"
+                      checked={excludeSymlinks}
+                      onChange={(e) => setExcludeSymlinks(e.target.checked)}
+                    />
+                    <span>{t('compression.excludeSymlinks')}</span>
+                  </label>
+
+                  <label className="compression-panel__checkbox-row" title={t('compression.excludeMacMetadataHint')}>
+                    <input
+                      type="checkbox"
+                      className="compression-panel__checkbox"
+                      checked={excludeMacMetadata}
+                      onChange={(e) => setExcludeMacMetadata(e.target.checked)}
+                    />
+                    <span>{t('compression.excludeMacMetadata')}</span>
+                  </label>
+
+                  <label className="compression-panel__checkbox-row" title={t('compression.excludeHiddenFilesHint')}>
+                    <input
+                      type="checkbox"
+                      className="compression-panel__checkbox"
+                      checked={excludeHiddenFiles}
+                      onChange={(e) => setExcludeHiddenFiles(e.target.checked)}
+                    />
+                    <span>{t('compression.excludeHiddenFiles')}</span>
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* The mirror of the extraction panel's pattern field: the same glob
+              list, deciding what goes in rather than what comes out. */}
+          {sourceFiltersShown && (
+            <div className="compression-panel__expert-row compression-panel__expert-row--filter">
+              <label className="compression-panel__expert-label" htmlFor="compression-filter-pattern">
+                {t('compression.filterPattern')}
+              </label>
+              <input
+                id="compression-filter-pattern"
+                type="text"
+                className="input-text"
+                placeholder={t('compression.filterPatternPlaceholder')}
+                value={filterPattern}
+                onChange={(e) => setFilterPattern(e.target.value)}
+              />
+            </div>
           )}
 
           {/* The per-file dialog closes the card: switching it on hands every
@@ -709,20 +784,17 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             {isExpertMode && supportsHeaderEncryption(format) && (
               // Shown from the start; it only takes effect once a password
               // backs it, which handleCompress enforces.
-              <label className="compression-panel__split-option compression-panel__split-option--nested">
-                <input
-                  type="checkbox"
-                  className="compression-panel__checkbox"
-                  checked={encryptFileNames}
-                  onChange={(e) => setEncryptFileNames(e.target.checked)}
-                />
-                <span>
-                  <span className="compression-panel__option-title">{t('compression.encryptFileNames')}</span>
-                  <span className="compression-panel__option-description">
-                    {t('compression.encryptFileNamesHint')}
-                  </span>
-                </span>
-              </label>
+              <div className="compression-panel__expert-checkboxes">
+                <label className="compression-panel__checkbox-row" title={t('compression.encryptFileNamesHint')}>
+                  <input
+                    type="checkbox"
+                    className="compression-panel__checkbox"
+                    checked={encryptFileNames}
+                    onChange={(e) => setEncryptFileNames(e.target.checked)}
+                  />
+                  <span>{t('compression.encryptFileNames')}</span>
+                </label>
+              </div>
             )}
           </ExpertFrame>
         </div>
@@ -837,6 +909,10 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           defaultLevel={DEFAULT_LEVELS['7z']}
           outputPath={resolvedOutputPath}
           solid={solidBlock}
+          excludeSymlinks={excludeSymlinks}
+          excludeMacMetadata={excludeMacMetadata}
+          excludeHiddenFiles={excludeHiddenFiles}
+          filterPattern={filterPattern.trim() || undefined}
           onChange={setSevenZipMethodOverrides}
           onClose={() => setShowSevenZipMethodOverrides(false)}
         />

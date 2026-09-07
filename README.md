@@ -124,6 +124,28 @@ JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting
 any volume discovers the complete set in the same folder; every volume must
 remain together. Volume details are collapsed by default and can be expanded.
 
+## Compression Source Filters
+Expert mode decides what the input tree contributes to an archive. Every filter
+applies to ZIP, TAR, TAR.GZ, and 7Z; GZ compresses a single stream the user
+picked themselves, so it offers none of them. Excluded files are left out of the
+progress total as well, so the percentage still ends on 100.
+
+- Symbolic links are stored as link entries, pointing at the same target the
+  original does, and are never followed during the walk. **Exclude symbolic
+  links** leaves them out of the archive entirely.
+- **Exclude macOS metadata** drops `.DS_Store`, `__MACOSX` folders, and `._name`
+  AppleDouble sidecars, in the input roots and every folder below them.
+- **Exclude hidden files** drops dot-prefixed names. A hidden folder is dropped
+  whole, so nothing below `.git` is walked in the first place.
+- **File filter pattern** takes the same glob list the extraction panel does:
+  `*.txt, *.pdf` keeps only what matches, a `!` prefix excludes, and a pattern
+  holding a slash matches the whole archive path rather than the name alone. It
+  decides files, not folders - a folder matches no pattern of its own yet still
+  carries the files that do.
+
+The extraction panel has the mirror of these: **Restore symbolic links**,
+**Filter out macOS metadata**, and its own **File filter pattern**.
+
 ## Safe Extraction Policy
 The following checks are applied before and during extraction:
 

@@ -112,6 +112,54 @@ test('compresses a folder to 7z and extracts it back', async ({ app, page, workD
   expect(await findFile(extractDir, 'one.bin')).not.toBeNull()
 })
 
+test('leaves links and macOS metadata out when the source filters are on', async ({
+  app,
+  page,
+  workDir
+}) => {
+  // Every filter is an expert option, so the app has to be in that mode before
+  // the checkboxes and the pattern field are on screen.
+  await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
+  await page.reload()
+
+  const source = path.join(workDir, 'source')
+  await seedFiles(source, ['one.bin'], 1024)
+  await fs.writeFile(path.join(source, '.DS_Store'), 'finder state')
+  await fs.mkdir(path.join(source, '.hidden'), { recursive: true })
+  await fs.writeFile(path.join(source, '.hidden', 'secret.bin'), 'secret')
+  await fs.writeFile(path.join(source, 'scratch.tmp'), 'scratch')
+  await fs.symlink('one.bin', path.join(source, 'link.bin'))
+  const outputPath = path.join(workDir, 'out', 'filtered.zip')
+
+  await stubDialogs(app, { filePaths: [source] })
+  await page.getByRole('button', { name: 'Browse folders' }).click()
+  await expect(page.locator('.drop-zone__item')).toHaveCount(1)
+
+  await page.getByText('Exclude symbolic links').click()
+  await page.getByText('Exclude macOS metadata').click()
+  await page.getByText('Exclude hidden files').click()
+  await page.getByLabel('File filter pattern (optional)').fill('!*.tmp')
+  await page.locator('.compression-panel__destination-row .input-text').fill(outputPath)
+  await page.locator('.compression-panel__start-button').click()
+
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(1, { timeout: 30_000 })
+  await expect(page.locator('.queue-manager__job--error')).toHaveCount(0)
+
+  const restoreDir = path.join(workDir, 'restored')
+  await stubDialogs(app, { filePaths: [outputPath] })
+  await page.locator('.titlebar__tab--extract').click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
+  await page.locator('.extraction-panel__destination-row .input-text').fill(restoreDir)
+  await page.locator('.extraction-panel__start-button').click()
+  await expect(page.locator('.queue-manager__job--completed')).toHaveCount(2, { timeout: 30_000 })
+
+  expect(await findFile(restoreDir, 'one.bin')).not.toBeNull()
+  expect(await findFile(restoreDir, 'link.bin')).toBeNull()
+  expect(await findFile(restoreDir, '.DS_Store')).toBeNull()
+  expect(await findFile(restoreDir, 'secret.bin')).toBeNull()
+  expect(await findFile(restoreDir, 'scratch.tmp')).toBeNull()
+})
+
 test('keeps the title bar in view when enabling per-file 7z settings', async ({ app, page, workDir }) => {
   await page.addInitScript(() => window.localStorage.setItem('libera_expert_mode', 'true'))
   await page.reload()

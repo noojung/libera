@@ -23,6 +23,10 @@ import {
   type ZipMethod,
   type ZipMethodOverride
 } from './zip/methodOverrides'
+import {
+  createCompressionInputFilter,
+  type CompressionInputFilters
+} from './compressionInputs'
 
 /** A split set's compressed size is the whole set, not the volume opened. */
 async function totalOutputSize(outputPaths: string[]): Promise<number> {
@@ -44,9 +48,10 @@ export type {
   SevenZipMethodOverride
 } from './sevenZip/methodOverrides'
 export type { SevenZipPlanOptions, SevenZipSolidBlock } from './sevenZip/node'
+export type { CompressionInputFilters } from './compressionInputs'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
-export interface CompressionOptions {
+export interface CompressionOptions extends CompressionInputFilters {
   inputPaths: string[]
   outputPath: string
   format: ArchiveFormat
@@ -157,19 +162,30 @@ function throwIfAborted(signal?: AbortSignal): void {
  * `excludePath` omits a single absolute path from the total. It is used to
  * leave the archive being written out of its own size estimate so the
  * reported progress percentage stays accurate.
+ *
+ * `filters` are the writer's own, so what is never written is never counted
+ * either and the percentage still ends on 100. That is why the walk carries the
+ * archive-relative name alongside the path: the pattern filter reads the name an
+ * entry would be stored under, exactly as the writers do.
  */
-export async function calculateTotalSize(paths: string[], excludePath?: string): Promise<number> {
+export async function calculateTotalSize(
+  paths: string[],
+  excludePath?: string,
+  filters: CompressionInputFilters = {}
+): Promise<number> {
   const visitedDirectories = new Set<string>()
   const excluded = excludePath ? path.resolve(excludePath) : null
+  const filter = createCompressionInputFilter(filters)
 
-  const calculatePathSize = async (itemPath: string): Promise<number> => {
+  const calculatePathSize = async (itemPath: string, entryName: string): Promise<number> => {
     try {
       if (excluded && path.resolve(itemPath) === excluded) return 0
+      if (!filter.allowsName(path.basename(itemPath))) return 0
 
       const stat = await fsPromises.lstat(itemPath)
       if (stat.isSymbolicLink()) return 0
 
-      if (!stat.isDirectory()) return stat.size
+      if (!stat.isDirectory()) return filter.allowsEntry(entryName, stat) ? stat.size : 0
 
       const resolvedPath = await fsPromises.realpath(itemPath)
       if (visitedDirectories.has(resolvedPath)) return 0
@@ -178,7 +194,7 @@ export async function calculateTotalSize(paths: string[], excludePath?: string):
       const entries = await fsPromises.readdir(itemPath, { withFileTypes: true })
       let total = 0
       for (const entry of entries) {
-        total += await calculatePathSize(path.join(itemPath, entry.name))
+        total += await calculatePathSize(path.join(itemPath, entry.name), `${entryName}/${entry.name}`)
       }
       return total
     } catch {
@@ -189,7 +205,7 @@ export async function calculateTotalSize(paths: string[], excludePath?: string):
 
   let total = 0
   for (const itemPath of paths) {
-    total += await calculatePathSize(itemPath)
+    total += await calculatePathSize(itemPath, path.basename(itemPath))
   }
   return total
 }
@@ -243,6 +259,13 @@ export async function compressArchive(
       options.solidArchive !== undefined || options.sevenZipMethodOverrides !== undefined)
   ) {
     throw new Error('7Z codec options can only be used with 7Z archives.')
+  }
+  if (
+    format === 'gz' &&
+    (options.excludeSymlinks !== undefined || options.excludeMacMetadata !== undefined ||
+      options.excludeHiddenFiles !== undefined || options.filterPattern !== undefined)
+  ) {
+    throw new Error('Source filters can only be used with ZIP, TAR, TAR.GZ, or 7Z archives.')
   }
   if (
     !['zip', 'gz', 'tgz'].includes(format) &&
@@ -314,7 +337,14 @@ export async function compressArchive(
   // picked up.
   const resolvedOutputPath = path.resolve(outputPath)
 
-  const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath)
+  const filters: CompressionInputFilters = {
+    excludeSymlinks: options.excludeSymlinks,
+    excludeMacMetadata: options.excludeMacMetadata,
+    excludeHiddenFiles: options.excludeHiddenFiles,
+    filterPattern: options.filterPattern
+  }
+
+  const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath, filters)
 
   throwIfAborted(signal)
 
@@ -336,7 +366,8 @@ export async function compressArchive(
         methodOverrides: options.sevenZipMethodOverrides,
         matchFinderWordSize: options.matchFinderWordSize,
         searchCycles: options.searchCycles,
-        solid: options.solidArchive
+        solid: options.solidArchive,
+        ...filters
       },
       onProgress,
       { signal }
@@ -365,7 +396,7 @@ export async function compressArchive(
     try {
       split = await writeSplitZip(
         {
-          source: { inputPaths, totalBytes },
+          source: { inputPaths, totalBytes, filters },
           volumes: { outputPath, splitSize },
           squeeze: {
             level,
@@ -409,7 +440,7 @@ export async function compressArchive(
     let written
     try {
       written = await writeZipFile({
-        source: { inputPaths, totalBytes },
+        source: { inputPaths, totalBytes, filters },
         outputPath,
         squeeze: {
           level,
@@ -434,11 +465,15 @@ export async function compressArchive(
   }
 
   if (format === 'tar' || format === 'tgz') {
+    const filter = createCompressionInputFilter(filters)
     const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
     for (const itemPath of inputPaths) {
       if (path.resolve(itemPath) === resolvedOutputPath) continue
+      const baseName = path.basename(itemPath)
+      if (!filter.allowsName(baseName)) continue
       try {
         const stat = await fsPromises.lstat(itemPath)
+        if (!filter.allowsEntry(baseName, stat)) continue
         const isDirectory = stat.isDirectory()
         archiveInputs.push({
           itemPath,
@@ -539,9 +574,16 @@ export async function compressArchive(
           // Returning false from this callback drops the entry from the walk.
           // entry.name is relative to itemPath, so resolving the two gives the
           // absolute path to compare against the archive's own location.
+          // Archiver walks with lstat, so `entry.stats` tells a link from the
+          // file it points at without the walk ever following one.
           archive.directory(itemPath, baseName, entry => {
             const absolutePath = path.resolve(itemPath, entry.name)
             if (absolutePath === resolvedOutputPath) return false
+            // The walk hands over whole paths rather than one step at a time,
+            // so a blocked folder arrives again for each of its children.
+            const storedPath = `${baseName}/${entry.name}`
+            if (!filter.allowsPath(entry.name)) return false
+            if (entry.stats && !filter.allowsEntry(storedPath, entry.stats)) return false
             return entry
           })
         } else {

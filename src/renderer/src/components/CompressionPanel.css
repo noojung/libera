@@ -435,3 +435,31 @@
   font-weight: 700;
   color: var(--text-main);
 }
+
+/* Matches the extraction panel's expert card: inside the dashed frame a
+   checkbox is a plain row in a list, not an option card of its own. */
+.compression-panel__expert-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* TAR configures no codec, so its card opens on the list. */
+.expert-card__header + .compression-panel__expert-checkboxes {
+  margin-top: 0;
+}
+
+.compression-panel__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+/* The pattern field closes the card, below the checkboxes it narrows. */
+.compression-panel__expert-row--filter {
+  margin-top: 12px;
+}

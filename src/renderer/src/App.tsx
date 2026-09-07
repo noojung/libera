@@ -308,7 +308,11 @@ export const App: React.FC = () => {
         searchCycles: options.searchCycles,
         solidArchive: options.solidArchive,
         deflateStrategy: options.deflateStrategy,
-        memLevel: options.memLevel
+        memLevel: options.memLevel,
+        excludeSymlinks: options.excludeSymlinks,
+        excludeMacMetadata: options.excludeMacMetadata,
+        excludeHiddenFiles: options.excludeHiddenFiles,
+        filterPattern: options.filterPattern
       }, jobId)
 
       if (cancelledJobIds.current.has(jobId)) return

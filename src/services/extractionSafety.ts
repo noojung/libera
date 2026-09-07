@@ -56,49 +56,6 @@ export interface FormatExtraction {
 /** A format's entry point. Registered in the table in extractor.ts. */
 export type FormatExtractor = (request: FormatExtraction) => Promise<ExtractionResult>
 
-function globExpression(pattern: string): RegExp {
-  let expression = '^'
-  for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index]
-    if (character === '*') {
-      if (pattern[index + 1] === '*') {
-        expression += '.*'
-        index += 1
-      } else {
-        expression += '[^/]*'
-      }
-    } else if (character === '?') {
-      expression += '[^/]'
-    } else {
-      expression += character.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
-    }
-  }
-  return new RegExp(`${expression}$`, process.platform === 'win32' ? 'i' : '')
-}
-
-export function createArchiveEntryFilter(patternText?: string): (entryPath: string) => boolean {
-  const tokens = (patternText ?? '')
-    .split(/[,;\n]/)
-    .map(pattern => pattern.trim())
-    .filter(Boolean)
-    .slice(0, 100)
-    .map(pattern => ({ exclude: pattern.startsWith('!'), pattern: pattern.replace(/^!/, '').slice(0, 256) }))
-    .filter(item => item.pattern.length > 0)
-    .map(item => ({
-      exclude: item.exclude,
-      hasSlash: item.pattern.includes('/'),
-      expression: globExpression(item.pattern.replace(/\\/g, '/'))
-    }))
-  const includes = tokens.filter(token => !token.exclude)
-  const excludes = tokens.filter(token => token.exclude)
-  return entryPath => {
-    const normalized = entryPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
-    const name = normalized.split('/').pop() || normalized
-    const matches = (token: typeof tokens[number]) => token.expression.test(token.hasSlash ? normalized : name)
-    return (includes.length === 0 || includes.some(matches)) && !excludes.some(matches)
-  }
-}
-
 export function isMacMetadataPath(entryPath: string): boolean {
   const normalized = entryPath.replace(/\\/g, '/').replace(/^\.\//, '')
   return normalized === '__MACOSX' || normalized.startsWith('__MACOSX/') ||

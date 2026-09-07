@@ -41,6 +41,11 @@ interface SevenZipMethodOverridesModalProps {
   /** Where the archive would land, which the preview excludes from its inputs. */
   outputPath: string
   solid: boolean
+  /** The panel's source filters, so the blocks match what the writer takes. */
+  excludeSymlinks: boolean
+  excludeMacMetadata: boolean
+  excludeHiddenFiles: boolean
+  filterPattern?: string
   onChange: (overrides: SevenZipMethodOverride[]) => void
   onClose: () => void
 }
@@ -67,6 +72,10 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
   defaultLevel,
   outputPath,
   solid,
+  excludeSymlinks,
+  excludeMacMetadata,
+  excludeHiddenFiles,
+  filterPattern,
   onChange,
   onClose
 }) => {
@@ -96,8 +105,15 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     outputPath,
     level: defaultLevel,
     methodOverrides: overrides,
-    solid
-  } satisfies SevenZipPlanOptions), [items, outputPath, defaultLevel, overrides, solid])
+    solid,
+    excludeSymlinks,
+    excludeMacMetadata,
+    excludeHiddenFiles,
+    filterPattern
+  } satisfies SevenZipPlanOptions), [
+    items, outputPath, defaultLevel, overrides, solid,
+    excludeSymlinks, excludeMacMetadata, excludeHiddenFiles, filterPattern
+  ])
 
   useEffect(() => {
     const request = JSON.parse(planKey) as SevenZipPlanOptions

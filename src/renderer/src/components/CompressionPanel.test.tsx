@@ -288,18 +288,86 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Compression level')).toBeInTheDocument()
   })
 
-  it('hides the empty expert settings card for TAR', async () => {
+  it('leaves TAR the source filters as its whole expert card', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
 
     expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    expect(screen.getByText('ZIP compression method')).toBeInTheDocument()
 
+    // TAR has no codec to configure, so the card keeps the filters alone.
     await user.click(screen.getByRole('button', { name: '.TAR' }))
-    expect(screen.queryByText(/Expert compression settings/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    expect(screen.queryByText('ZIP compression method')).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Exclude symbolic links/ })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Exclude macOS metadata/ })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Exclude hidden files/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('File filter pattern (optional)')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '.TAR.GZ' }))
-    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    expect(screen.getByText('Deflate strategy')).toBeInTheDocument()
+  })
+
+  it('sends the source filters and keeps them across a format change', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start compression 🚀' })).toBeEnabled())
+
+    await user.click(screen.getByRole('checkbox', { name: /Exclude symbolic links/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Exclude macOS metadata/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Exclude hidden files/ }))
+    await user.type(screen.getByLabelText('File filter pattern (optional)'), '  *.txt  ')
+    // They describe the input tree rather than the codec, so switching format
+    // must not quietly put the excluded files back into the archive.
+    await user.click(screen.getByRole('button', { name: '.TAR' }))
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'tar',
+      excludeSymlinks: true,
+      excludeMacMetadata: true,
+      excludeHiddenFiles: true,
+      filterPattern: '*.txt'
+    }))
+  })
+
+  it('sends no pattern for a field holding only whitespace', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start compression 🚀' })).toBeEnabled())
+
+    await user.type(screen.getByLabelText('File filter pattern (optional)'), '   ')
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ filterPattern: undefined }))
+  })
+
+  it('leaves the source filters out for GZ, which holds a single stream', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={onStart} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start compression 🚀' })).toBeEnabled())
+
+    await user.click(screen.getByRole('checkbox', { name: /Exclude macOS metadata/ }))
+    await user.type(screen.getByLabelText('File filter pattern (optional)'), '*.txt')
+    await user.click(screen.getByRole('button', { name: '.GZ' }))
+    expect(screen.queryByText(/Exclude macOS metadata/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('File filter pattern (optional)')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Start compression 🚀' }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'gz',
+      excludeSymlinks: undefined,
+      excludeMacMetadata: undefined,
+      excludeHiddenFiles: undefined,
+      filterPattern: undefined
+    }))
   })
 
   it('shows the volume names each split format actually produces', async () => {

@@ -25,11 +25,11 @@ import {
   parseAppleDouble,
   type AppleDoubleMetadata
 } from './appleDouble'
+import { createArchiveEntryFilter } from './entryPatterns'
 import {
   archivePermissions,
   buildExtractionPlan,
   calculateUsableExtractionBytes,
-  createArchiveEntryFilter,
   createOwnedSymlink,
   createOwnedWebWriter,
   defaultAvailableBytes,

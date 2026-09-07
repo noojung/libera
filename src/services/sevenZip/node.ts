@@ -28,6 +28,11 @@ import {
   type SevenZipCompressionLevel,
   type SevenZipMethodOverride
 } from './methodOverrides'
+import {
+  createCompressionInputFilter,
+  type CompressionInputFilter,
+  type CompressionInputFilters
+} from '../compressionInputs'
 
 async function writeFully(
   handle: fsPromises.FileHandle,
@@ -297,18 +302,29 @@ function withoutSourcePath({ sourcePath, ...entry }: CollectedSevenZipEntry): Se
   return entry
 }
 
+type SevenZipCompressionForPath = (
+  sourcePath: string,
+  size: bigint
+) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+
+/** Everything the recursive walk carries but the path it is standing on. */
+interface SevenZipCollectContext {
+  excludedPath: string
+  entries: CollectedSevenZipEntry[]
+  filter: CompressionInputFilter
+  compressionForPath?: SevenZipCompressionForPath
+}
+
 async function collectPathEntries(
   itemPath: string,
   storedPath: string,
-  excludedPath: string,
-  entries: CollectedSevenZipEntry[],
-  compressionForPath?: (
-    sourcePath: string,
-    size: bigint
-  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+  context: SevenZipCollectContext
 ): Promise<void> {
+  const { excludedPath, entries, filter, compressionForPath } = context
   if (path.resolve(itemPath) === excludedPath) return
+  if (!filter.allowsName(path.basename(itemPath))) return
   const stat = await fsPromises.lstat(itemPath)
+  if (!filter.allowsEntry(storedPath, stat)) return
   if (stat.isSymbolicLink()) {
     const target = Buffer.from(await fsPromises.readlink(itemPath), 'utf8')
     entries.push({
@@ -335,9 +351,7 @@ async function collectPathEntries(
     const children = await fsPromises.readdir(itemPath)
     children.sort((left, right) => left.localeCompare(right))
     for (const child of children) {
-      await collectPathEntries(
-        path.join(itemPath, child), archivePath(storedPath, child), excludedPath, entries, compressionForPath
-      )
+      await collectPathEntries(path.join(itemPath, child), archivePath(storedPath, child), context)
     }
     return
   }
@@ -358,33 +372,35 @@ async function collectPathEntries(
 export async function collectSevenZipInputs(
   inputPaths: string[],
   outputPath: string,
-  compressionForPath?: (
-    sourcePath: string,
-    size: bigint
-  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+  filters: CompressionInputFilters = {},
+  compressionForPath?: SevenZipCompressionForPath
 ): Promise<SevenZipEntryInput[]> {
-  return (await collectSevenZipInputDetails(inputPaths, outputPath, compressionForPath)).map(withoutSourcePath)
+  return (await collectSevenZipInputDetails(inputPaths, outputPath, filters, compressionForPath))
+    .map(withoutSourcePath)
 }
 
 async function collectSevenZipInputDetails(
   inputPaths: string[],
   outputPath: string,
-  compressionForPath?: (
-    sourcePath: string,
-    size: bigint
-  ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
+  filters: CompressionInputFilters = {},
+  compressionForPath?: SevenZipCompressionForPath
 ): Promise<CollectedSevenZipEntry[]> {
   const entries: CollectedSevenZipEntry[] = []
-  const excludedPath = path.resolve(outputPath)
+  const context: SevenZipCollectContext = {
+    excludedPath: path.resolve(outputPath),
+    entries,
+    filter: createCompressionInputFilter(filters),
+    compressionForPath
+  }
   for (const itemPath of inputPaths) {
-    await collectPathEntries(itemPath, path.basename(itemPath), excludedPath, entries, compressionForPath)
+    await collectPathEntries(itemPath, path.basename(itemPath), context)
   }
   if (entries.length === 0) throw new Libera7zError('UNSUPPORTED_FEATURE', 'No supported 7z inputs remain')
   return entries
 }
 
 /** Everything that decides how an entry is written, short of writing it. */
-export interface SevenZipPlanOptions {
+export interface SevenZipPlanOptions extends CompressionInputFilters {
   inputPaths: string[]
   outputPath: string
   level: number
@@ -582,7 +598,7 @@ export async function planSevenZipSolidBlocks(
   if (options.inputPaths.length === 0) return []
   const plan = archivePlan(options)
   const entries = settleSevenZipEntries(
-    await collectSevenZipInputDetails(options.inputPaths, options.outputPath),
+    await collectSevenZipInputDetails(options.inputPaths, options.outputPath, options),
     plan,
     options.solid === true
   )
@@ -604,7 +620,7 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
   if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
   const plan = archivePlan(options)
   const entries = settleSevenZipEntries(
-    await collectSevenZipInputDetails(options.inputPaths, options.outputPath),
+    await collectSevenZipInputDetails(options.inputPaths, options.outputPath, options),
     plan,
     options.solid === true
   )

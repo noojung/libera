@@ -976,6 +976,25 @@ describe('7z solid block preview', () => {
     expect(planned.map(block => block.dictionarySize)).toEqual([64 * 1024, 512 * 1024])
   })
 
+  it('plans over the same inputs the writer takes, filters included', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'kept.txt'), 'kept settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, '.DS_Store'), 'finder state '.repeat(60))
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'blocks.7z'),
+      level: 5,
+      solid: true,
+      excludeMacMetadata: true
+    })
+
+    expect(planned.map(block => block.entries.map(entry => entry.path)))
+      .toEqual([['source/kept.txt']])
+  })
+
   it('skips directories and empty files, which carry no stream', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
@@ -992,5 +1011,209 @@ describe('7z solid block preview', () => {
 
     expect(planned.map(block => block.entries.map(entry => entry.path)))
       .toEqual([['source/nested/kept.txt']])
+  })
+})
+
+describe('source filters', () => {
+  type FilteredFormat = 'zip' | 'tar' | '7z'
+
+  async function listPaths(archivePath: string, format: FilteredFormat): Promise<string[]> {
+    if (format === 'tar') return listTarPaths(archivePath)
+    return (await inspectArchive(archivePath)).entries.map(entry => entry.path)
+  }
+
+  /** A folder with one real file and one link beside it. */
+  async function createLinkedSource(directory: string): Promise<string> {
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'real.txt'), 'real contents')
+    await fs.symlink('real.txt', path.join(sourceDir, 'link.txt'))
+    return sourceDir
+  }
+
+  /** A folder holding every kind of bookkeeping file macOS leaves behind. */
+  async function createNoisySource(directory: string): Promise<string> {
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, '__MACOSX'), { recursive: true })
+    await fs.mkdir(path.join(sourceDir, 'docs'))
+    await fs.writeFile(path.join(sourceDir, 'payload.txt'), 'payload')
+    await fs.writeFile(path.join(sourceDir, '.DS_Store'), 'finder state')
+    await fs.writeFile(path.join(sourceDir, '._payload.txt'), 'resource fork')
+    await fs.writeFile(path.join(sourceDir, '__MACOSX', 'note.txt'), 'sidecar')
+    await fs.writeFile(path.join(sourceDir, 'docs', '.DS_Store'), 'nested finder state')
+    return sourceDir
+  }
+
+  it.skipIf(process.platform === 'win32').each(['zip', 'tar', '7z'] as const)(
+    'stores a symbolic link as a link entry in %s',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createLinkedSource(directory)
+      const outputPath = path.join(directory, `links.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format })
+
+      const targetDir = path.join(directory, 'restored')
+      await extractArchive({ archivePath: outputPath, targetDir, restoreSymlinks: true })
+      const linkPath = path.join(targetDir, 'source', 'link.txt')
+      expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true)
+      await expect(fs.readlink(linkPath)).resolves.toBe('real.txt')
+    },
+    60_000
+  )
+
+  it.skipIf(process.platform === 'win32').each(['zip', 'tar', '7z'] as const)(
+    'leaves symbolic links out of a %s when they are excluded',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createLinkedSource(directory)
+      const outputPath = path.join(directory, `filtered.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format, excludeSymlinks: true })
+
+      const names = (await listPaths(outputPath, format)).map(entryPath => path.basename(entryPath))
+      expect(names).toContain('real.txt')
+      expect(names).not.toContain('link.txt')
+    },
+    60_000
+  )
+
+  it.each(['zip', 'tar', '7z'] as const)(
+    'leaves macOS metadata out of a %s when it is excluded',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createNoisySource(directory)
+      const outputPath = path.join(directory, `clean.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format, excludeMacMetadata: true })
+
+      const paths = await listPaths(outputPath, format)
+      const names = paths.map(entryPath => path.basename(entryPath.replace(/\/+$/, '')))
+      expect(names).toContain('payload.txt')
+      expect(names).not.toContain('.DS_Store')
+      expect(names).not.toContain('._payload.txt')
+      expect(paths.every(entryPath => !entryPath.includes('__MACOSX'))).toBe(true)
+    },
+    60_000
+  )
+
+  it.each(['zip', 'tar', '7z'] as const)('keeps macOS metadata in a %s by default', async format => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createNoisySource(directory)
+    const outputPath = path.join(directory, `noisy.${format}`)
+
+    await compressArchive({ inputPaths: [sourceDir], outputPath, format })
+
+    const names = (await listPaths(outputPath, format)).map(entryPath => path.basename(entryPath.replace(/\/+$/, '')))
+    expect(names).toContain('.DS_Store')
+    expect(names).toContain('._payload.txt')
+    expect(names).toContain('__MACOSX')
+  }, 60_000)
+
+  /** A folder whose dot-prefixed names hold the only copy of some content. */
+  async function createDottedSource(directory: string): Promise<string> {
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, '.git'), { recursive: true })
+    await fs.mkdir(path.join(sourceDir, 'docs'))
+    await fs.writeFile(path.join(sourceDir, 'payload.txt'), 'payload')
+    await fs.writeFile(path.join(sourceDir, '.env'), 'SECRET=1')
+    await fs.writeFile(path.join(sourceDir, '.git', 'HEAD'), 'ref: refs/heads/main')
+    await fs.writeFile(path.join(sourceDir, 'docs', 'notes.md'), '# notes')
+    await fs.writeFile(path.join(sourceDir, 'docs', 'scratch.tmp'), 'scratch')
+    return sourceDir
+  }
+
+  it.each(['zip', 'tar', '7z'] as const)(
+    'leaves hidden names and their subtrees out of a %s when they are excluded',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createDottedSource(directory)
+      const outputPath = path.join(directory, `visible.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format, excludeHiddenFiles: true })
+
+      const paths = await listPaths(outputPath, format)
+      const names = paths.map(entryPath => path.basename(entryPath.replace(/\/+$/, '')))
+      expect(names).toContain('payload.txt')
+      expect(names).not.toContain('.env')
+      // The folder is dropped whole, so nothing below it is walked either.
+      expect(paths.every(entryPath => !entryPath.includes('.git'))).toBe(true)
+    },
+    60_000
+  )
+
+  it.each(['zip', 'tar', '7z'] as const)(
+    'keeps only the files a %s filter pattern matches',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createDottedSource(directory)
+      const outputPath = path.join(directory, `matched.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format, filterPattern: '*.txt, *.md' })
+
+      const names = (await listPaths(outputPath, format))
+        .map(entryPath => path.basename(entryPath.replace(/\/+$/, '')))
+      expect(names).toContain('payload.txt')
+      // A folder matches no pattern of its own, yet still carries what does.
+      expect(names).toContain('notes.md')
+      expect(names).not.toContain('scratch.tmp')
+      expect(names).not.toContain('.env')
+    },
+    60_000
+  )
+
+  it.each(['zip', 'tar', '7z'] as const)(
+    'subtracts an exclusion-only %s pattern from the whole tree',
+    async format => {
+      const directory = await createTemporaryDirectory()
+      const sourceDir = await createDottedSource(directory)
+      const outputPath = path.join(directory, `subtracted.${format}`)
+
+      await compressArchive({ inputPaths: [sourceDir], outputPath, format, filterPattern: '!*.tmp' })
+
+      const names = (await listPaths(outputPath, format))
+        .map(entryPath => path.basename(entryPath.replace(/\/+$/, '')))
+      expect(names).toContain('payload.txt')
+      expect(names).toContain('.env')
+      expect(names).not.toContain('scratch.tmp')
+    },
+    60_000
+  )
+
+  it('leaves excluded metadata out of the progress total as well', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createNoisySource(directory)
+
+    await expect(calculateTotalSize([sourceDir])).resolves.toBe(
+      Buffer.byteLength('payloadfinder stateresource forksidecarnested finder state')
+    )
+    await expect(calculateTotalSize([sourceDir], undefined, { excludeMacMetadata: true })).resolves.toBe(
+      Buffer.byteLength('payload')
+    )
+  })
+
+  it('counts only what the hidden and pattern filters would write', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = await createDottedSource(directory)
+
+    await expect(calculateTotalSize([sourceDir], undefined, { excludeHiddenFiles: true })).resolves.toBe(
+      Buffer.byteLength('payload# notesscratch')
+    )
+    await expect(calculateTotalSize([sourceDir], undefined, { filterPattern: '*.txt, *.md' })).resolves.toBe(
+      Buffer.byteLength('payload# notes')
+    )
+  })
+
+  it('rejects the filters for GZ, which holds a single stream', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'report.txt')
+    await fs.writeFile(inputPath, 'report')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath],
+      outputPath: path.join(directory, 'report.txt.gz'),
+      format: 'gz',
+      excludeMacMetadata: true
+    })).rejects.toThrow(/Source filters/)
   })
 })
