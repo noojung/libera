@@ -571,18 +571,6 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               stays as dense as the rows above it. */}
           {(solidBlockShown || sourceFiltersShown) && (
             <div className="compression-panel__expert-checkboxes">
-              {solidBlockShown && (
-                <label className="compression-panel__checkbox-row" title={t('compression.solidArchiveHint')}>
-                  <input
-                    type="checkbox"
-                    className="compression-panel__checkbox"
-                    checked={solidBlock}
-                    onChange={(e) => setSolidBlock(e.target.checked)}
-                  />
-                  <span>{t('compression.solidArchive')}</span>
-                </label>
-              )}
-
               {/* What reaches the archive rather than how it is written, so
                   these sit below the codec rows - and are the whole card for
                   TAR. */}
@@ -618,6 +606,17 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                     <span>{t('compression.excludeHiddenFiles')}</span>
                   </label>
                 </>
+              )}
+              {solidBlockShown && (
+                <label className="compression-panel__checkbox-row" title={t('compression.solidArchiveHint')}>
+                  <input
+                    type="checkbox"
+                    className="compression-panel__checkbox"
+                    checked={solidBlock}
+                    onChange={(e) => setSolidBlock(e.target.checked)}
+                  />
+                  <span>{t('compression.solidArchive')}</span>
+                </label>
               )}
             </div>
           )}
