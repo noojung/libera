@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, File, FilePlus, Files, Filter, Folder, Home, Microscope, Search, ShieldAlert, UploadCloud } from 'lucide-react'
+import { Boxes, ChevronDown, ChevronRight, File, FilePlus, Files, Filter, Folder, Home, Microscope, Search, ShieldAlert, UploadCloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ArchiveEntry, ArchiveInspectionResult } from '@services/archiveInspector'
 import type { ArchivePreviewResult } from '@services/archivePreview'
@@ -17,14 +17,15 @@ interface ArchiveBrowserEntry extends ArchiveEntry {
   isVirtual?: boolean
 }
 
-type ArchiveBrowserGroup =
-  | { kind: 'entry'; entry: ArchiveBrowserEntry }
-  | {
-      kind: 'solid-block'
-      block: NonNullable<ArchiveEntry['solidBlock']>
-      codec?: string
-      entries: ArchiveBrowserEntry[]
-    }
+interface SolidBlockSummary {
+  id: number
+  fileCount: number
+  uncompressedSize: number
+  compressedSize: number
+  codec?: string
+  ratio?: number | null
+  entries: ArchiveEntry[]
+}
 
 function normalizeArchivePath(entryPath: string): string {
   return entryPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
@@ -277,26 +278,58 @@ export const ArchiveInspector: React.FC = () => {
     )
   }, [currentEntries, isSearching, language, searchQuery, searchableEntries])
   const displayedEntries = allDisplayedEntries.slice(0, visibleEntryCount)
-  const displayedGroups: ArchiveBrowserGroup[] = []
-  const displayedSolidBlocks = new Map<number, Extract<ArchiveBrowserGroup, { kind: 'solid-block' }>>()
-  for (const entry of displayedEntries) {
-    if (!entry.solidBlock) {
-      displayedGroups.push({ kind: 'entry', entry })
-      continue
+  const [blocksPanelOpen, setBlocksPanelOpen] = useState(false)
+  const [expandedBlockIds, setExpandedBlockIds] = useState<Set<number>>(new Set())
+  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
+
+  const solidBlocks = useMemo(() => {
+    const entries = inspectData?.entries || []
+    const map = new Map<number, SolidBlockSummary>()
+    for (const entry of entries) {
+      if (!entry.solidBlock) continue
+      const existing = map.get(entry.solidBlock.id)
+      if (existing) {
+        existing.entries.push(entry)
+      } else {
+        map.set(entry.solidBlock.id, {
+          id: entry.solidBlock.id,
+          fileCount: entry.solidBlock.fileCount,
+          uncompressedSize: entry.solidBlock.uncompressedSize,
+          compressedSize: entry.solidBlock.compressedSize,
+          codec: entry.codec,
+          ratio: entry.ratio,
+          entries: [entry]
+        })
+      }
     }
-    const existing = displayedSolidBlocks.get(entry.solidBlock.id)
-    if (existing) {
-      existing.entries.push(entry)
-      continue
-    }
-    const group: Extract<ArchiveBrowserGroup, { kind: 'solid-block' }> = {
-      kind: 'solid-block',
-      block: entry.solidBlock,
-      codec: entry.codec,
-      entries: [entry]
-    }
-    displayedSolidBlocks.set(entry.solidBlock.id, group)
-    displayedGroups.push(group)
+    return Array.from(map.values()).sort((a, b) => a.id - b.id)
+  }, [inspectData?.entries])
+
+  useEffect(() => {
+    setBlocksPanelOpen(false)
+    setExpandedBlockIds(new Set())
+    setSelectedBlockId(null)
+  }, [solidBlocks])
+
+  const toggleBlockExpanded = (blockId: number) => {
+    setExpandedBlockIds(current => {
+      const next = new Set(current)
+      if (next.has(blockId)) next.delete(blockId)
+      else next.add(blockId)
+      return next
+    })
+  }
+
+  const focusBlock = (blockId: number) => {
+    setBlocksPanelOpen(true)
+    setExpandedBlockIds(current => new Set(current).add(blockId))
+    setSelectedBlockId(blockId)
+    setTimeout(() => {
+      const el = document.getElementById(`archive-solid-block-${blockId}`)
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, 50)
   }
   const breadcrumbs = currentPath ? currentPath.split('/') : []
   const splitVolumes = inspectData?.volumes && inspectData.volumes.length > 1
@@ -326,9 +359,34 @@ export const ArchiveInspector: React.FC = () => {
           {isNavigableDirectory && <ChevronRight className="archive-inspector__entry-chevron" size={15} />}
         </div>
         <div className="archive-inspector__entry-size">{entry.isDirectory ? '-' : entry.size === null ? t('inspector.unknown') : formatBytes(entry.size, language)}</div>
-        <div className="archive-inspector__entry-compressed-size">{entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'}</div>
-        <div className={`archive-inspector__entry-ratio${!entry.solidBlock && entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>
-          {entry.solidBlock || entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}
+        <div className="archive-inspector__entry-compressed-size">
+          {entry.solidBlock ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className="archive-inspector__solid-badge"
+              title={t('inspector.solidBlockBadgeHint', { number: entry.solidBlock.id })}
+              aria-label={t('inspector.solidBlockBadgeHint', { number: entry.solidBlock.id })}
+              onClick={(e) => {
+                e.stopPropagation()
+                focusBlock(entry.solidBlock!.id)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  focusBlock(entry.solidBlock!.id)
+                }
+              }}
+            >
+              #{entry.solidBlock.id}
+            </span>
+          ) : (
+            entry.compressedSize !== undefined ? formatBytes(entry.compressedSize, language) : '-'
+          )}
+        </div>
+        <div className={`archive-inspector__entry-ratio${entry.ratio !== null && entry.ratio !== undefined && entry.ratio > 0 ? ' is-positive' : ''}`}>
+          {entry.ratio === null || entry.ratio === undefined ? '-' : `${entry.ratio}%`}
         </div>
         {isExpertMode && (
           <>
@@ -536,42 +594,7 @@ export const ArchiveInspector: React.FC = () => {
             </div>
 
             <div className="archive-inspector__entries">
-              {displayedGroups.map(group => {
-                if (group.kind === 'solid-block') {
-                  const { block } = group
-                  const savedSize = block.uncompressedSize - block.compressedSize
-                  const ratio = group.entries[0].ratio
-                  return (
-                    <section
-                      key={`solid-block-${block.id}`}
-                      className="archive-inspector__solid-block"
-                      aria-label={t('inspector.solidBlock', { number: block.id })}
-                    >
-                      <header className="archive-inspector__solid-block-header">
-                        <div className="archive-inspector__solid-block-main">
-                          <Files size={15} />
-                          <strong>{t('inspector.solidBlock', { number: block.id })}</strong>
-                          <span className="code-badge">{group.codec || 'LZMA2'}</span>
-                          <span>{t('inspector.fileCount', { count: block.fileCount })}</span>
-                        </div>
-                        <div className="archive-inspector__solid-block-metrics">
-                          <span>{formatBytes(block.uncompressedSize, language)} → {formatBytes(block.compressedSize, language)}</span>
-                          <strong className={savedSize >= 0 ? 'is-positive' : 'is-negative'}>
-                            {t(savedSize >= 0 ? 'inspector.solidBlockSaved' : 'inspector.solidBlockExpanded', {
-                              size: formatBytes(Math.abs(savedSize), language),
-                              ratio
-                            })}
-                          </strong>
-                        </div>
-                      </header>
-                      <div className="archive-inspector__solid-block-entries">
-                        {group.entries.map(renderEntry)}
-                      </div>
-                    </section>
-                  )
-                }
-                return renderEntry(group.entry)
-              })}
+              {displayedEntries.map(entry => renderEntry(entry))}
               {displayedEntries.length < allDisplayedEntries.length && (
                 <button type="button" className="btn-secondary archive-inspector__load-more" onClick={() => setVisibleEntryCount(count => count + ENTRY_PAGE_SIZE)}>
                   {t('inspector.loadMore', { count: Math.min(ENTRY_PAGE_SIZE, allDisplayedEntries.length - displayedEntries.length) })}
@@ -579,6 +602,89 @@ export const ArchiveInspector: React.FC = () => {
               )}
               {displayedEntries.length === 0 && <div className="archive-inspector__empty">{t(isSearching ? 'inspector.noSearchResults' : 'inspector.emptyFolder')}</div>}
             </div>
+
+            {solidBlocks.length > 0 && (
+              <div className={`archive-inspector__solid-panel${blocksPanelOpen ? ' is-open' : ''}`}>
+                <button
+                  type="button"
+                  className="archive-inspector__solid-panel-toggle"
+                  onClick={() => setBlocksPanelOpen(open => !open)}
+                  aria-expanded={blocksPanelOpen}
+                  aria-controls="archive-inspector-solid-blocks-body"
+                >
+                  <Boxes size={16} aria-hidden="true" />
+                  <span className="archive-inspector__solid-panel-title">{t('inspector.solidBlocksTitle')}</span>
+                  <span className="archive-inspector__solid-panel-summary">
+                    {t('inspector.solidBlocksSummary', { count: solidBlocks.length })}
+                  </span>
+                  {blocksPanelOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                </button>
+                {blocksPanelOpen && (
+                  <div className="archive-inspector__solid-panel-body" id="archive-inspector-solid-blocks-body">
+                    <div className="archive-inspector__solid-blocks-list">
+                      {solidBlocks.map(block => {
+                        const expanded = expandedBlockIds.has(block.id)
+                        const savedSize = block.uncompressedSize - block.compressedSize
+                        return (
+                          <section
+                            key={`solid-block-${block.id}`}
+                            id={`archive-solid-block-${block.id}`}
+                            className={`archive-inspector__solid-block-card${selectedBlockId === block.id ? ' is-selected' : ''}`}
+                            aria-label={t('inspector.solidBlock', { number: block.id })}
+                          >
+                            <button
+                              type="button"
+                              className="archive-inspector__solid-block-card-head"
+                              onClick={() => toggleBlockExpanded(block.id)}
+                              aria-expanded={expanded}
+                            >
+                              {expanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
+                              <div className="archive-inspector__solid-block-card-main">
+                                <Files size={15} aria-hidden="true" />
+                                <strong>{t('inspector.solidBlock', { number: block.id })}</strong>
+                                <span className="code-badge">{block.codec || 'LZMA2'}</span>
+                                <span className="archive-inspector__solid-block-card-count">
+                                  {t('inspector.fileCount', { count: block.fileCount })}
+                                </span>
+                              </div>
+                              <div className="archive-inspector__solid-block-card-metrics">
+                                <span>{formatBytes(block.uncompressedSize, language)} → {formatBytes(block.compressedSize, language)}</span>
+                                <strong className={savedSize >= 0 ? 'is-positive' : 'is-negative'}>
+                                  {t(savedSize >= 0 ? 'inspector.solidBlockSaved' : 'inspector.solidBlockExpanded', {
+                                    size: formatBytes(Math.abs(savedSize), language),
+                                    ratio: block.ratio
+                                  })}
+                                </strong>
+                              </div>
+                            </button>
+                            {expanded && (
+                              <div className="archive-inspector__solid-block-card-entries">
+                                {block.entries.map(entry => (
+                                  <button
+                                    key={entry.id || entry.path}
+                                    type="button"
+                                    onClick={() => handlePreviewEntry(entry)}
+                                    className="archive-inspector__solid-block-card-entry"
+                                  >
+                                    <File className="archive-inspector__entry-icon archive-inspector__entry-icon--file" size={14} aria-hidden="true" />
+                                    <span className="archive-inspector__solid-block-card-entry-path" title={entry.path}>
+                                      {entry.path}
+                                    </span>
+                                    <span className="archive-inspector__solid-block-card-entry-size">
+                                      {entry.size !== null && entry.size !== undefined ? formatBytes(entry.size, language) : '-'}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (

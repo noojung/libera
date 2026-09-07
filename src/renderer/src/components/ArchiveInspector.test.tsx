@@ -104,7 +104,7 @@ describe('ArchiveInspector', () => {
     expect(screen.getByText('1.4% saved')).toBeInTheDocument()
   })
 
-  it('labels a shared 7Z compression ratio as a solid-block value', async () => {
+  it('labels a shared 7Z compression ratio as a solid-block value and supports badges and panel toggling', async () => {
     const solidBlock = { id: 1, fileCount: 2, uncompressedSize: 9_128_803, compressedSize: 9_041_587 }
     installElectronApi({
       selectFiles: vi.fn().mockResolvedValue(['solid.7z']),
@@ -118,7 +118,22 @@ describe('ArchiveInspector', () => {
     const { user } = renderWithI18n(<ArchiveInspector />)
     await user.click(screen.getByRole('button', { name: 'Open file...' }))
 
+    // Badges in the file table for solid-compressed files
+    const badges = await screen.findAllByRole('button', { name: 'View details for block 1' })
+    expect(badges).toHaveLength(2)
+    expect(badges[0]).toHaveTextContent('#1')
+
+    // Bottom solid block summary panel is initially collapsed
+    const toggleButton = screen.getByRole('button', { name: /Solid Compression Blocks/i })
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Block 1')).not.toBeInTheDocument()
+
+    // Clicking badge triggers focus, opens panel, expands block, and highlights the card
+    await user.click(badges[0])
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true')
+
     const summary = await screen.findByLabelText('Block 1')
+    expect(summary).toHaveClass('is-selected')
     expect(summary).toHaveTextContent('LZMA2')
     expect(summary).toHaveTextContent('2 files')
     expect(summary).toHaveTextContent('0.96%')
@@ -127,6 +142,11 @@ describe('ArchiveInspector', () => {
     expect(within(summary).getByRole('button', { name: /b\.jpg/ })).toBeInTheDocument()
     expect(summary).not.toContainElement(screen.getByRole('button', { name: /before\.jpg/ }))
     expect(summary).not.toContainElement(screen.getByRole('button', { name: /after\.jpg/ }))
+
+    // Panel toggle button can collapse the panel again
+    await user.click(toggleButton)
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Block 1')).not.toBeInTheDocument()
   })
 
   it('searches descendants of the current folder', async () => {
