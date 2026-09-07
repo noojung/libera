@@ -138,6 +138,20 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     }
   }, [planKey])
 
+  // A stream holding one file is not a solid block, and the written archive
+  // reports none for it. Counting those apart is what keeps this preview
+  // saying the same number the inspector says once the archive exists.
+  const [solidBlocks, standaloneBlocks] = useMemo(() => {
+    if (blockState.status !== 'ready') return [[], []] as [SevenZipSolidBlock[], SevenZipSolidBlock[]]
+    const blocks: SevenZipSolidBlock[] = []
+    const standalone: SevenZipSolidBlock[] = []
+    for (const block of blockState.blocks) {
+      if (block.entries.length > 1) blocks.push(block)
+      else standalone.push(block)
+    }
+    return [blocks, standalone]
+  }, [blockState])
+
   const matchingRule = (sourcePath: string, scope: SevenZipMethodOverride['scope']) => {
     for (let index = overrides.length - 1; index >= 0; index -= 1) {
       const rule = overrides[index]
@@ -409,7 +423,14 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
     if (blockState.status === 'loading') return t('compression.sevenZipBlocksLoading')
     if (blockState.status === 'error') return t('compression.sevenZipBlocksError')
     if (blockState.blocks.length === 0) return t('compression.sevenZipBlocksEmpty')
-    return t('compression.sevenZipBlocksCount', { count: blockState.blocks.length })
+    return [
+      solidBlocks.length === 0
+        ? t('compression.sevenZipBlocksNone')
+        : t('compression.sevenZipBlocksCount', { count: solidBlocks.length }),
+      standaloneBlocks.length > 0
+        ? t('compression.sevenZipBlocksStandaloneCount', { count: standaloneBlocks.length })
+        : undefined
+    ].filter(part => part !== undefined).join(' · ')
   }
 
   /** Splits an archive path so the name survives while the folders truncate. */
@@ -420,9 +441,16 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
       : { folder: entryPath.slice(0, lastSlash + 1), name: entryPath.slice(lastSlash + 1) }
   }
 
+  /** A block always holds LZMA2: the writer only ever joins LZMA2 entries. */
   const blockMeta = (block: SevenZipSolidBlock): string => [
-    block.method === 'copy' ? t('compression.sevenZipBlocksCopy') : undefined,
     t('compression.sevenZipBlocksFiles', { count: block.entries.length }),
+    formatBytes(block.totalBytes, language),
+    block.dictionarySize !== undefined
+      ? t('compression.sevenZipBlocksDictionary', { size: formatBytes(block.dictionarySize, language) })
+      : undefined
+  ].filter(part => part !== undefined).join(' · ')
+
+  const standaloneMeta = (block: SevenZipSolidBlock): string => [
     formatBytes(block.totalBytes, language),
     block.dictionarySize !== undefined
       ? t('compression.sevenZipBlocksDictionary', { size: formatBytes(block.dictionarySize, language) })
@@ -549,58 +577,92 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
               {blockState.status !== 'ready' || blockState.blocks.length === 0
                 ? <div className="zip-method-modal__branch-state">{blocksSummary()}</div>
                 : (
-                  <ol className="zip-method-modal__blocks-list">
-                    {blockState.blocks.map((block, index) => {
-                      const blockKey = block.entries[0].path
-                      const expanded = expandedBlocks.has(blockKey)
-                      const bodyId = `seven-zip-block-${index + 1}-entries`
-                      return (
-                        <li key={blockKey} className="zip-method-modal__block">
-                          <button
-                            type="button"
-                            className="zip-method-modal__block-head"
-                            aria-expanded={expanded}
-                            aria-controls={bodyId}
-                            onClick={() => toggleBlock(blockKey)}
-                          >
-                            {expanded
-                              ? <ChevronDown className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />
-                              : <ChevronRight className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />}
-                            <div className="zip-method-modal__block-main">
-                              <Files size={15} className="zip-method-modal__block-icon" aria-hidden="true" />
-                              <strong className="zip-method-modal__block-name">
-                                {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
-                              </strong>
-                              <span className="code-badge">
-                                {block.method === 'copy' ? t('compression.sevenZipBlocksCopy') : 'LZMA2'}
-                              </span>
-                            </div>
-                            <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
-                          </button>
-                          {expanded && (
-                            <ul className="zip-method-modal__block-entries" id={bodyId}>
-                              {block.entries.map(entry => (
-                                <li key={entry.path} className="zip-method-modal__block-entry">
-                                  <File size={14} className="zip-method-modal__block-entry-icon" aria-hidden="true" />
-                                  <span className="zip-method-modal__block-entry-name" title={entry.path}>
-                                    <span className="zip-method-modal__block-entry-folder">
-                                      {splitEntryPath(entry.path).folder}
-                                    </span>
-                                    <span className="zip-method-modal__block-entry-file">
-                                      {splitEntryPath(entry.path).name}
-                                    </span>
+                  <>
+                    {solidBlocks.length > 0 && (
+                      <ol className="zip-method-modal__blocks-list">
+                        {solidBlocks.map((block, index) => {
+                          const blockKey = block.entries[0].path
+                          const expanded = expandedBlocks.has(blockKey)
+                          const bodyId = `seven-zip-block-${index + 1}-entries`
+                          return (
+                            <li key={blockKey} className="zip-method-modal__block">
+                              <button
+                                type="button"
+                                className="zip-method-modal__block-head"
+                                aria-expanded={expanded}
+                                aria-controls={bodyId}
+                                onClick={() => toggleBlock(blockKey)}
+                              >
+                                {expanded
+                                  ? <ChevronDown className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />
+                                  : <ChevronRight className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />}
+                                <div className="zip-method-modal__block-main">
+                                  <Files size={15} className="zip-method-modal__block-icon" aria-hidden="true" />
+                                  <strong className="zip-method-modal__block-name">
+                                    {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
+                                  </strong>
+                                  <span className="code-badge">LZMA2</span>
+                                </div>
+                                <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
+                              </button>
+                              {expanded && (
+                                <ul className="zip-method-modal__block-entries" id={bodyId}>
+                                  {block.entries.map(entry => (
+                                    <li key={entry.path} className="zip-method-modal__block-entry">
+                                      <File size={14} className="zip-method-modal__block-entry-icon" aria-hidden="true" />
+                                      <span className="zip-method-modal__block-entry-name" title={entry.path}>
+                                        <span className="zip-method-modal__block-entry-folder">
+                                          {splitEntryPath(entry.path).folder}
+                                        </span>
+                                        <span className="zip-method-modal__block-entry-file">
+                                          {splitEntryPath(entry.path).name}
+                                        </span>
+                                      </span>
+                                      <span className="zip-method-modal__block-entry-size">
+                                        {formatBytes(entry.size, language)}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    )}
+                    {standaloneBlocks.length > 0 && (
+                      <div className="zip-method-modal__blocks-standalone">
+                        <p className="zip-method-modal__blocks-standalone-title">
+                          {t('compression.sevenZipBlocksStandaloneTitle')}
+                        </p>
+                        <p className="zip-method-modal__blocks-standalone-hint">
+                          {t('compression.sevenZipBlocksStandaloneHint')}
+                        </p>
+                        <ul className="zip-method-modal__blocks-standalone-list">
+                          {standaloneBlocks.map(block => {
+                            const entry = block.entries[0]
+                            return (
+                              <li key={entry.path} className="zip-method-modal__block-entry">
+                                <File size={14} className="zip-method-modal__block-entry-icon" aria-hidden="true" />
+                                <span className="zip-method-modal__block-entry-name" title={entry.path}>
+                                  <span className="zip-method-modal__block-entry-folder">
+                                    {splitEntryPath(entry.path).folder}
                                   </span>
-                                  <span className="zip-method-modal__block-entry-size">
-                                    {formatBytes(entry.size, language)}
+                                  <span className="zip-method-modal__block-entry-file">
+                                    {splitEntryPath(entry.path).name}
                                   </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ol>
+                                </span>
+                                <span className="code-badge">
+                                  {block.method === 'copy' ? t('compression.sevenZipBlocksCopy') : 'LZMA2'}
+                                </span>
+                                <span className="zip-method-modal__block-entry-size">{standaloneMeta(block)}</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </>
                 )}
             </div>
           )}

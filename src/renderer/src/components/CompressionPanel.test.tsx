@@ -796,23 +796,26 @@ describe('CompressionPanel', () => {
     await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
     await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
 
+    // The lone c.bin stream is no block: the written archive reports none for
+    // it, so the count here has to read the way the inspector's will.
     const preview = screen.getByRole('button', { name: 'Solid block preview' })
-    await waitFor(() => expect(preview).toHaveTextContent('2 blocks'))
+    await waitFor(() => expect(preview).toHaveTextContent('1 block · 1 standalone file'))
     await user.click(preview)
 
     const firstBlock = screen.getByText('Block 1').closest('li')
     const firstBlockToggle = screen.getByRole('button', { name: /Block 1/ })
     expect(firstBlock).toBeInTheDocument()
+    expect(screen.queryByText('Block 2')).not.toBeInTheDocument()
     expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'false')
     expect(firstBlock).not.toHaveTextContent('source/a.txt')
     expect(screen.getByText(/^2 files ·/)).toBeInTheDocument()
-    expect(screen.getByText(/^Copy · 1 file/)).toBeInTheDocument()
-    expect(screen.queryByText('c.bin')).not.toBeInTheDocument()
+    expect(screen.getByText('Standalone files')).toBeInTheDocument()
+    expect(screen.getByText('c.bin').closest('li')).toHaveTextContent('Copy')
+    expect(screen.getByText('c.bin').closest('li')).toHaveTextContent('4 KiB')
 
     await user.click(firstBlockToggle)
     expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'true')
     expect(firstBlock).toHaveTextContent('source/a.txt')
-    expect(screen.queryByText('c.bin')).not.toBeInTheDocument()
 
     await user.click(firstBlockToggle)
     expect(firstBlockToggle).toHaveAttribute('aria-expanded', 'false')
@@ -822,6 +825,32 @@ describe('CompressionPanel', () => {
       level: 5,
       solid: true
     }))
+  })
+
+  it('says no files share a block when every stream holds one file', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    const planSevenZipSolidBlocks = vi.fn().mockResolvedValue([
+      { method: 'lzma2', dictionarySize: 64 * 1024, totalBytes: 1024, entries: [{ path: 'a.txt', size: 1024 }] },
+      { method: 'copy', totalBytes: 4096, entries: [{ path: 'b.bin', size: 4096 }] }
+    ])
+    installElectronApi({
+      getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output'),
+      planSevenZipSolidBlocks
+    })
+    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: '.7Z' }))
+    await user.click(screen.getByRole('checkbox', { name: /Solid block compression/ }))
+    await user.click(screen.getByRole('switch', { name: 'Enable per-file compression settings' }))
+    await user.click(screen.getByRole('button', { name: 'Per-file compression settings' }))
+
+    const preview = screen.getByRole('button', { name: 'Solid block preview' })
+    await waitFor(() => expect(preview).toHaveTextContent('No files share a block · 2 standalone files'))
+    await user.click(preview)
+
+    expect(screen.queryByText('Block 1')).not.toBeInTheDocument()
+    expect(screen.getByText('a.txt').closest('li')).toHaveTextContent('LZMA2')
+    expect(screen.getByText('b.bin').closest('li')).toHaveTextContent('Copy')
   })
 
   it('says the preview is idle while solid mode is off', async () => {

@@ -932,6 +932,56 @@ describe('7z solid block preview', () => {
     expect(planned[2].dictionarySize).toBe(64 * 1024)
   }, 60_000)
 
+  it('plans as many solid blocks as the archive turns out to report', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'shared settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, 'b.txt'), 'shared settings '.repeat(60))
+    await fs.writeFile(path.join(sourceDir, 'c.txt'), 'a larger file '.repeat(20000))
+    await fs.writeFile(path.join(sourceDir, 'd.bin'), crypto.randomBytes(4096))
+    await fs.writeFile(path.join(sourceDir, 'e.txt'), 'shared settings '.repeat(60))
+    const outputPath = path.join(directory, 'blocks.7z')
+    const methodOverrides = [{
+      sourcePath: path.join(sourceDir, 'd.bin'),
+      scope: 'file' as const,
+      method: 'copy' as const
+    }]
+
+    const planned = await planSevenZipSolidBlocks({
+      inputPaths: [sourceDir],
+      outputPath,
+      level: 5,
+      solid: true,
+      methodOverrides
+    })
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: '7z',
+      level: 5,
+      solidArchive: true,
+      sevenZipMethodOverrides: methodOverrides
+    })
+    const inspected = await inspectArchive(outputPath)
+
+    // A run of one is a stream to itself, which the archive reports no block
+    // for. Only the runs that join files may be counted as solid blocks.
+    const plannedBlocks = planned.filter(block => block.entries.length > 1)
+    const reportedBlocks = new Map<number, string[]>()
+    for (const entry of inspected.entries) {
+      if (!entry.solidBlock) continue
+      const started = reportedBlocks.get(entry.solidBlock.id)
+      if (started) started.push(entry.path)
+      else reportedBlocks.set(entry.solidBlock.id, [entry.path])
+    }
+
+    expect(plannedBlocks.map(block => block.entries.map(entry => entry.path)))
+      .toEqual([...reportedBlocks.values()])
+    expect(planned.filter(block => block.entries.length === 1).map(block => block.entries[0].path))
+      .toEqual(inspected.entries.filter(entry => !entry.isDirectory && !entry.solidBlock).map(entry => entry.path))
+  }, 60_000)
+
   it('still starts a new solid block at an explicit LZMA2 strength boundary', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')

@@ -551,6 +551,49 @@
   font-size: 11px;
 }
 
+/* Streams holding a single file: never a solid block, so they sit apart. */
+.zip-method-modal__blocks-standalone {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.zip-method-modal__blocks-standalone-title {
+  margin: 0;
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zip-method-modal__blocks-standalone-hint {
+  margin: 2px 0 8px;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+
+.zip-method-modal__blocks-standalone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zip-method-modal__blocks-standalone-list .zip-method-modal__block-entry {
+  padding: 7px 12px;
+  border: 1.5px solid var(--border-subtle);
+  border-left: 4px solid var(--text-dim);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.zip-method-modal__blocks-standalone-list .zip-method-modal__block-entry-size {
+  white-space: nowrap;
+}
+
 .zip-method-modal__footer {
   gap: 10px;
 }

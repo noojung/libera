@@ -588,9 +588,11 @@ export interface SevenZipSolidBlock {
 }
 
 /**
- * The streams a write would lay down, without writing one. Blocks follow the
+ * The streams a write would lay down, without writing one. Runs follow the
  * archive's own entry order rather than any listing the dialog shows, and hold
  * only the entries that carry data - directories and empty files reach none.
+ * A run of one is a stream to itself, not a solid block: the archive it
+ * produces reports no block for it, so callers count the two apart.
  */
 export async function planSevenZipSolidBlocks(
   options: SevenZipPlanOptions
