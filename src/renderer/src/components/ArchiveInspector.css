@@ -1,6 +1,9 @@
 .archive-inspector {
   display: flex;
   height: 100%;
+  min-height: 0;
+  /* Reserve the same space for fixed cards as the scrollable content gutter. */
+  padding-right: var(--scrollbar-size);
   flex-direction: column;
   gap: 16px;
 }
@@ -115,6 +118,9 @@
 .archive-inspector__content {
   display: flex;
   min-height: 0;
+  /* Extend only the scroll container into the reserved space. */
+  margin-right: calc(-1 * var(--scrollbar-size));
+  scrollbar-gutter: stable;
   flex: 1;
   overflow-y: auto;
   flex-direction: column;

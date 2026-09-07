@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  --scrollbar-size: 14px;
   /* Cute Cozy Palette - Light Mode */
   --bg-dark: #FAF7F2;
   --bg-card: #FFFFFF;
@@ -465,8 +466,8 @@ body {
 
 /* Custom Cute Scrollbars */
 ::-webkit-scrollbar {
-  width: 14px;
-  height: 14px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {

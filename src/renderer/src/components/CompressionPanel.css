@@ -3,7 +3,7 @@
   padding: 20px;
   /* The scrollbar sits inside the padding box, so the reserved gutter plus this
      smaller padding still leaves the content inset by 20px like the other sides. */
-  padding-right: 6px;
+  padding-right: calc(20px - var(--scrollbar-size));
   flex-direction: column;
   gap: 20px;
   overflow-y: auto;
