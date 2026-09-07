@@ -550,16 +550,23 @@ export const SevenZipMethodOverridesModal: React.FC<SevenZipMethodOverridesModal
                             {expanded
                               ? <ChevronDown className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />
                               : <ChevronRight className="zip-method-modal__block-chevron" size={15} aria-hidden="true" />}
-                            <span className="zip-method-modal__block-name">
-                              {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
-                            </span>
+                            <div className="zip-method-modal__block-main">
+                              <Files size={15} className="zip-method-modal__block-icon" aria-hidden="true" />
+                              <strong className="zip-method-modal__block-name">
+                                {t('compression.sevenZipBlocksLabel', { index: index + 1 })}
+                              </strong>
+                              <span className="code-badge">
+                                {block.method === 'copy' ? t('compression.sevenZipBlocksCopy') : 'LZMA2'}
+                              </span>
+                            </div>
                             <span className="zip-method-modal__block-meta">{blockMeta(block)}</span>
                           </button>
                           {expanded && (
                             <ul className="zip-method-modal__block-entries" id={bodyId}>
                               {block.entries.map(entry => (
                                 <li key={entry.path} className="zip-method-modal__block-entry">
-                                  <span className="zip-method-modal__block-entry-name">
+                                  <File size={14} className="zip-method-modal__block-entry-icon" aria-hidden="true" />
+                                  <span className="zip-method-modal__block-entry-name" title={entry.path}>
                                     <span className="zip-method-modal__block-entry-folder">
                                       {splitEntryPath(entry.path).folder}
                                     </span>
