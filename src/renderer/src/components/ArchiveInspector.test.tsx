@@ -147,6 +147,19 @@ describe('ArchiveInspector', () => {
     await user.click(toggleButton)
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByLabelText('Block 1')).not.toBeInTheDocument()
+
+    // Reopening an archive resets the panel, expanded blocks, and highlighted block.
+    await user.click(toggleButton)
+    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await screen.findAllByRole('button', { name: 'View details for block 1' })
+    const reopenedToggle = screen.getByRole('button', { name: /Solid Compression Blocks/i })
+    expect(reopenedToggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(reopenedToggle)
+    const reopenedSummary = screen.getByLabelText('Block 1')
+    expect(reopenedSummary).not.toHaveClass('is-selected')
+    expect(within(reopenedSummary).getByRole('button', { name: /Block 1/ }))
+      .toHaveAttribute('aria-expanded', 'false')
+    expect(within(reopenedSummary).queryByRole('button', { name: /a\.jpg/ })).not.toBeInTheDocument()
   })
 
   it('searches descendants of the current folder', async () => {

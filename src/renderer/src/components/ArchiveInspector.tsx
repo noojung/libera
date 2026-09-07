@@ -92,6 +92,9 @@ export const ArchiveInspector: React.FC = () => {
   const [archivePath, setArchivePath] = useState<string>('')
   const [inspectData, setInspectData] = useState<ArchiveInspectionResult | null>(null)
   const [volumesExpanded, setVolumesExpanded] = useState(false)
+  const [blocksPanelOpen, setBlocksPanelOpen] = useState(false)
+  const [expandedBlockIds, setExpandedBlockIds] = useState<Set<number>>(new Set())
+  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
@@ -134,6 +137,9 @@ export const ArchiveInspector: React.FC = () => {
     setCurrentPath('')
     setVisibleEntryCount(ENTRY_PAGE_SIZE)
     setVolumesExpanded(false)
+    setBlocksPanelOpen(false)
+    setExpandedBlockIds(new Set())
+    setSelectedBlockId(null)
     try {
       const response = await (window as any).electronAPI.inspectArchive(filePath, password)
       if (response.success) {
@@ -278,9 +284,6 @@ export const ArchiveInspector: React.FC = () => {
     )
   }, [currentEntries, isSearching, language, searchQuery, searchableEntries])
   const displayedEntries = allDisplayedEntries.slice(0, visibleEntryCount)
-  const [blocksPanelOpen, setBlocksPanelOpen] = useState(false)
-  const [expandedBlockIds, setExpandedBlockIds] = useState<Set<number>>(new Set())
-  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
 
   const solidBlocks = useMemo(() => {
     const entries = inspectData?.entries || []
@@ -304,12 +307,6 @@ export const ArchiveInspector: React.FC = () => {
     }
     return Array.from(map.values()).sort((a, b) => a.id - b.id)
   }, [inspectData?.entries])
-
-  useEffect(() => {
-    setBlocksPanelOpen(false)
-    setExpandedBlockIds(new Set())
-    setSelectedBlockId(null)
-  }, [solidBlocks])
 
   const toggleBlockExpanded = (blockId: number) => {
     setExpandedBlockIds(current => {
