@@ -201,7 +201,20 @@ class NodeVolumeSource implements RandomAccessSource {
   }
 }
 
-/** Splits an ordinary 7z byte stream into the `.001`, `.002`, ... files. */
+/** The name a volume is written under before the set is committed. */
+function partialVolumePath(volumePath: string): string {
+  return `${volumePath}.partial`
+}
+
+/**
+ * Splits an ordinary 7z byte stream into the `.001`, `.002`, ... files.
+ *
+ * Volumes are written under `.partial` names and moved into place only once
+ * the whole set is on disk. A cancelled or failed write therefore leaves the
+ * set that was already there untouched, which matters because the save dialog
+ * only ever asked about `archive.7z` - the volumes beside it were never a file
+ * the user agreed to lose.
+ */
 class NodeVolumeSink implements SeekableSink {
   private readonly splitSizeBigInt: bigint
   private cursor = 0n
@@ -229,7 +242,7 @@ class NodeVolumeSink implements SeekableSink {
     if (this.currentHandle && this.currentVolumeIndex === volumeIndex) return this.currentHandle
     await this.currentHandle?.close()
     const volumePath = sevenZipVolumePath(this.outputPath, volumeIndex + 1)
-    this.currentHandle = await fsPromises.open(volumePath, 'w')
+    this.currentHandle = await fsPromises.open(partialVolumePath(volumePath), 'w')
     this.currentVolumeIndex = volumeIndex
     this.volumePaths.push(volumePath)
     return this.currentHandle
@@ -264,7 +277,7 @@ class NodeVolumeSink implements SeekableSink {
       const usesAppendHandle = this.currentHandle !== null && this.currentVolumeIndex === volumeIndex
       const handle = usesAppendHandle
         ? this.currentHandle!
-        : await fsPromises.open(this.volumePaths[volumeIndex], 'r+')
+        : await fsPromises.open(partialVolumePath(this.volumePaths[volumeIndex]), 'r+')
       try {
         await writeFully(handle, volumeOffset, bytes.subarray(inputOffset, inputOffset + length), signal)
       } finally {
@@ -282,9 +295,25 @@ class NodeVolumeSink implements SeekableSink {
     this.currentHandle = null
   }
 
+  /**
+   * Moves the finished set into place. The volumes left from an earlier run go
+   * only now, so a set that was longer than this one leaves no orphan behind,
+   * and nothing is lost until there is a whole new set to replace it.
+   */
+  async commit(): Promise<void> {
+    await this.close()
+    await removeStaleSevenZipVolumes(this.outputPath)
+    for (const volumePath of this.volumePaths) {
+      await fsPromises.rename(partialVolumePath(volumePath), volumePath)
+    }
+  }
+
+  /** Drops the partial set, leaving whatever was already on disk alone. */
   async remove(): Promise<void> {
     await this.close().catch(() => undefined)
-    await Promise.all(this.volumePaths.map(volumePath => fsPromises.rm(volumePath, { force: true })))
+    await Promise.all(this.volumePaths.map(
+      volumePath => fsPromises.rm(partialVolumePath(volumePath), { force: true })
+    ))
   }
 }
 
@@ -307,6 +336,19 @@ type SevenZipCompressionForPath = (
   size: bigint
 ) => Pick<SevenZipEntryInput, 'method' | 'dictionarySize' | 'lzmaEncoder'>
 
+/**
+ * The output itself and every volume that belongs to it, which the walk has to
+ * step over. The archive often lands inside the folder being compressed, and a
+ * split run now leaves the previous set in place while it writes, so both the
+ * old volumes and the `.partial` ones would otherwise be read back in.
+ */
+function isOwnOutput(resolvedOutputPath: string, candidate: string): boolean {
+  if (candidate === resolvedOutputPath) return true
+  const prefix = `${resolvedOutputPath}.`
+  if (!candidate.startsWith(prefix)) return false
+  return /^\d{3,}(\.partial)?$/.test(candidate.slice(prefix.length))
+}
+
 /** Everything the recursive walk carries but the path it is standing on. */
 interface SevenZipCollectContext {
   excludedPath: string
@@ -321,7 +363,7 @@ async function collectPathEntries(
   context: SevenZipCollectContext
 ): Promise<void> {
   const { excludedPath, entries, filter, compressionForPath } = context
-  if (path.resolve(itemPath) === excludedPath) return
+  if (isOwnOutput(excludedPath, path.resolve(itemPath))) return
   if (!filter.allowsName(path.basename(itemPath))) return
   const stat = await fsPromises.lstat(itemPath)
   if (!filter.allowsEntry(storedPath, stat)) return
@@ -619,7 +661,8 @@ export async function planSevenZipSolidBlocks(
 }
 
 export async function writeLibera7z(options: WriteLibera7zOptions): Promise<WriteLibera7zResult> {
-  if (options.splitSize !== undefined) await removeStaleSevenZipVolumes(options.outputPath)
+  // The set already on disk stays until the new one is whole, so the walk
+  // below has to step over it the way it steps over the output path itself.
   const plan = archivePlan(options)
   const entries = settleSevenZipEntries(
     await collectSevenZipInputDetails(options.inputPaths, options.outputPath, options),
@@ -640,6 +683,7 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
       solid: options.solid
     })
     if (sink instanceof NodeVolumeSink) {
+      await sink.commit()
       return { outputPath: sink.volumePaths[0], volumePaths: [...sink.volumePaths] }
     }
     return { outputPath: options.outputPath }
