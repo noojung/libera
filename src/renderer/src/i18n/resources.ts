@@ -31,7 +31,7 @@ export const resources = {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
         dropArchives: 'Drop archive files here! 🐾',
         filesAndFoldersHint: 'Select multiple files, folders, or archives to extract',
-        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, and GZ files only',
+        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ files only',
         browseFiles: 'Browse files',
         browseFolders: 'Browse folders',
         selectedItems_one: '{{count}} selected item',
@@ -44,8 +44,8 @@ export const resources = {
         volumeList: 'Volumes in {{name}}',
         showVolumes: 'Show volumes in {{name}}',
         hideVolumes: 'Hide volumes in {{name}}',
-        unsupportedArchive: 'Only ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, and GZ archive files can be added.',
-        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, or GZ files.'
+        unsupportedArchive: 'Only ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ archive files can be added.',
+        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, or GZ files.'
       },
       compression: {
         title: 'Compression options ⚙️',
@@ -438,7 +438,7 @@ export const resources = {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
         dropArchives: '압축 파일을 여기에 놓아주세요! 🐾',
         filesAndFoldersHint: '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능',
-        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, GZ 파일만 선택 가능',
+        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 파일만 선택 가능',
         browseFiles: '파일 찾아보기',
         browseFolders: '폴더 찾아보기',
         selectedItems: '선택한 항목 ({{count}}개)',
@@ -449,8 +449,8 @@ export const resources = {
         volumeList: '{{name}}의 분할 볼륨',
         showVolumes: '{{name}}의 분할 볼륨 보기',
         hideVolumes: '{{name}}의 분할 볼륨 숨기기',
-        unsupportedArchive: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, GZ 압축 파일만 추가할 수 있습니다.',
-        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, GZ 파일을 선택해 주세요.'
+        unsupportedArchive: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 압축 파일만 추가할 수 있습니다.',
+        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 파일을 선택해 주세요.'
       },
       compression: {
         title: '압축 옵션 설정 ⚙️',

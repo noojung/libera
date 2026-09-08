@@ -166,6 +166,16 @@ The following checks are applied before and during extraction:
 inside the same validation and transaction layer, and content that disagrees
 with the sizes or CRCs declared by the archive is rejected.
 
+TAR.XZ and TAR.BZ2 are decoded through the same reader as they are read, so the
+limits above count the expansion as it lands rather than after it. Both verify
+the integrity check their container carries and stop on a mismatch instead of
+handing back what decoded before it. The one difference is where the compressed
+bytes sit: xz declares how long each of its chunks is, so nothing is held, while
+bzip2 gives no way to find the end of a block without decoding it and so is read
+in full first. What that holds is the archive as it already exists on disk - the
+expansion, which is where a decompression bomb does its damage, is still handed
+on a block at a time.
+
 GZ stores its uncompressed size modulo 4 GiB, so the inspector reports the
 expanded size and compression ratio as unknown until extraction completes.
 

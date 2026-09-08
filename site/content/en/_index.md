@@ -77,7 +77,7 @@ how_to:
         - Pick a destination and start.
     - number: "02"
       title: Extract
-      description: Safely extract ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, or GZ files.
+      description: Safely extract ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, or GZ files.
       steps:
         - Add one or more archives.
         - Choose a destination and subfolder option.
@@ -102,6 +102,10 @@ formats:
       detail: compress · extract · preview
     - name: TAR.GZ
       detail: compress · extract · preview
+    - name: TAR.XZ
+      detail: extract · preview
+    - name: TAR.BZ2
+      detail: extract · preview
     - name: GZ
       detail: compress · extract · preview
     - name: JAR

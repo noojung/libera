@@ -35,7 +35,7 @@ describe('ArchiveInspector', () => {
     const { user } = renderWithI18n(<ArchiveInspector />)
 
     expect(screen.getByText('Drop archive files here! 🐾')).toBeInTheDocument()
-    expect(screen.getByText('ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, and GZ files only')).toBeInTheDocument()
+    expect(screen.getByText('ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ files only')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select an archive' })
       .querySelector('.archive-inspector__empty-upload-icon')).toBeInTheDocument()
 

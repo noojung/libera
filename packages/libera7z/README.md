@@ -23,6 +23,29 @@ await archive.close()
 Implement `RandomAccessSource` and `SeekableSink` to read and write elsewhere,
 such as files on disk.
 
+## Codecs on their own
+
+The codecs are exported too, for a caller framing them in something other than
+7z. Both decoders below run without being told how much they expand to, which a
+container that does not declare it - `.xz`, `.bz2` - needs:
+
+```ts
+import { Lzma2StreamDecoder, decodeBzip2Blocks } from 'libera7z'
+
+// LZMA2 frames itself, so it is pushed compressed bytes and pulled decoded ones.
+const lzma2 = new Lzma2StreamDecoder(dictionaryProperty)
+lzma2.push(chunk)
+for (let out = lzma2.pull(); out; out = lzma2.pull()) consume(out)
+lzma2.end() // throws if the stream stopped before its end marker
+
+// BZip2 gives no way to find a block's end without decoding it, so it takes the
+// whole stream and yields one block at a time.
+for (const block of decodeBzip2Blocks(bytes, limit)) consume(block)
+```
+
+`decodeLzma2` and `decodeBzip2` stay the one-shot forms for a buffer whose
+expanded size is already known.
+
 ## Reference fixtures
 
 `libera7z/testing` exports archives produced by the reference 7-Zip
