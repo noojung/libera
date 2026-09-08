@@ -25,11 +25,10 @@ import { decodeSevenZipFilter, type SevenZipFilter } from './filters.js'
 import {
   initialLzma2ChunkState,
   planLzma2Chunk,
-  LZMA2_ENCODE_CHUNK_SIZE,
   decodeLzma2,
   dictionaryPropertyForSize,
   dictionarySizeFromProperty,
-  encodeLzma2Block
+  Lzma2StreamEncoder
 } from './lzma2.js'
 
 const SIGNATURE = Uint8Array.of(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)
@@ -557,7 +556,11 @@ async function consumeEntry(
   const crc = new Crc32()
   let unpackedSize = 0n
   let packedSize = 0n
-  let pending = new Uint8Array(0)
+  // One coder for the whole stream, sized by the dictionary the header
+  // declares, so a match reaches as far back as the reader will allow.
+  const lzma2 = method === 'lzma2'
+    ? new Lzma2StreamEncoder(dictionarySizeFromProperty(dictionaryProperty), options.lzmaEncoder)
+    : null
 
   // Everything bound for the packed stream goes through here so encryption sits
   // above the sink and below the codec, exactly where the coder chain puts it.
@@ -581,14 +584,8 @@ async function consumeEntry(
       return
     }
 
-    const joined = pending.length === 0 ? bytes : concatBytes([pending, bytes])
-    let offset = 0
-    while (joined.length - offset >= LZMA2_ENCODE_CHUNK_SIZE) {
-      const chunk = joined.subarray(offset, offset + LZMA2_ENCODE_CHUNK_SIZE)
-      await emit(encodeLzma2Block(chunk, options.lzmaEncoder).data)
-      offset += LZMA2_ENCODE_CHUNK_SIZE
-    }
-    pending = joined.slice(offset)
+    const framed = lzma2!.push(bytes, options.signal)
+    if (framed.length > 0) await emit(framed)
   }
 
   try {
@@ -610,12 +607,7 @@ async function consumeEntry(
     )
   }
 
-  if (method === 'lzma2') {
-    if (pending.length > 0) {
-      await emit(encodeLzma2Block(pending, options.lzmaEncoder).data)
-    }
-    await emit(Uint8Array.of(0))
-  }
+  if (lzma2) await emit(lzma2.finish(options.signal))
 
   if (aes) {
     const trailer = await aes.encryptor.final()

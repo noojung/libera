@@ -6,9 +6,33 @@ import {
   dictionaryPropertyForSize,
   dictionarySizeFromProperty,
   encodeLzma2,
-  encodeLzma2Block,
+  Lzma2StreamEncoder,
   LZMA2_ENCODE_CHUNK_SIZE
 } from './lzma2.js'
+
+/** Walks a framed LZMA2 run and reports the control byte of every chunk. */
+function chunkControls(framed: Uint8Array): number[] {
+  const controls: number[] = []
+  let offset = 0
+  while (offset < framed.length && framed[offset] !== 0) {
+    const control = framed[offset]
+    controls.push(control)
+    const packed = ((framed[offset + 3] << 8) | framed[offset + 4]) + 1
+    offset += (control >= 0xc0 ? 6 : 5) + packed
+  }
+  return controls
+}
+
+/** Pseudo-random bytes, so a repeat is the only thing the coder can match. */
+function noise(length: number, seed = 7): Uint8Array {
+  const out = new Uint8Array(length)
+  let state = seed
+  for (let index = 0; index < length; index += 1) {
+    state = (state * 1103515245 + 12345) & 0x7fffffff
+    out[index] = (state >>> 16) & 0xff
+  }
+  return out
+}
 
 describe('pure TypeScript LZMA2', () => {
   it('round-trips compressible and varied chunks', () => {
@@ -30,12 +54,53 @@ describe('pure TypeScript LZMA2', () => {
     expect(dictionarySizeFromProperty(40)).toBe(0xffffffff)
   })
 
-  it('rejects invalid properties, dictionary sizes and block sizes', () => {
+  it('rejects invalid properties and dictionary sizes', () => {
     expect(() => dictionarySizeFromProperty(41)).toThrow('Invalid LZMA2 dictionary property')
     expect(() => dictionaryPropertyForSize(1024)).toThrow(RangeError)
-    expect(() => encodeLzma2Block(new Uint8Array(0))).toThrow('Invalid LZMA2 encoder chunk size')
-    expect(() => encodeLzma2Block(new Uint8Array(LZMA2_ENCODE_CHUNK_SIZE + 1)))
-      .toThrow('Invalid LZMA2 encoder chunk size')
+  })
+
+  it('refuses to encode once the stream is closed', () => {
+    const encoder = new Lzma2StreamEncoder(4096)
+    encoder.push(Uint8Array.of(1, 2, 3))
+    encoder.finish()
+    expect(() => encoder.push(Uint8Array.of(4))).toThrow('closed')
+    expect(() => encoder.finish()).toThrow('closed')
+  })
+
+  // The dictionary spanning the whole stream is the point of the encoder: a
+  // coder that reset it every chunk could never reach a repeat this far back,
+  // and both the ratio and the control bytes below would say so.
+  it('keeps one dictionary across chunks so a distant repeat still matches', () => {
+    const block = noise(300_000)
+    expect(block.length).toBeGreaterThan(LZMA2_ENCODE_CHUNK_SIZE * 4)
+    const doubled = new Uint8Array(block.length * 2)
+    doubled.set(block)
+    doubled.set(block, block.length)
+
+    const once = encodeLzma2(block)
+    const twice = encodeLzma2(doubled)
+    const property = dictionaryPropertyForSize(1024 * 1024)
+    expect(decodeLzma2(twice.data, property, doubled.length)).toEqual(doubled)
+
+    // The second copy is one long match, so the pair costs about what one does.
+    expect(twice.data.length).toBeLessThan(once.data.length * 1.1)
+
+    const controls = chunkControls(twice.data)
+    expect(controls.length).toBeGreaterThan(4)
+    expect(controls[0]).toBe(0xe0)
+    expect(controls.slice(1).every(control => control === 0x80)).toBe(true)
+  })
+
+  it('cuts chunks the header can carry, even on data LZMA cannot shrink', () => {
+    const encoded = encodeLzma2(noise(400_000, 99))
+    for (let offset = 0; offset < encoded.data.length && encoded.data[offset] !== 0;) {
+      const control = encoded.data[offset]
+      const unpacked = (((control & 0x1f) << 16) | (encoded.data[offset + 1] << 8) | encoded.data[offset + 2]) + 1
+      const packed = ((encoded.data[offset + 3] << 8) | encoded.data[offset + 4]) + 1
+      expect(packed).toBeLessThanOrEqual(0x10000)
+      expect(unpacked).toBeLessThanOrEqual(LZMA2_ENCODE_CHUNK_SIZE + 273)
+      offset += (control >= 0xc0 ? 6 : 5) + packed
+    }
   })
 
   it('rejects malformed streams and incorrect expanded sizes', () => {

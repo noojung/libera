@@ -205,6 +205,20 @@ class RangeEncoder {
     for (let index = 0; index < 5; index += 1) this.shiftLow()
     return this.drain()
   }
+
+  /**
+   * Finishes the coded blob and readies an identical fresh coder. LZMA2 frames
+   * every chunk as its own range-coded stream while the model feeding it runs
+   * on, so the reset stops here and never reaches the probabilities.
+   */
+  restart(): Uint8Array {
+    const finished = this.finish()
+    this.low = 0n
+    this.range = 0xffffffff
+    this.cache = 0
+    this.cacheSize = 1
+    return finished
+  }
 }
 
 function bitTreeEncode(
@@ -762,8 +776,27 @@ export class LzmaStreamEncoder {
     this.previous.fill(-1)
     this.head.fill(-1)
     // Room for the history plus a stretch to read ahead in. The lookahead has
-    // to clear one whole match for the encoder to make progress at all.
-    this.window = new Uint8Array(this.keep + Math.max(this.keep, 8 * MATCH_MAX_LEN))
+    // to clear one whole match for the encoder to make progress at all, and
+    // every slide moves the whole history, so a longer one buys back the cost
+    // of the move. Past a megabyte that trade is already won, and holding it
+    // there keeps a 64 MiB dictionary from asking for a 128 MiB window.
+    const lookahead = Math.max(8 * MATCH_MAX_LEN, Math.min(this.keep, 1024 * 1024))
+    this.window = new Uint8Array(this.keep + lookahead)
+  }
+
+  /** Bytes of input the coder has committed, counted from the first one. */
+  get encodedLength(): number {
+    return this.position
+  }
+
+  /**
+   * Ends the current range-coded chunk and hands back its remaining bytes. The
+   * dictionary, the probability model and the rep distances all carry into the
+   * next one, which is what lets an LZMA2 chunk ask for no reset at all.
+   */
+  endChunk(): Uint8Array {
+    if (this.closed) throw new Error('The LZMA encoder is closed')
+    return this.encoder.restart()
   }
 
   /** Feeds more input and returns whatever the encoder could settle. */

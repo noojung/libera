@@ -1,6 +1,6 @@
 import { concatBytes } from './binary.js'
 import { invalidArchive, throwIfCancelled } from './errors.js'
-import { encodeLzma, LzmaDecoder, type LzmaEncoderOptions } from './lzma.js'
+import { LzmaDecoder, LzmaStreamEncoder, type LzmaEncoderOptions } from './lzma.js'
 
 const ENCODE_CHUNK_SIZE = 48 * 1024
 const DEFAULT_LZMA_PROPERTIES = 93 // lc=3, lp=0, pb=2
@@ -28,54 +28,114 @@ export interface Lzma2Encoded {
 
 export const LZMA2_ENCODE_CHUNK_SIZE = ENCODE_CHUNK_SIZE
 
-export function encodeLzma2Block(
-  chunk: Uint8Array,
-  options: LzmaEncoderOptions = {}
-): { data: Uint8Array; compressed: boolean } {
-  if (chunk.length < 1 || chunk.length > ENCODE_CHUNK_SIZE) throw new RangeError('Invalid LZMA2 encoder chunk size')
-  const compressed = encodeLzma(chunk, undefined, options)
-  const unpackedMinusOne = chunk.length - 1
-  const packedMinusOne = compressed.length - 1
+/** Largest packed size an LZMA2 chunk header can carry. */
+const MAX_CHUNK_PACKED_SIZE = 0x10000
 
-  if (compressed.length < chunk.length && compressed.length <= 0x10000) {
-    return {
-      data: concatBytes([
-        Uint8Array.of(
-          0xe0 | ((unpackedMinusOne >>> 16) & 0x1f),
-          (unpackedMinusOne >>> 8) & 0xff,
-          unpackedMinusOne & 0xff,
-          (packedMinusOne >>> 8) & 0xff,
-          packedMinusOne & 0xff,
-          DEFAULT_LZMA_PROPERTIES
-        ),
-        compressed
-      ]),
-      compressed: true
-    }
+const EMPTY = new Uint8Array(0)
+
+/**
+ * Streaming LZMA2 encoder. One LZMA coder runs the length of the stream, so a
+ * match can reach back the whole dictionary rather than to the head of the
+ * chunk it happens to land in; only the range coder restarts at a chunk
+ * boundary, which is what the format asks for. The opening chunk resets the
+ * dictionary and declares the properties, and every chunk after it asks for no
+ * reset at all.
+ *
+ * Chunks are cut at roughly `ENCODE_CHUNK_SIZE` of input. A cut lands on
+ * whatever match the encoder had settled, so a chunk may overrun the target by
+ * up to one match; both header fields hold that with room to spare.
+ */
+export class Lzma2StreamEncoder {
+  private readonly encoder: LzmaStreamEncoder
+  private readonly parts: Uint8Array[] = []
+  private chunkStart = 0
+  private started = false
+  private ended = false
+  /** Chunks framed so far, which for this encoder are all compressed ones. */
+  chunkCount = 0
+
+  /**
+   * `dictionarySize` has to be the size the reader will be told to allocate,
+   * since it is also the furthest back a match may reach.
+   */
+  constructor(dictionarySize: number, options: LzmaEncoderOptions = {}) {
+    this.encoder = new LzmaStreamEncoder(undefined, { ...options, maxDistance: dictionarySize })
   }
 
-  return {
-    data: concatBytes([
-      Uint8Array.of(0x01, (unpackedMinusOne >>> 8) & 0xff, unpackedMinusOne & 0xff),
-      chunk
-    ]),
-    compressed: false
+  /** Feeds input and returns whichever chunks that completed. */
+  push(bytes: Uint8Array, signal?: AbortSignal): Uint8Array {
+    if (this.ended) throw new Error('The LZMA2 encoder is closed')
+    const framed: Uint8Array[] = []
+    let offset = 0
+    while (offset < bytes.length) {
+      throwIfCancelled(signal)
+      // Feed only what the open chunk still has room for. The encoder settles
+      // less than it is handed - it holds a match's worth of lookahead back -
+      // so measuring the room against what it has settled, rather than against
+      // what it has been fed, is what keeps a chunk near its target size.
+      const room = ENCODE_CHUNK_SIZE - (this.encoder.encodedLength - this.chunkStart)
+      const take = Math.min(bytes.length - offset, Math.max(1, room))
+      this.parts.push(this.encoder.update(bytes.subarray(offset, offset + take), signal))
+      offset += take
+      if (this.encoder.encodedLength - this.chunkStart >= ENCODE_CHUNK_SIZE) {
+        framed.push(this.cut(this.encoder.endChunk()))
+      }
+    }
+    return framed.length === 0 ? EMPTY : concatBytes(framed)
+  }
+
+  /** Closes the stream: the tail chunk, then the end marker. */
+  finish(signal?: AbortSignal): Uint8Array {
+    if (this.ended) throw new Error('The LZMA2 encoder is closed')
+    this.ended = true
+    const tail = this.cut(this.encoder.final(signal))
+    return concatBytes([tail, Uint8Array.of(0)])
+  }
+
+  /** Frames everything settled since the last cut as one chunk. */
+  private cut(flushed: Uint8Array): Uint8Array {
+    this.parts.push(flushed)
+    const packed = concatBytes(this.parts)
+    this.parts.length = 0
+    const unpacked = this.encoder.encodedLength - this.chunkStart
+    this.chunkStart = this.encoder.encodedLength
+    if (unpacked === 0) return EMPTY
+    if (packed.length > MAX_CHUNK_PACKED_SIZE) {
+      // A chunk cut at 48 KiB leaves the header a wide margin: the worst LZMA
+      // manages on random data is a few percent over. Encrypted content sits
+      // closest to that edge, so the check stays in rather than being assumed.
+      throw new RangeError(`LZMA2 chunk packed to ${packed.length} bytes`)
+    }
+    const unpackedMinusOne = unpacked - 1
+    const packedMinusOne = packed.length - 1
+    const header = this.started
+      ? Uint8Array.of(
+        0x80 | ((unpackedMinusOne >>> 16) & 0x1f),
+        (unpackedMinusOne >>> 8) & 0xff,
+        unpackedMinusOne & 0xff,
+        (packedMinusOne >>> 8) & 0xff,
+        packedMinusOne & 0xff
+      )
+      : Uint8Array.of(
+        0xe0 | ((unpackedMinusOne >>> 16) & 0x1f),
+        (unpackedMinusOne >>> 8) & 0xff,
+        unpackedMinusOne & 0xff,
+        (packedMinusOne >>> 8) & 0xff,
+        packedMinusOne & 0xff,
+        DEFAULT_LZMA_PROPERTIES
+      )
+    this.started = true
+    this.chunkCount += 1
+    return concatBytes([header, packed])
   }
 }
 
 export function encodeLzma2(input: Uint8Array, signal?: AbortSignal): Lzma2Encoded {
-  const parts: Uint8Array[] = []
-  let compressedChunks = 0
-
-  for (let offset = 0; offset < input.length; offset += ENCODE_CHUNK_SIZE) {
-    throwIfCancelled(signal)
-    const chunk = input.subarray(offset, Math.min(input.length, offset + ENCODE_CHUNK_SIZE))
-    const encoded = encodeLzma2Block(chunk)
-    parts.push(encoded.data)
-    if (encoded.compressed) compressedChunks += 1
-  }
-  parts.push(Uint8Array.of(0))
-  return { data: concatBytes(parts), compressedChunks }
+  // A whole buffer in hand needs no dictionary beyond its own length.
+  const encoder = new Lzma2StreamEncoder(Math.max(1, input.length))
+  const head = encoder.push(input, signal)
+  const tail = encoder.finish(signal)
+  return { data: concatBytes([head, tail]), compressedChunks: encoder.chunkCount }
 }
 
 /** What one LZMA2 control byte asks the decoder to do before its payload. */
