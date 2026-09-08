@@ -45,12 +45,23 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/renderer/src/**/*.{ts,tsx}'],
+      // The whole app, not just the window: the services decide what is written
+      // to and read from a user's files, and the codecs under them are where a
+      // gap costs the most, so measuring only the renderer reported on the
+      // least of it.
+      include: ['src/**/*.{ts,tsx}', 'packages/libera7z/src/**/*.ts'],
       exclude: [
-        'src/renderer/src/**/*.test.{ts,tsx}',
+        '**/*.test.{ts,tsx}',
+        '**/*.d.ts',
+        // Test-only: the renderer's harness, and the reference archives the
+        // library checks itself against.
         'src/renderer/src/test/**',
+        'packages/libera7z/src/testing.ts',
+        'packages/libera7z/src/**/*.testData.ts',
+        // Entry points, which hold wiring rather than behaviour.
         'src/renderer/src/main.tsx',
-        'src/renderer/src/vite-env.d.ts'
+        'packages/libera7z/src/index.ts',
+        'packages/libera7z/src/index.node.ts'
       ]
     }
   }
