@@ -17,7 +17,7 @@ export {
   type SevenZipAesProperties
 } from './aes.js'
 export { inflateRaw } from './deflate.js'
-export { decodeBzip2 } from './bzip2.js'
+export { decodeBzip2, decodeBzip2Blocks } from './bzip2.js'
 export { decodeBcj2 } from './bcj2.js'
 export { decodeSevenZipFilter, type SevenZipFilter } from './filters.js'
 export { crc32, Crc32 } from './crc32.js'
@@ -25,3 +25,4 @@ export { decodeLzma1, parseLzma1Properties } from './lzma1.js'
 export { encodeLzma, LzmaStreamDecoder, LzmaStreamEncoder, type LzmaEncoderOptions } from './lzma.js'
 export { decodePpmd7, parsePpmd7Properties } from './ppmd7.js'
 export { dictionaryPropertyForSize, dictionarySizeFromProperty } from './lzma2.js'
+export { Lzma2StreamDecoder } from './lzma2Stream.js'

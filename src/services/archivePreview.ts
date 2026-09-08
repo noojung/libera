@@ -11,6 +11,7 @@ import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
 import { isSevenZipArchivePath } from './sevenZip/volumes'
 import { Libera7zError } from 'libera7z'
 import { openLibera7zFile } from './sevenZip/node'
+import { isTarArchivePath, tarReadStages } from './tarCompression'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -310,7 +311,7 @@ async function readTarEntry(
 
   try {
     await Promise.all([
-      pipeline(fs.createReadStream(archivePath), listing, { signal }),
+      pipeline(...tarReadStages(archivePath), listing, { signal }),
       entryComplete
     ])
   } catch (error) {
@@ -603,11 +604,10 @@ export async function previewArchiveEntry(
   if (!stat.isFile()) throw new Error('Archive preview requires a file')
 
   const ext = path.extname(archivePath).toLowerCase()
-  const fullExt = archivePath.toLowerCase()
   let preview: CollectedArchiveEntry
   if (isZipFormatExtension(ext)) {
     preview = await readZipEntry(archivePath, entryIndex, context.password, context.signal)
-  } else if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
+  } else if (isTarArchivePath(archivePath)) {
     preview = await readTarEntry(archivePath, entryIndex, context.signal)
   } else if (isSevenZipArchivePath(archivePath)) {
     preview = await readSevenZipEntry(archivePath, entryIndex, context.password, context.signal)

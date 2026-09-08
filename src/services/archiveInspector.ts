@@ -1,4 +1,4 @@
-import fs, { promises as fsPromises } from 'fs'
+import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { pipeline } from 'stream/promises'
 import * as tar from 'tar'
@@ -8,6 +8,7 @@ import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './ar
 import type { ArchiveVolumeInfo } from './archiveInputResolver'
 import { listSevenZipEntries } from './sevenZip/list'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZip/volumes'
+import { isTarArchivePath, tarCompressionFor, tarReadStages } from './tarCompression'
 
 export interface ArchiveEntry {
   id: string
@@ -165,10 +166,26 @@ async function readZipHeaderInfo(
   }
 }
 
+/** The tar shapes the inspector names, one per codec wrapped around it. */
+type TarInspectionFormat = 'TAR' | 'TAR.GZ' | 'TAR.XZ' | 'TAR.BZ2'
+
+/** How each shape describes the codec around the tarball, if any. */
+const TAR_CODECS: Record<TarInspectionFormat, {
+  entry: string
+  summary: string
+  signature: string
+  version: string
+}> = {
+  TAR: { entry: 'None (Store)', summary: 'POSIX Tarball', signature: '', version: '' },
+  'TAR.GZ': { entry: 'Gzip (Deflate)', summary: 'Gzip / Deflate Stream', signature: '1F 8B (GZIP)', version: 'RFC 1952' },
+  'TAR.XZ': { entry: 'XZ (LZMA2)', summary: 'XZ / LZMA2 Stream', signature: 'FD 37 7A 58 5A 00 (XZ)', version: 'XZ 1.0.4' },
+  'TAR.BZ2': { entry: 'BZip2', summary: 'BZip2 Stream', signature: '42 5A 68 (BZh)', version: 'BZip2 0.9.0' }
+}
+
 async function inspectTarArchive(
   archivePath: string,
   totalCompressedSize: number,
-  format: 'TAR' | 'TAR.GZ'
+  format: TarInspectionFormat
 ): Promise<ArchiveInspectionResult> {
   const tarMagic = format === 'TAR' ? await readFileBytes(archivePath, 257, 8) : undefined
   const hasUstarMagic = tarMagic !== undefined && Buffer.from(tarMagic.subarray(0, 5)).toString('ascii') === 'ustar'
@@ -188,7 +205,7 @@ async function inspectTarArchive(
         isDirectory: isDir,
         size,
         date: entry.mtime ? new Date(entry.mtime).toLocaleDateString() : undefined,
-        codec: format === 'TAR' ? 'None (Store)' : 'Gzip (Deflate)',
+        codec: TAR_CODECS[format].entry,
         encrypted: false,
         encryptionMethod: 'None',
         mode: entry.mode,
@@ -204,7 +221,7 @@ async function inspectTarArchive(
   listingReference.current = listing as unknown as { destroy(error?: Error): void }
 
   try {
-    await pipeline(fs.createReadStream(archivePath), listing)
+    await pipeline(...tarReadStages(archivePath), listing)
   } catch (error) {
     if (limitError) throw limitError
     throw error
@@ -224,10 +241,12 @@ async function inspectTarArchive(
     headerInfo: {
       signature: format === 'TAR'
         ? hasUstarMagic ? formatSignature(tarMagic.subarray(0, 6), 'ustar') : 'TAR (legacy header)'
-        : '1F 8B (GZIP)',
-      codecSummary: format === 'TAR' ? 'POSIX Tarball' : 'Gzip / Deflate Stream',
+        : TAR_CODECS[format].signature,
+      codecSummary: TAR_CODECS[format].summary,
       encryptionAlgorithm: 'None',
-      formatVersion: format === 'TAR' ? hasUstarMagic ? 'POSIX ustar' : 'V7 / legacy TAR' : 'RFC 1952',
+      formatVersion: format === 'TAR'
+        ? hasUstarMagic ? 'POSIX ustar' : 'V7 / legacy TAR'
+        : TAR_CODECS[format].version,
       solid: false
     }
   }
@@ -245,7 +264,6 @@ export async function inspectArchive(
   // which end that is depends on the format.
   const archivePath = canonicalArchivePath(inputPath)
   const ext = path.extname(archivePath).toLowerCase()
-  const fullExt = archivePath.toLowerCase()
   const stat = await fsPromises.stat(archivePath).catch(() => null)
   if (!stat) throw new Error(`File does not exist: ${archivePath}`)
   if (!stat.isFile()) throw new Error('Archive inspection requires a file')
@@ -398,12 +416,8 @@ export async function inspectArchive(
     }
   }
 
-  if (ext === '.tar' || fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz')) {
-    return inspectTarArchive(
-      archivePath,
-      totalCompressedSize,
-      fullExt.endsWith('.tgz') || fullExt.endsWith('.tar.gz') ? 'TAR.GZ' : 'TAR'
-    )
+  if (isTarArchivePath(archivePath)) {
+    return inspectTarArchive(archivePath, totalCompressedSize, tarInspectionFormat(archivePath))
   }
 
   if (ext === '.gz') {
@@ -441,4 +455,13 @@ export async function inspectArchive(
   }
 
   throw new Error(`Unsupported archive format: ${ext}`)
+}
+
+/** Which of the tar shapes a path names. */
+function tarInspectionFormat(archivePath: string): TarInspectionFormat {
+  const compression = tarCompressionFor(archivePath)
+  if (compression === 'xz') return 'TAR.XZ'
+  if (compression === 'bzip2') return 'TAR.BZ2'
+  const normalized = archivePath.toLowerCase()
+  return normalized.endsWith('.tgz') || normalized.endsWith('.tar.gz') ? 'TAR.GZ' : 'TAR'
 }

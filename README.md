@@ -115,9 +115,15 @@ Pages automatically when changes under `site/` are pushed to `main`.
 | 7Z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2, AES-256<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2, AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
 | TAR | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
 | TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
+| TAR.XZ | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread. Also `.txz` |
+| TAR.BZ2 | Extract · Preview | Read: BZip2 | Read-only. Also `.tbz2` and `.tbz` |
 | GZ | Compress · Extract · Preview | GZIP/Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
 | JAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
 | WAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
+
+TAR.XZ and TAR.BZ2 are read but not written: LZMA2 and BZip2 both decode here,
+and only LZMA2 encodes, so writing either would offer one of them alone. 7Z
+already writes LZMA2, and at a better ratio than either wrapper reaches.
 
 Preview includes archive browsing and search, 1 MiB text previews, and PNG,
 JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting

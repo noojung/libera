@@ -3,7 +3,11 @@
 // bundled into the renderer, so the rules are restated here and pinned by a
 // test that compares the two.
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = [
+  '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
+  '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
+  '.gz', '.7z'
+] as const
 
 export const NUMBERED_VOLUME_SUFFIX = /\.z\d{2,}$/i
 
@@ -63,7 +67,9 @@ export function canonicalArchivePath(archivePath: string): string {
 }
 
 /** Extensions offered in the extract file dialog, first volume included. */
-export const EXTRACT_DIALOG_EXTENSIONS = ['zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'gz', '7z', '001']
+export const EXTRACT_DIALOG_EXTENSIONS = [
+  'zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'txz', 'tbz2', 'tbz', 'xz', 'bz2', 'gz', '7z', '001'
+]
 
 // The compression formats the panel offers, mirroring compressor.ts's own
 // union and capability helpers for the same reason as the path rules above.

@@ -225,8 +225,19 @@ function decodeRunLength(input: Uint8Array, remainingOutput: number, signal?: Ab
   return Uint8Array.from(output)
 }
 
-export function decodeBzip2(input: Uint8Array, expectedSize: number, signal?: AbortSignal): Uint8Array {
-  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) throw invalidArchive('Invalid BZip2 output size')
+/**
+ * Decodes a whole bzip2 stream a block at a time.
+ *
+ * A container that declares the expanded size up front - 7z - wants the one
+ * buffer `decodeBzip2` returns. One that does not - `.tar.bz2` - wants the
+ * blocks as they come, so the expansion is handed on rather than gathered, and
+ * `remainingOutput` is a limit rather than a size to match exactly.
+ */
+export function* decodeBzip2Blocks(
+  input: Uint8Array,
+  remainingOutput: number,
+  signal?: AbortSignal
+): Generator<Uint8Array> {
   const reader = new MsbBitReader(input)
   if (reader.read(8) !== 0x42 || reader.read(8) !== 0x5a || reader.read(8) !== 0x68) {
     throw invalidArchive('Invalid BZip2 stream signature')
@@ -234,8 +245,7 @@ export function decodeBzip2(input: Uint8Array, expectedSize: number, signal?: Ab
   const blockSizeDigit = reader.read(8)
   if (blockSizeDigit < 0x31 || blockSizeDigit > 0x39) throw invalidArchive('Invalid BZip2 block size')
   const blockLimit = (blockSizeDigit - 0x30) * 100_000
-  const chunks: Uint8Array[] = []
-  let outputSize = 0
+  let budget = remainingOutput
   let combinedCrc = 0
   while (true) {
     throwIfCancelled(signal)
@@ -256,20 +266,25 @@ export function decodeBzip2(input: Uint8Array, expectedSize: number, signal?: Ab
     const lastColumn = decodeHuffmanData(reader, symbols, selectors, tables, blockLimit, signal)
     const block = decodeRunLength(
       inverseBurrowsWheeler(lastColumn, originalPointer),
-      expectedSize - outputSize,
+      budget,
       signal
     )
     if (bzipCrc(block) !== expectedCrc) throw invalidArchive('BZip2 block CRC does not match')
-    chunks.push(block)
-    outputSize += block.length
+    budget -= block.length
     combinedCrc = ((((combinedCrc << 1) | (combinedCrc >>> 31)) >>> 0) ^ expectedCrc) >>> 0
+    yield block
   }
-  if (outputSize !== expectedSize) throw invalidArchive('BZip2 output size does not match the 7z header')
-  const result = new Uint8Array(outputSize)
+}
+
+export function decodeBzip2(input: Uint8Array, expectedSize: number, signal?: AbortSignal): Uint8Array {
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) throw invalidArchive('Invalid BZip2 output size')
+  const result = new Uint8Array(expectedSize)
   let offset = 0
-  for (const chunk of chunks) {
-    result.set(chunk, offset)
-    offset += chunk.length
+  for (const block of decodeBzip2Blocks(input, expectedSize - offset, signal)) {
+    if (offset + block.length > expectedSize) throw invalidArchive('BZip2 output exceeds its declared size')
+    result.set(block, offset)
+    offset += block.length
   }
+  if (offset !== expectedSize) throw invalidArchive('BZip2 output size does not match the 7z header')
   return result
 }

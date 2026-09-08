@@ -27,6 +27,7 @@ import {
   type AppleDoubleMetadata
 } from './appleDouble'
 import { createArchiveEntryFilter } from './entryPatterns'
+import { isTarArchivePath, tarReadStages } from './tarCompression'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -111,7 +112,11 @@ function destinationPolicy(options: ExtractionOptions): 'reject' | 'overwrite' |
   return options.overwritePolicy ?? 'reject'
 }
 
-export const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz', '.gz', '.7z'] as const
+export const SUPPORTED_ARCHIVE_EXTENSIONS = [
+  '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
+  '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
+  '.gz', '.7z'
+] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
   const normalizedPath = archivePath.toLowerCase()
@@ -350,7 +355,7 @@ async function listTarEntries(
   listingReference.current = listing as unknown as { destroy(error?: Error): void }
 
   try {
-    await pipeline(fs.createReadStream(archivePath), listing, { signal })
+    await pipeline(...tarReadStages(archivePath), listing, { signal })
   } catch (error) {
     if (limitError) throw limitError
     throw error
@@ -433,7 +438,7 @@ const extractTarArchive: FormatExtractor = async ({
   })
 
   try {
-    await pipeline(fs.createReadStream(archivePath), extractor, { signal: operationSignal })
+    await pipeline(...tarReadStages(archivePath), extractor, { signal: operationSignal })
   } catch (error) {
     if (meterError) throw meterError
     throw error
@@ -523,13 +528,6 @@ async function readGzipModificationTime(archivePath: string): Promise<Date | und
   } finally {
     await handle.close()
   }
-}
-
-function isTarArchivePath(archivePath: string): boolean {
-  const normalizedPath = archivePath.toLowerCase()
-  return path.extname(normalizedPath) === '.tar' ||
-    normalizedPath.endsWith('.tgz') ||
-    normalizedPath.endsWith('.tar.gz')
 }
 
 function isGzArchivePath(archivePath: string): boolean {
