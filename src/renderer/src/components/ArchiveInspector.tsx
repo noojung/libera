@@ -112,6 +112,10 @@ export const ArchiveInspector: React.FC = () => {
   >(null)
   const previewRequestSequence = useRef(0)
   const activePreviewRequest = useRef<string | null>(null)
+  // Opening a second archive while the first is still being read has to leave
+  // the second one showing: a large archive can take long enough that the
+  // slower answer arrives last, and it would otherwise replace it.
+  const inspectionSequence = useRef(0)
 
   const closePreview = () => {
     const requestId = activePreviewRequest.current
@@ -130,6 +134,7 @@ export const ArchiveInspector: React.FC = () => {
   }, [])
 
   const runInspection = async (filePath: string, password?: string) => {
+    const requestId = ++inspectionSequence.current
     closePreview()
     setLoading(true)
     setErrorKey(null)
@@ -142,6 +147,7 @@ export const ArchiveInspector: React.FC = () => {
     setSelectedBlockId(null)
     try {
       const response = await (window as any).electronAPI.inspectArchive(filePath, password)
+      if (inspectionSequence.current !== requestId) return
       if (response.success) {
         setInspectData(response.result)
         setArchivePath(response.result.archivePath || filePath)
@@ -159,11 +165,14 @@ export const ArchiveInspector: React.FC = () => {
         setErrorKey(response.errorCode ? `errors.${response.errorCode}` : 'inspector.readFailed')
       }
     } catch (error) {
-      setInspectData(null)
       console.error('Archive inspection failed:', error)
+      if (inspectionSequence.current !== requestId) return
+      setInspectData(null)
       setErrorKey('inspector.inspectFailed')
     } finally {
-      setLoading(false)
+      // A later request owns the spinner from here, so only the newest one
+      // may put it away.
+      if (inspectionSequence.current === requestId) setLoading(false)
     }
   }
 
