@@ -53,10 +53,12 @@ export default defineConfig({
       exclude: [
         '**/*.test.{ts,tsx}',
         '**/*.d.ts',
-        // Test-only: the renderer's harness, and the reference archives the
-        // library checks itself against.
+        // Test-only: the renderer's harness, the worker the library's own
+        // tests drive it through, and the reference archives it checks itself
+        // against.
         'src/renderer/src/test/**',
         'packages/libera7z/src/testing.ts',
+        'packages/libera7z/src/worker/testWorker.ts',
         'packages/libera7z/src/**/*.testData.ts',
         // Entry points, which hold wiring rather than behaviour.
         'src/renderer/src/main.tsx',
