@@ -2,10 +2,7 @@ import type { ProgressCallback } from '../compressor'
 import { SevenZipError } from './error'
 import { Libera7zError } from 'libera7z'
 import { writeLibera7z } from './node'
-import {
-  MAX_SEVEN_ZIP_VOLUMES,
-  removeStaleSevenZipVolumes
-} from './volumes'
+import { MAX_SEVEN_ZIP_VOLUMES } from './volumes'
 import type { SevenZipMethodOverride, SevenZipMethod } from './methodOverrides'
 import type { CompressionInputFilters } from '../compressionInputs'
 
@@ -48,10 +45,6 @@ export function sevenZipLevelArgument(level: number): string {
   return '-mx=9'
 }
 
-async function removePartialOutput(outputPath: string): Promise<void> {
-  await removeStaleSevenZipVolumes(outputPath).catch(() => undefined)
-}
-
 export async function writeSevenZipArchive(
   options: SevenZipWriteOptions,
   onProgress?: ProgressCallback,
@@ -66,10 +59,6 @@ export async function writeSevenZipArchive(
   if (splitSize !== undefined && Math.ceil(totalBytes / splitSize) > MAX_SEVEN_ZIP_VOLUMES) {
     throw new SevenZipError('SEVEN_ZIP_FAILED', 'The split size produces too many volumes.')
   }
-
-  // Clear every file from a previous split or non-split run so switching
-  // volume settings cannot leave a mixed set behind.
-  await removeStaleSevenZipVolumes(outputPath)
 
   let currentFile: string | undefined
   try {
@@ -112,11 +101,12 @@ export async function writeSevenZipArchive(
     })
     return written
   } catch (error) {
+    // The writer clears up after itself: what it had begun is gone, and what
+    // an earlier run left is still where it was. Sweeping here as well is what
+    // used to take the previous archive down with a cancelled run.
     if (error instanceof Libera7zError && error.code === 'CANCELLED') {
-      await removePartialOutput(outputPath)
       throw new SevenZipError('SEVEN_ZIP_CANCELLED', '7z creation was cancelled')
     }
-    await removePartialOutput(outputPath)
     throw error
   }
 }

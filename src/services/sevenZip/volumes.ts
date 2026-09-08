@@ -165,11 +165,20 @@ export async function discoverSevenZipVolumes(firstPath: string): Promise<string
 }
 
 /**
- * Clears volumes left by an earlier run. A shorter second run would otherwise
- * leave the previous set's higher-numbered volumes beside the new ones and the
- * mixed set would read as corrupt - the same hazard ZIP volumes have.
+ * Clears what an earlier run left at this path. A shorter second run would
+ * otherwise leave the previous set's higher-numbered volumes beside the new
+ * ones and the mixed set would read as corrupt - the same hazard ZIP volumes
+ * have - and a run that switches between split and whole would leave the other
+ * shape of the same archive behind.
+ *
+ * This runs once the new archive is safely written, never before, so a run
+ * that fails or is cancelled leaves the old one where it was. `keepBase` is
+ * for the whole-archive case, where the base name is the file just written.
  */
-export async function removeStaleSevenZipVolumes(outputPath: string): Promise<void> {
+export async function removeStaleSevenZipVolumes(
+  outputPath: string,
+  options: { keepBase?: boolean } = {}
+): Promise<void> {
   const directory = path.dirname(path.resolve(outputPath))
   const baseName = path.basename(sevenZipVolumeBase(outputPath))
   const prefix = normalizeName(`${baseName}.`)
@@ -183,6 +192,7 @@ export async function removeStaleSevenZipVolumes(outputPath: string): Promise<vo
     const isBase = normalized === normalizeName(baseName)
     const isTemporary = normalized === normalizeName(`${baseName}.tmp`)
     if (!isVolume && !isBase && !isTemporary) return
+    if (isBase && options.keepBase) return
     await fsPromises.rm(path.join(directory, name), { force: true }).catch(() => undefined)
   }))
 }

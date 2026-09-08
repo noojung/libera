@@ -26,9 +26,11 @@ function chunkControls(framed: Uint8Array): number[] {
 /** Pseudo-random bytes, so a repeat is the only thing the coder can match. */
 function noise(length: number, seed = 7): Uint8Array {
   const out = new Uint8Array(length)
+  // Math.imul keeps the multiply in 32 bits; the plain operator overflows what
+  // a double holds exactly and the sequence degenerates into a pattern.
   let state = seed
   for (let index = 0; index < length; index += 1) {
-    state = (state * 1103515245 + 12345) & 0x7fffffff
+    state = (Math.imul(state, 1103515245) + 12345) | 0
     out[index] = (state >>> 16) & 0xff
   }
   return out

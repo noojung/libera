@@ -689,6 +689,12 @@ export async function writeLibera7z(options: WriteLibera7zOptions): Promise<Writ
       await sink.commit()
       return { outputPath: sink.volumePaths[0], volumePaths: [...sink.volumePaths] }
     }
+    await sink.close()
+    // A whole archive is written over the base name itself, so only what an
+    // earlier split run left beside it has to go, and only now that this one
+    // is complete. Otherwise the two shapes of the archive sit side by side
+    // and the set reads as corrupt.
+    await removeStaleSevenZipVolumes(options.outputPath, { keepBase: true })
     return { outputPath: options.outputPath }
   } catch (error) {
     await sink.close().catch(() => undefined)
