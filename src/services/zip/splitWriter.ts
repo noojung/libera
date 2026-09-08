@@ -6,7 +6,6 @@ import { NodeFileReader } from './fileReader'
 import {
   createVolumePredicate,
   isSplitVolumeName,
-  normalizeName,
   splitVolumeBase,
   volumePathForDisk
 } from './volumes'
@@ -25,6 +24,7 @@ import {
 } from './methodOverrides'
 import {
   createCompressionInputFilter,
+  createUniqueRootNamer,
   symlinkUnixMode,
   type CompressionInputFilters
 } from '../compressionInputs'
@@ -191,21 +191,9 @@ async function collectEntries(
 ): Promise<ArchiveEntry[]> {
   const entries: ArchiveEntry[] = []
   const visitedDirectories = new Set<string>()
-  const usedRootNames = new Set<string>()
   const filter = createCompressionInputFilter(filters)
 
-  // Archiver tolerated two inputs sharing a basename, zip.js rejects the
-  // duplicate entry name outright, so the second root gets a suffix.
-  const uniqueRootName = (name: string): string => {
-    let candidate = name
-    let suffix = 2
-    while (usedRootNames.has(normalizeName(candidate))) {
-      candidate = `${name} (${suffix})`
-      suffix += 1
-    }
-    usedRootNames.add(normalizeName(candidate))
-    return candidate
-  }
+  const uniqueRootName = createUniqueRootNamer()
 
   const walk = async (itemPath: string, entryName: string): Promise<void> => {
     if (isOwnVolume(itemPath)) return

@@ -25,6 +25,7 @@ import {
 } from './zip/methodOverrides'
 import {
   createCompressionInputFilter,
+  createUniqueRootNamer,
   type CompressionInputFilters
 } from './compressionInputs'
 
@@ -466,7 +467,8 @@ export async function compressArchive(
 
   if (format === 'tar' || format === 'tgz') {
     const filter = createCompressionInputFilter(filters)
-    const archiveInputs: { itemPath: string; isDirectory: boolean }[] = []
+    const rootName = createUniqueRootNamer()
+    const archiveInputs: { itemPath: string; isDirectory: boolean; storedName: string }[] = []
     for (const itemPath of inputPaths) {
       if (path.resolve(itemPath) === resolvedOutputPath) continue
       const baseName = path.basename(itemPath)
@@ -475,9 +477,12 @@ export async function compressArchive(
         const stat = await fsPromises.lstat(itemPath)
         if (!filter.allowsEntry(baseName, stat)) continue
         const isDirectory = stat.isDirectory()
+        // Claimed only once the root is known to be going in, so a filtered
+        // out root does not push the next one onto a suffix.
         archiveInputs.push({
           itemPath,
-          isDirectory
+          isDirectory,
+          storedName: rootName(baseName)
         })
       } catch (err) {
         console.error(`Error reading ${itemPath}:`, err)
@@ -568,26 +573,25 @@ export async function compressArchive(
 
       archive.pipe(output)
 
-      for (const { itemPath, isDirectory } of archiveInputs) {
-        const baseName = path.basename(itemPath)
+      for (const { itemPath, isDirectory, storedName } of archiveInputs) {
         if (isDirectory) {
           // Returning false from this callback drops the entry from the walk.
           // entry.name is relative to itemPath, so resolving the two gives the
           // absolute path to compare against the archive's own location.
           // Archiver walks with lstat, so `entry.stats` tells a link from the
           // file it points at without the walk ever following one.
-          archive.directory(itemPath, baseName, entry => {
+          archive.directory(itemPath, storedName, entry => {
             const absolutePath = path.resolve(itemPath, entry.name)
             if (absolutePath === resolvedOutputPath) return false
             // The walk hands over whole paths rather than one step at a time,
             // so a blocked folder arrives again for each of its children.
-            const storedPath = `${baseName}/${entry.name}`
+            const storedPath = `${storedName}/${entry.name}`
             if (!filter.allowsPath(entry.name)) return false
             if (entry.stats && !filter.allowsEntry(storedPath, entry.stats)) return false
             return entry
           })
         } else {
-          archive.file(itemPath, { name: baseName })
+          archive.file(itemPath, { name: storedName })
         }
       }
 

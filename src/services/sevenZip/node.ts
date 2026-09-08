@@ -30,6 +30,7 @@ import {
 } from './methodOverrides'
 import {
   createCompressionInputFilter,
+  createUniqueRootNamer,
   type CompressionInputFilter,
   type CompressionInputFilters
 } from '../compressionInputs'
@@ -434,8 +435,9 @@ async function collectSevenZipInputDetails(
     filter: createCompressionInputFilter(filters),
     compressionForPath
   }
+  const rootName = createUniqueRootNamer()
   for (const itemPath of inputPaths) {
-    await collectPathEntries(itemPath, path.basename(itemPath), context)
+    await collectPathEntries(itemPath, rootName(path.basename(itemPath)), context)
   }
   if (entries.length === 0) throw new Libera7zError('UNSUPPORTED_FEATURE', 'No supported 7z inputs remain')
   return entries

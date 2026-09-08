@@ -101,3 +101,30 @@ export function createCompressionInputFilter(
     }
   }
 }
+
+/**
+ * Names the input roots so no two share one, since the roots a user picks
+ * carry only their own basename into the archive and two folders called `src`
+ * would otherwise land on the same path. ZIP and 7Z both reject a duplicate
+ * entry name outright, and TAR would quietly store the two under one name, so
+ * every writer takes its root names from here.
+ *
+ * Windows compares names without case, so `Src` collides with `src` there and
+ * not elsewhere; matching the filesystem is what keeps the archive readable
+ * back on it.
+ */
+export function createUniqueRootNamer(): (name: string) => string {
+  const used = new Set<string>()
+  const key = (name: string): string => process.platform === 'win32' ? name.toLowerCase() : name
+
+  return (name: string): string => {
+    let candidate = name
+    let suffix = 2
+    while (used.has(key(candidate))) {
+      candidate = `${name} (${suffix})`
+      suffix += 1
+    }
+    used.add(key(candidate))
+    return candidate
+  }
+}
