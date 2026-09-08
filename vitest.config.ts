@@ -11,6 +11,11 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
+          // These drive the real writers and readers, so a case compresses and
+          // extracts megabytes through the same TypeScript codecs the library
+          // tests warn about below. Several sit a second or two from the
+          // default 5s here and well past it on the slowest CI runner.
+          testTimeout: 30_000,
           include: ['src/**/*.test.ts', 'scripts/**/*.test.ts']
         }
       },

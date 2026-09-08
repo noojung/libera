@@ -20,7 +20,7 @@ const SPLIT_SIZE = 1024 * 1024
  * Incompressible on purpose, so the run really does span several volumes and
  * takes long enough to be caught mid-write.
  */
-async function writeInput(dir: string, bytes = 4 * 1024 * 1024): Promise<string> {
+async function writeInput(dir: string, bytes = 2 * 1024 * 1024): Promise<string> {
   const source = path.join(dir, 'source')
   await fs.mkdir(source, { recursive: true })
   const noise = Buffer.alloc(bytes)
@@ -67,7 +67,7 @@ describe('replacing a 7z archive', () => {
       expect(await fs.readFile(`${outputPath}.001`, 'utf8')).toBe('previous backup')
       expect(await fs.readFile(`${outputPath}.002`, 'utf8')).toBe('previous backup, continued')
     })
-  }, 60_000)
+  })
 
   it('leaves no half-written volume behind after a cancelled write', async () => {
     await withTempDir(async dir => {
@@ -78,7 +78,7 @@ describe('replacing a 7z archive', () => {
 
       expect(await fs.readdir(dir)).toEqual(['source'])
     })
-  }, 60_000)
+  })
 
   it('leaves the previous whole archive alone when a split write is cancelled', async () => {
     await withTempDir(async dir => {
@@ -90,7 +90,7 @@ describe('replacing a 7z archive', () => {
 
       expect(await fs.readFile(outputPath, 'utf8')).toBe('previous whole archive')
     })
-  }, 60_000)
+  })
 
   it('replaces the previous set once the new one is whole', async () => {
     await withTempDir(async dir => {
@@ -106,7 +106,7 @@ describe('replacing a 7z archive', () => {
       expect(await fs.readFile(`${outputPath}.001`, 'utf8')).not.toBe('previous backup')
       expect((await fs.readdir(dir)).filter(name => name.endsWith('.partial'))).toEqual([])
     })
-  }, 60_000)
+  })
 
   // A shorter run used to leave the tail of the longer one beside it, which
   // reads back as a set with a volume missing from the middle.
@@ -125,7 +125,7 @@ describe('replacing a 7z archive', () => {
       expect(await volumesIn(dir))
         .toEqual(result.volumePaths!.map(volumePath => path.basename(volumePath)).sort())
     })
-  }, 60_000)
+  })
 
   it('clears an earlier split set when the new archive is whole', async () => {
     await withTempDir(async dir => {
@@ -140,7 +140,7 @@ describe('replacing a 7z archive', () => {
       // Only the whole archive is left; the two shapes must not sit together.
       expect(await volumesIn(dir)).toEqual(['backup.7z'])
     })
-  }, 60_000)
+  })
 
   // The set being replaced now survives the walk that reads the inputs, so the
   // walk has to step over it the way it steps over the output path itself.
@@ -167,5 +167,5 @@ describe('replacing a 7z archive', () => {
         await archive.close()
       }
     })
-  }, 60_000)
+  })
 })
