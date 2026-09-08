@@ -686,8 +686,14 @@ function nextPowerOfTwo(value: number): number {
   return size
 }
 
-function hash3(input: Uint8Array, position: number): number {
-  return (((input[position] * 251) ^ (input[position + 1] * 31) ^ input[position + 2]) & 0xffff) >>> 0
+/**
+ * Fibonacci hash of the three bytes at `position`, folded to `bits`. The key
+ * is only 24 bits wide, so the multiply is what spreads it: the table can then
+ * be sized to the history it indexes instead of to the key.
+ */
+function hash3(input: Uint8Array, position: number, shift: number): number {
+  const key = input[position] | (input[position + 1] << 8) | (input[position + 2] << 16)
+  return (Math.imul(key, 0x9e3779b1) >>> shift)
 }
 
 /** Longest match LZMA can encode, and so the lookahead a match needs. */
@@ -728,7 +734,8 @@ export class LzmaStreamEncoder {
   // the size of the window, since the walk stops before reaching a slot old
   // enough to have been overwritten.
   private readonly windowMask: number
-  private readonly head = new Int32Array(1 << 16)
+  private readonly head: Int32Array
+  private readonly hashShift: number
   private readonly previous: Int32Array
 
   // `window` holds the bytes still in reach. It keeps `keep` bytes of history
@@ -746,6 +753,14 @@ export class LzmaStreamEncoder {
   private rep1 = 0
   private rep2 = 0
   private rep3 = 0
+  // Rep distances mean nothing until a match has set one, so the first match
+  // has to come from the chain.
+  private hasMatch = false
+  // What the lazy lookahead found one position on. Deferring to a literal
+  // would otherwise walk the same chain again on the very next round.
+  private lookaheadPosition = -1
+  private lookaheadLength = 0
+  private lookaheadDistance = 0
   private closed = false
 
   constructor(
@@ -774,6 +789,13 @@ export class LzmaStreamEncoder {
     this.windowMask = this.keep - 1
     this.previous = new Int32Array(this.keep)
     this.previous.fill(-1)
+    // One head per position of history, near enough: a table much smaller than
+    // the window buries good candidates under collisions, and the walk spends
+    // its budget on them rather than on matches. The key is three bytes, so
+    // nothing above 2^24 buys anything.
+    const hashBits = Math.max(16, Math.min(24, Math.round(Math.log2(this.keep))))
+    this.hashShift = 32 - hashBits
+    this.head = new Int32Array(1 << hashBits)
     this.head.fill(-1)
     // Room for the history plus a stretch to read ahead in. The lookahead has
     // to clear one whole match for the encoder to make progress at all, and
@@ -839,14 +861,67 @@ export class LzmaStreamEncoder {
     this.window.copyWithin(0, discarded, this.fill)
     this.base += discarded
     this.fill -= discarded
+    this.lookaheadPosition = -1
   }
 
   private insert(position: number, end: number): void {
     if (position + 2 >= end) return
     const offset = position - this.base
-    const hash = hash3(this.window, offset)
+    const hash = hash3(this.window, offset, this.hashShift)
     this.previous[position & this.windowMask] = this.head[hash]
     this.head[hash] = position
+  }
+
+  /**
+   * Walks the chain for the longest match at `position`. `length` is 0 when
+   * nothing reaches the three bytes a match has to cover, and `distance` is
+   * already in the form the coder writes, one less than the real distance.
+   */
+  private findMatch(position: number, end: number): { length: number; distance: number } {
+    const window = this.window
+    const offset = position - this.base
+    const available = end - position
+    let bestLength = 0
+    let bestDistance = 0
+    if (available <= 2) return { length: 0, distance: 0 }
+
+    let candidate = this.head[hash3(window, offset, this.hashShift)]
+    let searched = 0
+    const maxLength = Math.min(MATCH_MAX_LEN, available)
+    while (candidate >= 0 && searched < this.searchDepth) {
+      const distance = position - candidate
+      // Candidates come newest first, so the first one out of reach ends it.
+      if (distance > this.maxDistance) break
+      const candidateOffset = offset - distance
+      if (distance > 0 && window[candidateOffset + bestLength] === window[offset + bestLength]) {
+        let length = 0
+        while (length < maxLength && window[candidateOffset + length] === window[offset + length]) length += 1
+        if (length > bestLength) {
+          bestLength = length
+          bestDistance = distance - 1
+          if (length >= this.niceLength) break
+        }
+      }
+      // Safe against the ring wrapping: a slot is only overwritten once the
+      // position is further back than `maxDistance`, and the break above
+      // stops the walk before it reaches one.
+      candidate = this.previous[candidate & this.windowMask]
+      searched += 1
+    }
+    return { length: bestLength, distance: bestDistance }
+  }
+
+  /** How far the bytes `distance` back already agree with the ones ahead. */
+  private repeatLength(position: number, distance: number, end: number): number {
+    if (distance <= 0 || distance > this.maxDistance) return 0
+    const offset = position - this.base
+    const candidateOffset = offset - distance
+    if (candidateOffset < 0) return 0
+    const window = this.window
+    const maxLength = Math.min(MATCH_MAX_LEN, end - position)
+    let length = 0
+    while (length < maxLength && window[candidateOffset + length] === window[offset + length]) length += 1
+    return length
   }
 
   private encodeUntil(limit: number, signal?: AbortSignal): void {
@@ -859,37 +934,60 @@ export class LzmaStreamEncoder {
       const position = this.position
       const offset = position - this.base
       const available = end - position
+
+      // A rep match names one of four distances the decoder already holds
+      // rather than carrying one, so it is worth taking even where a slightly
+      // longer match is on offer somewhere further out. Unrolled because this
+      // runs for every byte the encoder settles.
+      let repLength = 0
+      let repDistance = 0
+      if (this.hasMatch) {
+        repLength = this.repeatLength(position, this.rep0 + 1, end)
+        repDistance = this.rep0
+        const length1 = this.repeatLength(position, this.rep1 + 1, end)
+        if (length1 > repLength) { repLength = length1; repDistance = this.rep1 }
+        const length2 = this.repeatLength(position, this.rep2 + 1, end)
+        if (length2 > repLength) { repLength = length2; repDistance = this.rep2 }
+        const length3 = this.repeatLength(position, this.rep3 + 1, end)
+        if (length3 > repLength) { repLength = length3; repDistance = this.rep3 }
+      }
       let bestLength = 0
       let bestDistance = 0
+      if (repLength < this.niceLength) {
+        if (this.lookaheadPosition === position) {
+          bestLength = this.lookaheadLength
+          bestDistance = this.lookaheadDistance
+        } else {
+          const found = this.findMatch(position, end)
+          bestLength = found.length
+          bestDistance = found.distance
+        }
+      }
+      this.lookaheadPosition = -1
 
-      if (available > 2) {
-        let candidate = this.head[hash3(window, offset)]
-        let searched = 0
-        const maxLength = Math.min(MATCH_MAX_LEN, available)
-        while (candidate >= 0 && searched < this.searchDepth) {
-          const distance = position - candidate
-          // Candidates come newest first, so the first one out of reach ends it.
-          if (distance > this.maxDistance) break
-          const candidateOffset = offset - distance
-          if (distance > 0 && window[candidateOffset + bestLength] === window[offset + bestLength]) {
-            let length = 0
-            while (length < maxLength && window[candidateOffset + length] === window[offset + length]) length += 1
-            if (length > bestLength) {
-              bestLength = length
-              bestDistance = distance - 1
-              if (length >= this.niceLength) break
-            }
+      if (repLength >= bestLength && repLength >= MATCH_MIN_LEN) {
+        bestLength = repLength
+        bestDistance = repDistance
+      } else {
+        // A match short enough to be worth two literals never pays for the
+        // distance it has to carry; only a rep, which carries none, does.
+        if (bestLength < 3) bestLength = 0
+        else if (bestLength < this.niceLength && available > bestLength) {
+          // Lazy matching: a match one byte along that reaches further is
+          // worth the literal it costs to get there, since the literal is
+          // cheaper than the distance the shorter match would have carried.
+          const next = this.findMatch(position + 1, end)
+          if (next.length > bestLength) {
+            bestLength = 0
+            this.lookaheadPosition = position + 1
+            this.lookaheadLength = next.length
+            this.lookaheadDistance = next.distance
           }
-          // Safe against the ring wrapping: a slot is only overwritten once the
-          // position is further back than `maxDistance`, and the break above
-          // stops the walk before it reaches one.
-          candidate = this.previous[candidate & this.windowMask]
-          searched += 1
         }
       }
 
       const posState = position & (this.posStates - 1)
-      if (bestLength < 3) {
+      if (bestLength < MATCH_MIN_LEN) {
         this.encoder.bit(this.isMatch, (this.state << properties.pb) + posState, 0)
         const context = ((position & this.literalPosMask) << properties.lc) +
           (this.previousByte >>> (8 - properties.lc))
@@ -918,6 +1016,7 @@ export class LzmaStreamEncoder {
       }
 
       this.encoder.bit(this.isMatch, (this.state << properties.pb) + posState, 1)
+      this.hasMatch = true
       const reps = [this.rep0, this.rep1, this.rep2, this.rep3]
       const repIndex = reps.indexOf(bestDistance)
       if (repIndex >= 0) {

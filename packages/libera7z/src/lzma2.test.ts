@@ -91,6 +91,34 @@ describe('pure TypeScript LZMA2', () => {
     expect(controls.slice(1).every(control => control === 0x80)).toBe(true)
   })
 
+  // The encoder is told both the dictionary and, where the caller knows it,
+  // the length of the stream, and holds its reach to the smaller. Sizing its
+  // tables from the stream is what keeps a small entry under a large
+  // dictionary cheap, but the dictionary is what the reader allocates, so a
+  // long stream must not be allowed to reach past it.
+  it('never reaches back further than the dictionary the reader allocates', () => {
+    // The one repeat sits further back than the dictionary but well inside the
+    // stream, so an encoder that took the stream for its limit would name a
+    // distance the reader cannot serve. The reader rejects exactly that, which
+    // is what makes this the cap that matters.
+    const dictionarySize = 64 * 1024
+    const repeated = noise(8_000, 3)
+    const filler = noise(300_000, 4)
+    const input = new Uint8Array(repeated.length * 2 + filler.length)
+    input.set(repeated)
+    input.set(filler, repeated.length)
+    input.set(repeated, repeated.length + filler.length)
+
+    const encoder = new Lzma2StreamEncoder(dictionarySize, {}, input.length)
+    const head = encoder.push(input)
+    const tail = encoder.finish()
+    const framed = new Uint8Array(head.length + tail.length)
+    framed.set(head)
+    framed.set(tail, head.length)
+
+    expect(decodeLzma2(framed, dictionaryPropertyForSize(dictionarySize), input.length)).toEqual(input)
+  })
+
   it('cuts chunks the header can carry, even on data LZMA cannot shrink', () => {
     const encoded = encodeLzma2(noise(400_000, 99))
     for (let offset = 0; offset < encoded.data.length && encoded.data[offset] !== 0;) {

@@ -55,11 +55,17 @@ export class Lzma2StreamEncoder {
   chunkCount = 0
 
   /**
-   * `dictionarySize` has to be the size the reader will be told to allocate,
-   * since it is also the furthest back a match may reach.
+   * `dictionarySize` is how far back a match may reach, and must not exceed
+   * what the reader will be told to allocate. `streamSize`, where the caller
+   * knows it, caps it further: a match cannot reach past the start of the
+   * stream, and the match finder's tables are sized from this, so a small
+   * entry under a large dictionary costs only what it can use.
    */
-  constructor(dictionarySize: number, options: LzmaEncoderOptions = {}) {
-    this.encoder = new LzmaStreamEncoder(undefined, { ...options, maxDistance: dictionarySize })
+  constructor(dictionarySize: number, options: LzmaEncoderOptions = {}, streamSize?: number) {
+    const reach = streamSize === undefined
+      ? dictionarySize
+      : Math.max(1, Math.min(dictionarySize, streamSize))
+    this.encoder = new LzmaStreamEncoder(undefined, { ...options, maxDistance: reach })
   }
 
   /** Feeds input and returns whichever chunks that completed. */

@@ -592,12 +592,15 @@ const DICTIONARY_BY_LEVEL: Record<number, number> = {
   9: 64 * 1024 * 1024
 }
 
+// How hard the match finder works. The top level is the one that trades time
+// for ratio without reservation, so it goes as deep as the tuning allows and
+// takes a match of any length it can encode; the lower levels stay quick.
 const ENCODER_BY_LEVEL: Record<number, { searchDepth: number; niceLength: number }> = {
   1: { searchDepth: 8, niceLength: 32 },
   3: { searchDepth: 16, niceLength: 32 },
   5: { searchDepth: 32, niceLength: 32 },
-  7: { searchDepth: 64, niceLength: 64 },
-  9: { searchDepth: 128, niceLength: 128 }
+  7: { searchDepth: 128, niceLength: 128 },
+  9: { searchDepth: 512, niceLength: 273 }
 }
 
 const AUTOMATIC_DICTIONARIES = [

@@ -559,7 +559,11 @@ async function consumeEntry(
   // One coder for the whole stream, sized by the dictionary the header
   // declares, so a match reaches as far back as the reader will allow.
   const lzma2 = method === 'lzma2'
-    ? new Lzma2StreamEncoder(dictionarySizeFromProperty(dictionaryProperty), options.lzmaEncoder)
+    ? new Lzma2StreamEncoder(
+      dictionarySizeFromProperty(dictionaryProperty),
+      options.lzmaEncoder,
+      Number(entry.size)
+    )
     : null
 
   // Everything bound for the packed stream goes through here so encryption sits
