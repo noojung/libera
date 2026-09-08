@@ -5,6 +5,7 @@ import { pipeline } from 'stream/promises'
 import {
   ERR_ENCRYPTED,
   ERR_INVALID_PASSWORD,
+  ERR_INVALID_SIGNATURE,
   TextWriter,
   Uint8ArrayWriter,
   type Entry,
@@ -124,6 +125,35 @@ export function isWrongZipPasswordError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return message === ERR_INVALID_PASSWORD || message === ERR_ENCRYPTED || /wrong password/i.test(message)
 }
+
+/**
+ * Reads an entry, and blames the password when an encrypted one fails to
+ * verify.
+ *
+ * ZipCrypto checks a password against a single byte, so about one wrong
+ * password in 256 gets past it and the entry decodes to noise. What surfaces
+ * then is the CRC failing, which the archive holds nothing to tell apart from
+ * real damage - but the entry was encrypted and a password was handed in, so
+ * the password is the answer worth giving. zip.js reports a failed CRC, a
+ * failed AES authentication code and a bad signature under one value, which is
+ * exactly the family this covers.
+ */
+export async function readZipEntry<T>(
+  entry: Entry,
+  password: string | undefined,
+  read: () => Promise<T>
+): Promise<T> {
+  try {
+    return await read()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (password !== undefined && entry.encrypted && message === ERR_INVALID_SIGNATURE) {
+      throw extractionError(WRONG_ZIP_PASSWORD_ERROR_CODE, 'Wrong ZIP password')
+    }
+    throw error
+  }
+}
+
 // Only macOS has anywhere to put the metadata a sidecar carries; elsewhere the
 // sidecars stay ordinary files, which is what every other unzip tool does.
 const mergesAppleDouble = process.platform === 'darwin'
@@ -178,7 +208,8 @@ const extractZipArchive: FormatExtractor = async ({
           matchesSelectedEntry(subjectPath, requestedPaths) &&
           Number(entry.uncompressedSize) <= MAX_APPLE_DOUBLE_BYTES
         if (foldsIntoSubject) {
-          const raw = await (entry as FileEntry).getData(new Uint8ArrayWriter(), { password })
+          const raw = await readZipEntry(entry, password, () =>
+            (entry as FileEntry).getData(new Uint8ArrayWriter(), { password }))
           const metadata = parseAppleDouble(Buffer.from(raw))
           // Bytes that are not AppleDouble belong to a file that merely looks
           // like a sidecar, and fall through to normal extraction.
@@ -196,7 +227,8 @@ const extractZipArchive: FormatExtractor = async ({
       // the entry, since the plan treats a link without a target as unsupported.
       const linkTarget = isLink && restoresSymbolicLinks && extractionOptions?.restoreSymlinks !== false && !entry.directory &&
         matchesSelectedEntry(entry.filename, requestedPaths)
-        ? await (entry as FileEntry).getData(new TextWriter(), { password })
+        ? await readZipEntry(entry, password, () =>
+          (entry as FileEntry).getData(new TextWriter(), { password }))
         : undefined
       archiveEntries.push({
         archivePath: entry.filename,
@@ -248,14 +280,15 @@ const extractZipArchive: FormatExtractor = async ({
         fileBytes = meter.consume(byteLength, fileBytes, entry.archivePath)
       })
       try {
-        await (entry.source as FileEntry).getData(output.writable, {
-          password,
-          signal,
-          strictness: 'strict',
-          checkCrc32: extractionOptions?.strictCrc !== false,
-          checkOverlappingEntry: true,
-          useWebWorkers: false
-        })
+        await readZipEntry(entry.source as Entry, password, () =>
+          (entry.source as FileEntry).getData(output.writable, {
+            password,
+            signal,
+            strictness: 'strict',
+            checkCrc32: extractionOptions?.strictCrc !== false,
+            checkOverlappingEntry: true,
+            useWebWorkers: false
+          }))
       } finally {
         await output.close()
       }
