@@ -252,6 +252,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           </div>
         </div>
       )}
+
     </div>
   )
 }

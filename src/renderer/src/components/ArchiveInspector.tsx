@@ -8,6 +8,7 @@ import type { AppLanguage } from '@/i18n/language'
 import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '@/utils/archivePaths'
 import { useExpertMode } from '@/utils/expertMode'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
+import { SupportedFormatsModal } from './SupportedFormatsModal'
 import { PasswordPromptModal } from './PasswordPromptModal'
 import './ArchiveInspector.css'
 
@@ -93,6 +94,7 @@ export const ArchiveInspector: React.FC = () => {
   const [inspectData, setInspectData] = useState<ArchiveInspectionResult | null>(null)
   const [volumesExpanded, setVolumesExpanded] = useState(false)
   const [blocksPanelOpen, setBlocksPanelOpen] = useState(false)
+  const [showFormats, setShowFormats] = useState(false)
   const [expandedBlockIds, setExpandedBlockIds] = useState<Set<number>>(new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
@@ -431,6 +433,13 @@ export const ArchiveInspector: React.FC = () => {
               <h3 className="archive-inspector__title">
                 {t('inspector.title')}
               </h3>
+              <button
+                type="button"
+                className="archive-inspector__formats-link"
+                onClick={() => setShowFormats(true)}
+              >
+                {t('supportedFormats.link')}
+              </button>
               {splitVolumes && (
                 <button
                   type="button"
@@ -711,6 +720,7 @@ export const ArchiveInspector: React.FC = () => {
           </button>
         </div>
       )}
+      {showFormats && <SupportedFormatsModal onClose={() => setShowFormats(false)} />}
       {passwordPrompt && (
         <PasswordPromptModal
           archiveName={passwordPrompt.target === 'entry'

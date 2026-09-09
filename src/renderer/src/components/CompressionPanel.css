@@ -463,3 +463,28 @@
 .compression-panel__expert-row--filter {
   margin-top: 12px;
 }
+
+/* The label and the way to the full table share the row, so the question sits
+   where it is asked rather than at the bottom of the panel. */
+.compression-panel__format-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compression-panel__formats-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-peach);
+  cursor: pointer;
+  font-family: var(--font-cute);
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.compression-panel__formats-link:hover {
+  opacity: 0.8;
+}

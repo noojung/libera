@@ -31,7 +31,7 @@ export const resources = {
         dropFilesAndFolders: 'Drop files or folders here! 🐾',
         dropArchives: 'Drop archive files here! 🐾',
         filesAndFoldersHint: 'Select multiple files, folders, or archives to extract',
-        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ files only',
+        archivesHint: 'Archive files only',
         browseFiles: 'Browse files',
         browseFolders: 'Browse folders',
         selectedItems_one: '{{count}} selected item',
@@ -44,8 +44,8 @@ export const resources = {
         volumeList: 'Volumes in {{name}}',
         showVolumes: 'Show volumes in {{name}}',
         hideVolumes: 'Hide volumes in {{name}}',
-        unsupportedArchive: 'Only ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ archive files can be added.',
-        invalidExtractInput: 'Folders and unsupported files cannot be added. Select ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, or GZ files.'
+        unsupportedArchive: 'That file is not an archive Libera can open.',
+        invalidExtractInput: 'Folders and files Libera cannot open were left out.'
       },
       compression: {
         title: 'Compression options ⚙️',
@@ -380,6 +380,21 @@ export const resources = {
         fileTooLarge: 'A file in the archive would exceed the 1 TiB limit.',
         invalidGzInput: 'GZ compression supports one file only.'
       },
+      supportedFormats: {
+        title: 'Supported formats',
+        description: 'What Libera can do with each one.',
+        format: 'Format',
+        compress: 'Compress',
+        extract: 'Extract',
+        read: 'Read',
+        password: 'Password',
+        split: 'Split',
+        yes: 'Yes',
+        no: 'No',
+        note: 'Reading means browsing what is inside and previewing an entry. The formats without a compress mark are read only.',
+        close: 'Close',
+        link: 'Which formats?'
+      },
       licenses: {
         title: 'Open source licenses',
         description: 'Libera is built with the open source packages below.',
@@ -438,7 +453,7 @@ export const resources = {
         dropFilesAndFolders: '파일이나 폴더를 여기에 놓아주세요! 🐾',
         dropArchives: '압축 파일을 여기에 놓아주세요! 🐾',
         filesAndFoldersHint: '여러 파일, 폴더 또는 압축 해제할 파일 선택 가능',
-        archivesHint: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 파일만 선택 가능',
+        archivesHint: '압축 파일만 선택 가능',
         browseFiles: '파일 찾아보기',
         browseFolders: '폴더 찾아보기',
         selectedItems: '선택한 항목 ({{count}}개)',
@@ -449,8 +464,8 @@ export const resources = {
         volumeList: '{{name}}의 분할 볼륨',
         showVolumes: '{{name}}의 분할 볼륨 보기',
         hideVolumes: '{{name}}의 분할 볼륨 숨기기',
-        unsupportedArchive: 'ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 압축 파일만 추가할 수 있습니다.',
-        invalidExtractInput: '폴더와 비지원 파일은 추가할 수 없습니다. ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, GZ 파일을 선택해 주세요.'
+        unsupportedArchive: 'Libera가 열 수 없는 파일입니다.',
+        invalidExtractInput: '폴더와 열 수 없는 파일은 제외했습니다.'
       },
       compression: {
         title: '압축 옵션 설정 ⚙️',
@@ -770,6 +785,21 @@ export const resources = {
         archiveTooLarge: '압축 해제 결과가 1 TiB 제한을 초과합니다.',
         fileTooLarge: '압축 파일 내부의 파일이 1 TiB 제한을 초과합니다.',
         invalidGzInput: 'GZ 압축은 파일 하나만 지원합니다.'
+      },
+      supportedFormats: {
+        title: '지원 포맷',
+        description: '각 포맷으로 무엇을 할 수 있는지 보여줍니다.',
+        format: '포맷',
+        compress: '압축',
+        extract: '압축 풀기',
+        read: '읽기',
+        password: '비밀번호',
+        split: '분할',
+        yes: '가능',
+        no: '불가',
+        note: '읽기는 안에 무엇이 있는지 살펴보고 미리 보는 것을 뜻합니다. 압축 표시가 없는 포맷은 읽기 전용입니다.',
+        close: '닫기',
+        link: '어떤 포맷을 지원하나요?'
       },
       licenses: {
         title: '오픈소스 라이선스',

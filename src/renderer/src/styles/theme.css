@@ -32,6 +32,10 @@
   --status-warning: #F4A261;
   --status-danger: #E76F51;
 
+  /* The ground a success mark sits on. The pill above is warm cream, which a
+     green tick reads oddly against, so an affirmative gets its own tint. */
+  --status-success-soft: #E3F4EB;
+
   --titlebar-bg: #FAF7F2;
   --titlebar-btn-hover: #EDE5DC;
   --titlebar-btn-active: #E1D7CC;
@@ -92,6 +96,8 @@
   --status-success: #62C496;
   --status-warning: #F6B17A;
   --status-danger: #ED8167;
+
+  --status-success-soft: #27423A;
 
   --titlebar-bg: #241F1B;
   --titlebar-btn-hover: #3E342E;

@@ -27,6 +27,7 @@ import type {
 } from '@services/compressor'
 import { ZipMethodOverridesModal } from './ZipMethodOverridesModal'
 import { SevenZipMethodOverridesModal } from './SevenZipMethodOverridesModal'
+import { SupportedFormatsModal } from './SupportedFormatsModal'
 import './CompressionPanel.css'
 
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
@@ -129,6 +130,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [isExpertMode] = useExpertMode()
 
   const [format, setFormat] = useState<ArchiveFormat>('zip')
+  const [showFormats, setShowFormats] = useState(false)
   const [level, setLevel] = useState<number>(DEFAULT_LEVELS.zip)
   const [customName] = useState<string>('archive')
   const [outputPath, setOutputPath] = useState<string>('')
@@ -373,9 +375,18 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
 
       {/* Target Format Selector */}
       <div className="compression-panel__field">
-        <label className="compression-panel__label compression-panel__label--format">
-          {t('compression.format')}
-        </label>
+        <div className="compression-panel__format-header">
+          <label className="compression-panel__label compression-panel__label--format">
+            {t('compression.format')}
+          </label>
+          <button
+            type="button"
+            className="compression-panel__formats-link"
+            onClick={() => setShowFormats(true)}
+          >
+            {t('supportedFormats.link')}
+          </button>
+        </div>
         <div className="compression-panel__format-grid">
           {COMPRESSION_FORMATS.map((fmt) => (
             <button
@@ -916,6 +927,8 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
           onClose={() => setShowSevenZipMethodOverrides(false)}
         />
       )}
+
+      {showFormats && <SupportedFormatsModal onClose={() => setShowFormats(false)} />}
     </div>
   )
 }

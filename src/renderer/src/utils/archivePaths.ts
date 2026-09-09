@@ -169,3 +169,58 @@ export function archiveBaseName(archiveName: string): string {
   if (archiveName.toLowerCase().endsWith('.tar.gz')) return archiveName.slice(0, -'.tar.gz'.length)
   return archiveName.replace(/\.[^/.]+$/, '')
 }
+
+/**
+ * What each format the app reads can be asked to do.
+ *
+ * The same information sits in the README and on the site, so this is a third
+ * copy - which is why it names only the format and its suffixes, and derives
+ * every capability from the constants and helpers above. A test holds the
+ * suffixes here against `SUPPORTED_ARCHIVE_EXTENSIONS`, so a format added there
+ * and forgotten here fails rather than quietly disappearing from the list.
+ */
+export interface SupportedFormat {
+  /** How the format is written in the UI, matching the README's table. */
+  name: string
+  extensions: readonly string[]
+  compress: boolean
+  extract: boolean
+  /** Browsing the entries and previewing one, without writing anything out. */
+  read: boolean
+  password: boolean
+  split: boolean
+}
+
+/** The compression format each readable one corresponds to, where there is one. */
+const WRITABLE_AS: Partial<Record<string, ArchiveFormat>> = {
+  ZIP: 'zip', '7Z': '7z', TAR: 'tar', 'TAR.GZ': 'tgz', GZ: 'gz'
+}
+
+const READABLE_FORMATS: readonly (readonly [string, readonly string[]])[] = [
+  ['ZIP', ['.zip']],
+  ['7Z', ['.7z']],
+  ['TAR', ['.tar']],
+  ['TAR.GZ', ['.tar.gz', '.tgz']],
+  ['TAR.XZ', ['.tar.xz', '.txz']],
+  ['TAR.BZ2', ['.tar.bz2', '.tbz2', '.tbz']],
+  ['GZ', ['.gz']],
+  ['JAR', ['.jar']],
+  ['WAR', ['.war']]
+]
+
+export const SUPPORTED_FORMATS: readonly SupportedFormat[] = READABLE_FORMATS.map(
+  ([name, extensions]) => {
+    const writable = WRITABLE_AS[name]
+    return {
+      name,
+      extensions,
+      compress: writable !== undefined,
+      // Being readable is what puts a format on this list at all; both are
+      // carried as data so a format that ever loses one can say so.
+      extract: true,
+      read: true,
+      password: writable !== undefined && supportsPassword(writable),
+      split: writable !== undefined && supportsSplit(writable)
+    }
+  }
+)

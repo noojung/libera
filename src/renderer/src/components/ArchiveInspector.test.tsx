@@ -35,7 +35,7 @@ describe('ArchiveInspector', () => {
     const { user } = renderWithI18n(<ArchiveInspector />)
 
     expect(screen.getByText('Drop archive files here! 🐾')).toBeInTheDocument()
-    expect(screen.getByText('ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, and GZ files only')).toBeInTheDocument()
+    expect(screen.getByText(/Archive files only/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select an archive' })
       .querySelector('.archive-inspector__empty-upload-icon')).toBeInTheDocument()
 
@@ -43,6 +43,18 @@ describe('ArchiveInspector', () => {
     expect(api.selectFiles).toHaveBeenCalledWith(expect.objectContaining({
       allowDirectories: false
     }))
+  })
+
+  // It sits in the title row rather than the empty state, so it is there
+  // whether or not an archive has been opened.
+  it('offers the supported formats table from its header', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<ArchiveInspector />)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
+
+    expect(within(screen.getByRole('dialog')).getByText('TAR.BZ2')).toBeInTheDocument()
   })
 
   it('opens an archive, displays unknown metadata, and navigates folders', async () => {
