@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { ChevronRight, ExternalLink, Github, PackageOpen, X } from 'lucide-react'
+import { ChevronRight, ExternalLink, FileArchive, Github, PackageOpen, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import appInfo from '@/generated/appInfo.json'
 import logoImg from '@/assets/logo.png'
@@ -8,13 +8,14 @@ import './AboutModal.css'
 interface AboutModalProps {
   onClose: () => void
   onShowLicenses: () => void
+  onShowSupportedFormats: () => void
 }
 
 function openExternalLink(url: string): void {
   void (window as any).electronAPI?.openExternalLink(url)
 }
 
-export const AboutModal: React.FC<AboutModalProps> = ({ onClose, onShowLicenses }) => {
+export const AboutModal: React.FC<AboutModalProps> = ({ onClose, onShowLicenses, onShowSupportedFormats }) => {
   const { t } = useTranslation()
 
   useEffect(() => {
@@ -66,18 +67,26 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose, onShowLicenses 
           </button>
         </div>
 
-        {/* The licenses list lives one level down: this button is what makes
-            the info icon mean "about" rather than jumping straight to a wall
-            of license text. */}
-        <button type="button" className="about-modal__licenses" onClick={onShowLicenses}>
-          <span className="about-modal__licenses-icon">
+        <button type="button" className="about-modal__section" onClick={onShowSupportedFormats}>
+          <span className="about-modal__section-icon">
+            <FileArchive size={18} />
+          </span>
+          <span className="about-modal__section-text">
+            <span className="about-modal__section-title">{t('supportedFormats.title')}</span>
+            <span className="about-modal__section-hint">{t('about.supportedFormatsHint')}</span>
+          </span>
+          <ChevronRight size={16} className="about-modal__section-chevron" />
+        </button>
+
+        <button type="button" className="about-modal__section" onClick={onShowLicenses}>
+          <span className="about-modal__section-icon">
             <PackageOpen size={18} />
           </span>
-          <span className="about-modal__licenses-text">
-            <span className="about-modal__licenses-title">{t('about.openSourceLicenses')}</span>
-            <span className="about-modal__licenses-hint">{t('about.openSourceLicensesHint')}</span>
+          <span className="about-modal__section-text">
+            <span className="about-modal__section-title">{t('about.openSourceLicenses')}</span>
+            <span className="about-modal__section-hint">{t('about.openSourceLicensesHint')}</span>
           </span>
-          <ChevronRight size={16} className="about-modal__licenses-chevron" />
+          <ChevronRight size={16} className="about-modal__section-chevron" />
         </button>
 
         <p className="about-modal__copyright">

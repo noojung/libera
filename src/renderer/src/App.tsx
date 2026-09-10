@@ -8,6 +8,7 @@ import { QueueManager } from './components/QueueManager'
 import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { LicensesModal } from './components/LicensesModal'
 import { AboutModal } from './components/AboutModal'
+import { SupportedFormatsModal } from './components/SupportedFormatsModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import {
   NUMBERED_VOLUME_SUFFIX,
@@ -461,6 +462,7 @@ export const App: React.FC = () => {
   const activeQueueCount = jobs.filter(j => j.status === 'pending' || j.status === 'running').length
   const [showAbout, setShowAbout] = useState(false)
   const [showLicenses, setShowLicenses] = useState(false)
+  const [showSupportedFormats, setShowSupportedFormats] = useState(false)
 
   return (
     <div className="app-shell">
@@ -474,9 +476,13 @@ export const App: React.FC = () => {
         <AboutModal
           onClose={() => setShowAbout(false)}
           onShowLicenses={() => { setShowAbout(false); setShowLicenses(true) }}
+          onShowSupportedFormats={() => { setShowAbout(false); setShowSupportedFormats(true) }}
         />
       )}
-      {/* Closing the licenses list returns to the info screen it opened from. */}
+      {/* Closing either detail view returns to the app info screen. */}
+      {showSupportedFormats && (
+        <SupportedFormatsModal onClose={() => { setShowSupportedFormats(false); setShowAbout(true) }} />
+      )}
       {showLicenses && (
         <LicensesModal onClose={() => { setShowLicenses(false); setShowAbout(true) }} />
       )}

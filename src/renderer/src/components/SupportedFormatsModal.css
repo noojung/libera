@@ -48,7 +48,7 @@
   border: 2px solid var(--border-doodle);
   border-radius: 50%;
   background: var(--bg-pill);
-  color: var(--accent-peach);
+  color: var(--status-success);
 }
 
 .supported-formats__title {
@@ -151,11 +151,4 @@
   background: var(--status-success-soft);
   color: var(--supported-formats-check);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--supported-formats-check) 35%, transparent);
-}
-
-.supported-formats__note {
-  margin-top: 12px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
 }

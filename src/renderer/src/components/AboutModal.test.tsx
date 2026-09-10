@@ -9,7 +9,7 @@ import appInfo from '@/generated/appInfo.json'
 describe('AboutModal', () => {
   it('shows the app name, version and copyright', () => {
     installElectronApi()
-    renderWithI18n(<AboutModal onClose={vi.fn()} onShowLicenses={vi.fn()} />)
+    renderWithI18n(<AboutModal onShowSupportedFormats={vi.fn()} onClose={vi.fn()} onShowLicenses={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: 'Libera' })).toBeInTheDocument()
     expect(screen.getByText(`Version ${appInfo.version}`)).toBeInTheDocument()
@@ -18,7 +18,7 @@ describe('AboutModal', () => {
 
   it('opens the homepage and the repository in the browser', async () => {
     const api = installElectronApi()
-    const { user } = renderWithI18n(<AboutModal onClose={vi.fn()} onShowLicenses={vi.fn()} />)
+    const { user } = renderWithI18n(<AboutModal onShowSupportedFormats={vi.fn()} onClose={vi.fn()} onShowLicenses={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: /Website/ }))
     expect(api.openExternalLink).toHaveBeenCalledWith(appInfo.homepage)
@@ -30,7 +30,7 @@ describe('AboutModal', () => {
   it('leads to the licenses list rather than showing it here', async () => {
     installElectronApi()
     const onShowLicenses = vi.fn()
-    const { user } = renderWithI18n(<AboutModal onClose={vi.fn()} onShowLicenses={onShowLicenses} />)
+    const { user } = renderWithI18n(<AboutModal onShowSupportedFormats={vi.fn()} onClose={vi.fn()} onShowLicenses={onShowLicenses} />)
 
     // The licence text itself belongs one level down; this screen only points at it.
     expect(screen.queryByText(/GNU LESSER GENERAL PUBLIC LICENSE/)).not.toBeInTheDocument()
@@ -42,7 +42,7 @@ describe('AboutModal', () => {
   it('closes on the close button and on Escape', async () => {
     installElectronApi()
     const onClose = vi.fn()
-    const { user } = renderWithI18n(<AboutModal onClose={onClose} onShowLicenses={vi.fn()} />)
+    const { user } = renderWithI18n(<AboutModal onShowSupportedFormats={vi.fn()} onClose={onClose} onShowLicenses={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledOnce()

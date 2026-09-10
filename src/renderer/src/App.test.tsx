@@ -6,8 +6,9 @@ import { installElectronApi } from './test/electronApi'
 import type { ActiveJob } from './types'
 
 vi.mock('./components/TitleBar', () => ({
-  TitleBar: ({ setMode, activeQueueCount }: any) => (
+  TitleBar: ({ setMode, activeQueueCount, onShowAbout }: any) => (
     <div>
+      <button onClick={onShowAbout}>App info</button>
       <span data-testid="active-count">{activeQueueCount}</span>
       {['compress', 'extract', 'inspect', 'queue'].map(mode => (
         <button key={mode} onClick={() => setMode(mode)}>{`Mode ${mode}`}</button>
@@ -109,6 +110,26 @@ afterEach(() => {
 })
 
 describe('App orchestration', () => {
+  it('opens supported formats from app info and returns there on close or Escape', async () => {
+    installElectronApi()
+    const { user } = renderWithI18n(<App />)
+    await user.click(screen.getByRole('button', { name: 'App info' }))
+
+    for (const closeWithEscape of [false, true]) {
+      await user.click(screen.getByRole('button', { name: /Supported formats/ }))
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+      expect(screen.getByRole('dialog', { name: 'Supported formats' })).toBeInTheDocument()
+      expect(screen.getByRole('columnheader', { name: 'Preview' })).toBeInTheDocument()
+
+      if (closeWithEscape) await user.keyboard('{Escape}')
+      else await user.click(screen.getByRole('button', { name: 'Close' }))
+
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+      expect(screen.getByRole('dialog', { name: 'Libera' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Open source licenses/ })).toBeInTheDocument()
+    }
+  })
+
   it('deduplicates inputs, applies progress, completes compression, and unsubscribes', async () => {
     const result = deferred<any>()
     const unsubscribe = vi.fn()

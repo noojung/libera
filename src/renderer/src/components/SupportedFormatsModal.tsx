@@ -105,7 +105,6 @@ export const SupportedFormatsModal: React.FC<SupportedFormatsModalProps> = ({ on
               ))}
             </tbody>
           </table>
-          <p className="supported-formats__note">{t('supportedFormats.note')}</p>
         </div>
       </section>
     </div>
