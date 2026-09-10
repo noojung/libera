@@ -4,7 +4,6 @@ import { SelectedItem } from '@/types'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@/i18n/format'
 import type { AppLanguage } from '@/i18n/language'
-import { SupportedFormatsModal } from './SupportedFormatsModal'
 import './DropZone.css'
 
 interface DropZoneProps {
@@ -13,10 +12,10 @@ interface DropZoneProps {
   onRemoveItem: (index: number) => void
   onClearItems: () => void
   onSelectFilesDialog: (allowFolder?: boolean) => void
-  showSupportedFormats?: boolean
   allowFolders?: boolean
   acceptedFileExtensions?: string[]
   acceptedFilePatterns?: RegExp[]
+  // When supplied, the parent validates both drops and file-picker selections.
   validationError?: string | null
 }
 
@@ -27,14 +26,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
   onClearItems,
   onSelectFilesDialog,
   allowFolders = true,
-  showSupportedFormats = false,
   acceptedFileExtensions,
   acceptedFilePatterns,
   validationError
 }) => {
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
-  const [showFormats, setShowFormats] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasUnsupportedDrop, setHasUnsupportedDrop] = useState(false)
   const [expandedVolumeItems, setExpandedVolumeItems] = useState<Set<SelectedItem>>(() => new Set())
@@ -102,6 +99,10 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }
         return (f as any).path || f.name
       }).filter(Boolean)
+      if (validationError !== undefined) {
+        onAddFiles(paths)
+        return
+      }
       const acceptedPaths = paths.filter(acceptsPath)
 
       if (acceptedPaths.length !== paths.length) {
@@ -159,18 +160,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
             </button>
           )}
         </div>
-        {showSupportedFormats && (
-          <button
-            type="button"
-            className="drop-zone__formats-link"
-            onClick={(event) => {
-              event.stopPropagation()
-              setShowFormats(true)
-            }}
-          >
-            {t('supportedFormats.link')}
-          </button>
-        )}
       </div>
 
       {/* Selected Items Preview List */}
@@ -269,7 +258,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
         </div>
       )}
 
-      {showFormats && <SupportedFormatsModal onClose={() => setShowFormats(false)} />}
     </div>
   )
 }

@@ -820,20 +820,3 @@
   font-weight: 600;
   color: var(--text-main);
 }
-
-.archive-inspector__formats-link {
-  margin-top: 8px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent-peach);
-  cursor: pointer;
-  font-family: var(--font-cute);
-  font-size: 13px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.archive-inspector__formats-link:hover {
-  opacity: 0.8;
-}

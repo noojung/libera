@@ -1,0 +1,50 @@
+.unsupported-format {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: flex;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+  background: var(--modal-backdrop);
+}
+
+.unsupported-format__dialog {
+  display: flex;
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.unsupported-format__heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.unsupported-format__heading h2 {
+  color: var(--text-main);
+  font-family: var(--font-cute);
+  font-size: 20px;
+}
+
+.unsupported-format__icon {
+  flex: none;
+  color: var(--status-warning);
+}
+
+.unsupported-format__dialog p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.unsupported-format__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}

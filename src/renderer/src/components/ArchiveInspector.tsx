@@ -8,7 +8,7 @@ import type { AppLanguage } from '@/i18n/language'
 import { EXTRACT_DIALOG_EXTENSIONS, isSupportedArchivePath } from '@/utils/archivePaths'
 import { useExpertMode } from '@/utils/expertMode'
 import { ArchivePreviewModal } from './ArchivePreviewModal'
-import { SupportedFormatsModal } from './SupportedFormatsModal'
+import { UnsupportedFormatModal } from './UnsupportedFormatModal'
 import { PasswordPromptModal } from './PasswordPromptModal'
 import './ArchiveInspector.css'
 
@@ -94,7 +94,7 @@ export const ArchiveInspector: React.FC = () => {
   const [inspectData, setInspectData] = useState<ArchiveInspectionResult | null>(null)
   const [volumesExpanded, setVolumesExpanded] = useState(false)
   const [blocksPanelOpen, setBlocksPanelOpen] = useState(false)
-  const [showFormats, setShowFormats] = useState(false)
+  const [showUnsupportedFormat, setShowUnsupportedFormat] = useState(false)
   const [expandedBlockIds, setExpandedBlockIds] = useState<Set<number>>(new Set())
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
@@ -136,26 +136,35 @@ export const ArchiveInspector: React.FC = () => {
   }, [])
 
   const runInspection = async (filePath: string, password?: string) => {
+    if (!isSupportedArchivePath(filePath)) {
+      setShowUnsupportedFormat(true)
+      return
+    }
     const requestId = ++inspectionSequence.current
     closePreview()
+    setShowUnsupportedFormat(false)
     setLoading(true)
-    setErrorKey(null)
-    setSearchQuery('')
-    setCurrentPath('')
-    setVisibleEntryCount(ENTRY_PAGE_SIZE)
-    setVolumesExpanded(false)
-    setBlocksPanelOpen(false)
-    setExpandedBlockIds(new Set())
-    setSelectedBlockId(null)
     try {
       const response = await (window as any).electronAPI.inspectArchive(filePath, password)
       if (inspectionSequence.current !== requestId) return
       if (response.success) {
+        setErrorKey(null)
+        setSearchQuery('')
+        setCurrentPath('')
+        setVisibleEntryCount(ENTRY_PAGE_SIZE)
+        setVolumesExpanded(false)
+        setBlocksPanelOpen(false)
+        setExpandedBlockIds(new Set())
+        setSelectedBlockId(null)
         setInspectData(response.result)
         setArchivePath(response.result.archivePath || filePath)
         setArchivePassword(password)
         setPasswordPrompt(null)
+      } else if (response.errorCode === 'unsupportedArchive') {
+        setShowUnsupportedFormat(true)
       } else if (response.code === 'PASSWORD_REQUIRED' || response.code === 'WRONG_ZIP_PASSWORD') {
+        setErrorKey(null)
+        setArchivePath(filePath)
         setInspectData(null)
         setPasswordPrompt({
           target: 'listing',
@@ -163,6 +172,7 @@ export const ArchiveInspector: React.FC = () => {
           incorrect: response.code === 'WRONG_ZIP_PASSWORD'
         })
       } else {
+        setArchivePath(filePath)
         setInspectData(null)
         setErrorKey(response.errorCode ? `errors.${response.errorCode}` : 'inspector.readFailed')
       }
@@ -188,7 +198,6 @@ export const ArchiveInspector: React.FC = () => {
       filterName: t('dialogs.supportedArchives')
     })
     if (files.length > 0) {
-      setArchivePath(files[0])
       void runInspection(files[0])
     }
   }
@@ -207,11 +216,6 @@ export const ArchiveInspector: React.FC = () => {
         // Fall back to the browser-provided path/name.
       }
     }
-    if (!isSupportedArchivePath(filePath)) {
-      setErrorKey('dropZone.unsupportedArchive')
-      return
-    }
-    setArchivePath(filePath)
     void runInspection(filePath)
   }
 
@@ -462,7 +466,11 @@ export const ArchiveInspector: React.FC = () => {
       ) : errorKey ? (
         <div className="glass-panel archive-inspector__state archive-inspector__state--error">
           <ShieldAlert size={40} />
-          <span>{t(errorKey)}</span>
+          <span role="alert">{t(errorKey)}</span>
+          <button type="button" className="btn-secondary" onClick={handleOpenArchive}>
+            <FilePlus size={16} aria-hidden="true" />
+            {t('dropZone.browseFiles')}
+          </button>
         </div>
       ) : inspectData ? (
         <div className="archive-inspector__content">
@@ -710,16 +718,9 @@ export const ArchiveInspector: React.FC = () => {
             <FilePlus size={16} aria-hidden="true" />
             {t('dropZone.browseFiles')}
           </button>
-          <button
-            type="button"
-            className="archive-inspector__formats-link"
-            onClick={() => setShowFormats(true)}
-          >
-            {t('supportedFormats.link')}
-          </button>
         </div>
       )}
-      {showFormats && <SupportedFormatsModal onClose={() => setShowFormats(false)} />}
+      {showUnsupportedFormat && <UnsupportedFormatModal onClose={() => setShowUnsupportedFormat(false)} />}
       {passwordPrompt && (
         <PasswordPromptModal
           archiveName={passwordPrompt.target === 'entry'

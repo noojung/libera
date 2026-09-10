@@ -9,6 +9,7 @@ import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { LicensesModal } from './components/LicensesModal'
 import { AboutModal } from './components/AboutModal'
 import { SupportedFormatsModal } from './components/SupportedFormatsModal'
+import { UnsupportedFormatModal } from './components/UnsupportedFormatModal'
 import { AppMode, SelectedItem, ActiveJob } from './types'
 import {
   NUMBERED_VOLUME_SUFFIX,
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [extractItems, setExtractItems] = useState<SelectedItem[]>([])
   const [extractInputErrorKey, setExtractInputErrorKey] = useState<string | null>(null)
+  const [showUnsupportedExtractFormat, setShowUnsupportedExtractFormat] = useState(false)
   const [jobs, setJobs] = useState<ActiveJob[]>([])
   const [passwordPromptArchive, setPasswordPromptArchive] = useState<string | null>(null)
   const [passwordPromptIncorrect, setPasswordPromptIncorrect] = useState(false)
@@ -220,9 +222,10 @@ export const App: React.FC = () => {
       })
     }
 
-    setExtractInputErrorKey(
-      resolutionErrorKey ?? (invalidItems.length > 0 ? 'dropZone.invalidExtractInput' : null)
-    )
+    const inputErrorKey = resolutionErrorKey ?? (invalidItems.length > 0 ? 'dropZone.invalidExtractInput' : null)
+    const unsupportedFormat = inputErrorKey === 'dropZone.invalidExtractInput' || inputErrorKey === 'errors.unsupportedArchive'
+    setExtractInputErrorKey(unsupportedFormat ? null : inputErrorKey)
+    setShowUnsupportedExtractFormat(unsupportedFormat)
 
     setExtractItems(prev => {
       const existingGroups = new Set(prev.map(i => splitVolumeGroupKey(i.path)))
@@ -487,6 +490,10 @@ export const App: React.FC = () => {
         <LicensesModal onClose={() => { setShowLicenses(false); setShowAbout(true) }} />
       )}
 
+      {showUnsupportedExtractFormat && (
+        <UnsupportedFormatModal onClose={() => setShowUnsupportedExtractFormat(false)} />
+      )}
+
       <main className="app-main">
         {mode === 'compress' && (
           <div className="app-workspace">
@@ -513,7 +520,6 @@ export const App: React.FC = () => {
               onClearItems={handleClearExtractItems}
               onSelectFilesDialog={handleSelectExtractFilesDialog}
               allowFolders={false}
-              showSupportedFormats
               acceptedFileExtensions={[...SUPPORTED_ARCHIVE_EXTENSIONS]}
               acceptedFilePatterns={[NUMBERED_VOLUME_SUFFIX, SEVEN_ZIP_VOLUME_SUFFIX]}
               validationError={extractInputErrorKey ? t(extractInputErrorKey) : null}

@@ -189,7 +189,9 @@ describe('App orchestration', () => {
     await user.click(screen.getByRole('button', { name: 'Mode extract' }))
     await user.click(screen.getByRole('button', { name: 'Add extraction files' }))
     await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('1'))
-    expect(screen.getByRole('alert')).toHaveTextContent('Folders and files Libera cannot open were left out.')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('This archive format is not supported.')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'OK' }))
 
     await user.click(screen.getByRole('button', { name: 'Add two archives' }))
     await waitFor(() => expect(screen.getByTestId('extract-count')).toHaveTextContent('2'))

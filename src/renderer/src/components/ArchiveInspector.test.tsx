@@ -46,14 +46,75 @@ describe('ArchiveInspector', () => {
     }))
   })
 
-  it('offers the supported formats table below the file picker', async () => {
-    installElectronApi()
-    const { user } = renderWithI18n(<ArchiveInspector />)
-
+  it.each(['drop', 'picker'])('shows format help for rejected input and clears it on a valid %s', async (method) => {
+    const api = installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['valid.zip']),
+      inspectArchive: vi.fn().mockResolvedValue(inspection([]))
+    })
+    const { user, container } = renderWithI18n(<ArchiveInspector />)
+    expect(screen.queryByRole('button', { name: 'Which formats?' })).not.toBeInTheDocument()
+    fireEvent.drop(container.firstElementChild!, {
+      dataTransfer: { files: [new File(['text'], 'notes.txt')] }
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(container.querySelector('.archive-inspector__state--empty')).toBeInTheDocument()
+    expect(api.inspectArchive).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('This archive format is not supported.')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
+    await user.click(screen.getByRole('button', { name: 'View supported formats' }))
+    expect(within(screen.getByRole('dialog', { name: 'Supported formats' })).getByText('TAR.BZ2')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'OK' }))
 
-    expect(within(screen.getByRole('dialog')).getByText('TAR.BZ2')).toBeInTheDocument()
+    if (method === 'picker') await user.click(screen.getByRole('button', { name: 'Browse files' }))
+    else fireEvent.drop(container.firstElementChild!, {
+      dataTransfer: { files: [new File(['zip'], 'valid.zip')] }
+    })
+    await waitFor(() => expect(api.inspectArchive).toHaveBeenCalledWith('valid.zip', undefined))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Which formats?' })).not.toBeInTheDocument()
+  })
+
+  it('validates picker input and does not offer format help for a damaged archive', async () => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValueOnce(['notes.txt']).mockResolvedValueOnce(['damaged.zip']),
+      inspectArchive: vi.fn().mockResolvedValue({ success: false, errorCode: 'unsafeArchive' })
+    })
+    const { user } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This archive cannot be extracted safely.')
+    expect(screen.queryByRole('button', { name: 'Which formats?' })).not.toBeInTheDocument()
+  })
+
+  it.each(['notes.txt', 'unsupported.zip'])('keeps the current archive and folder when %s is rejected', async (fileName) => {
+    installElectronApi({
+      selectFiles: vi.fn().mockResolvedValue(['valid.zip']),
+      inspectArchive: vi.fn()
+        .mockResolvedValueOnce(inspection([
+          { path: 'folder/', name: 'folder', isDirectory: true, size: 0 },
+          { path: 'folder/inside.txt', name: 'inside.txt', isDirectory: false, size: 12 }
+        ]))
+        .mockResolvedValueOnce({ success: false, errorCode: 'unsupportedArchive' })
+    })
+    const { user, container } = renderWithI18n(<ArchiveInspector />)
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
+    await user.click(await screen.findByRole('button', { name: /folder/ }))
+    const contentBefore = container.querySelector('.archive-inspector__content')!.innerHTML
+    const headerBefore = container.querySelector('.archive-inspector__header')!.innerHTML
+
+    fireEvent.drop(container.firstElementChild!, {
+      dataTransfer: { files: [new File(['file'], fileName)] }
+    })
+    await screen.findByRole('alertdialog')
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    expect(container.querySelector('.archive-inspector__content')!.innerHTML).toBe(contentBefore)
+    expect(container.querySelector('.archive-inspector__header')!.innerHTML).toBe(headerBefore)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('opens an archive, displays unknown metadata, and navigates folders', async () => {

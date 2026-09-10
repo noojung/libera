@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CompressionPanel } from './CompressionPanel'
 import { renderWithI18n } from '@/test/render'
@@ -934,19 +934,5 @@ describe('CompressionPanel', () => {
         { sourcePath: '/source/archive.bin', scope: 'file', method: 'copy' }
       ]
     }))
-  })
-
-  // The table carries a compress column, so it answers what can be created
-  // here as much as what can be opened on the other side.
-  it('opens the supported formats table from the format picker', async () => {
-    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
-    const { user } = renderWithI18n(<CompressionPanel items={[item]} onStartCompress={vi.fn()} />)
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
-
-    const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('7Z')).toBeInTheDocument()
-    expect(within(dialog).getByText('TAR.XZ')).toBeInTheDocument()
   })
 })
