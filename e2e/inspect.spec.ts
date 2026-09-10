@@ -30,7 +30,7 @@ test('lists a JAR under its own format and previews an entry', async ({ app, pag
 
   await stubDialogs(app, { filePaths: [archivePath] })
   await page.locator('.titlebar__tab--inspect').click()
-  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
 
   await expect(page.locator('.archive-inspector__stat-value--accent')).toHaveText('JAR')
   await expect(page.locator('.archive-inspector__entry')).toHaveCount(2)
@@ -54,7 +54,7 @@ test('keeps the preview header whole when the window is narrow', async ({ app, p
 
   await stubDialogs(app, { filePaths: [archivePath] })
   await page.locator('.titlebar__tab--inspect').click()
-  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
   await page.locator('.archive-inspector__entry', { hasText: 'notes.txt' }).click()
 
   await expect(page.locator('.archive-preview__footer')).toContainText('CRLF')
@@ -83,7 +83,7 @@ test('lists a WAR under its own format', async ({ app, page, workDir }) => {
 
   await stubDialogs(app, { filePaths: [archivePath] })
   await page.locator('.titlebar__tab--inspect').click()
-  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
 
   await expect(page.locator('.archive-inspector__stat-value--accent')).toHaveText('WAR')
   await expect(page.locator('.archive-inspector__entry')).toHaveCount(2)
@@ -131,7 +131,7 @@ test('previews a file inside an encrypted ZIP after asking for the password', as
   // The listing needs no password; only the entry's content does.
   await page.getByRole('button', { name: 'Inspect' }).click()
   await stubDialogs(app, { filePaths: [archivePath] })
-  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
   // The archive wraps the folder that was compressed, so step into it first.
   await page.getByText('source', { exact: true }).click()
   await page.getByText('secret.txt').click()

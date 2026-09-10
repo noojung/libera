@@ -21,7 +21,9 @@ function listing(name: string) {
   }
 }
 
-const openArchive = () => fireEvent.click(screen.getByRole('button', { name: 'Open file...' }))
+const openArchive = (name: string) => fireEvent.drop(document.querySelector('.archive-inspector')!, {
+  dataTransfer: { files: [new File(['archive'], name)] }
+})
 
 // A large archive can take long enough to read that opening a second one
 // answers first. Whichever archive was asked for last is the one on screen, so
@@ -33,16 +35,13 @@ describe('ArchiveInspector inspection races', () => {
       .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
       .mockResolvedValueOnce(listing('new'))
     installElectronApi({
-      selectFiles: vi.fn()
-        .mockResolvedValueOnce(['old.zip'])
-        .mockResolvedValueOnce(['new.zip']),
       inspectArchive
     })
     renderWithI18n(<ArchiveInspector />)
 
-    openArchive()
+    openArchive('old.zip')
     await waitFor(() => expect(inspectArchive).toHaveBeenCalledTimes(1))
-    openArchive()
+    openArchive('new.zip')
     await screen.findByText('new.txt')
 
     await act(async () => { finishFirst(listing('old')) })
@@ -57,16 +56,13 @@ describe('ArchiveInspector inspection races', () => {
       .mockImplementationOnce(() => new Promise((_, reject) => { failFirst = reject }))
       .mockResolvedValueOnce(listing('new'))
     installElectronApi({
-      selectFiles: vi.fn()
-        .mockResolvedValueOnce(['old.zip'])
-        .mockResolvedValueOnce(['new.zip']),
       inspectArchive
     })
     renderWithI18n(<ArchiveInspector />)
 
-    openArchive()
+    openArchive('old.zip')
     await waitFor(() => expect(inspectArchive).toHaveBeenCalledTimes(1))
-    openArchive()
+    openArchive('new.zip')
     await screen.findByText('new.txt')
 
     await act(async () => { failFirst(new Error('read failed')) })
@@ -81,16 +77,13 @@ describe('ArchiveInspector inspection races', () => {
       .mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
       .mockImplementationOnce(() => new Promise(resolve => { finishSecond = resolve }))
     installElectronApi({
-      selectFiles: vi.fn()
-        .mockResolvedValueOnce(['old.zip'])
-        .mockResolvedValueOnce(['new.zip']),
       inspectArchive
     })
     renderWithI18n(<ArchiveInspector />)
 
-    openArchive()
+    openArchive('old.zip')
     await waitFor(() => expect(inspectArchive).toHaveBeenCalledTimes(1))
-    openArchive()
+    openArchive('new.zip')
     await waitFor(() => expect(inspectArchive).toHaveBeenCalledTimes(2))
 
     // The first answering must not clear the wait the second one is still in.

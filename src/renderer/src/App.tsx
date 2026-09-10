@@ -507,6 +507,7 @@ export const App: React.FC = () => {
               onClearItems={handleClearExtractItems}
               onSelectFilesDialog={handleSelectExtractFilesDialog}
               allowFolders={false}
+              showSupportedFormats
               acceptedFileExtensions={[...SUPPORTED_ARCHIVE_EXTENSIONS]}
               acceptedFilePatterns={[NUMBERED_VOLUME_SUFFIX, SEVEN_ZIP_VOLUME_SUFFIX]}
               validationError={extractInputErrorKey ? t(extractInputErrorKey) : null}

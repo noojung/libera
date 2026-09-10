@@ -48,6 +48,6 @@ test('previews as many solid blocks as the written archive reports', async ({ ap
 
   await stubDialogs(app, { filePaths: [archivePath] })
   await page.locator('.titlebar__tab--inspect').click()
-  await page.getByRole('button', { name: 'Open file...' }).click()
+  await page.getByRole('button', { name: 'Browse files' }).click()
   await expect(page.locator('.archive-inspector__solid-panel-title').locator('..')).toContainText('1 block')
 })

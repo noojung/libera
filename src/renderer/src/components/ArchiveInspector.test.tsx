@@ -34,6 +34,7 @@ describe('ArchiveInspector', () => {
     const api = installElectronApi()
     const { user } = renderWithI18n(<ArchiveInspector />)
 
+    expect(screen.queryByRole('button', { name: 'Open file...' })).not.toBeInTheDocument()
     expect(screen.getByText('Drop archive files here! 🐾')).toBeInTheDocument()
     expect(screen.getByText(/Archive files only/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Select an archive' })
@@ -45,9 +46,7 @@ describe('ArchiveInspector', () => {
     }))
   })
 
-  // It sits in the title row rather than the empty state, so it is there
-  // whether or not an archive has been opened.
-  it('offers the supported formats table from its header', async () => {
+  it('offers the supported formats table below the file picker', async () => {
     installElectronApi()
     const { user } = renderWithI18n(<ArchiveInspector />)
 
@@ -67,7 +66,7 @@ describe('ArchiveInspector', () => {
       ]))
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     await screen.findByText('root.txt')
     expect(screen.getAllByText('Unknown')).toHaveLength(2)
@@ -92,7 +91,7 @@ describe('ArchiveInspector', () => {
       inspectArchive: vi.fn().mockResolvedValue(inspection(entries))
     })
     renderWithI18n(<ArchiveInspector />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open file...' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Browse files' }))
     await screen.findByText('file-499.txt')
     expect(screen.queryByText('file-500.txt')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Load 1 more' }))
@@ -110,7 +109,7 @@ describe('ArchiveInspector', () => {
       }))
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     expect(await screen.findByText('986 B')).toBeInTheDocument()
     expect(screen.getByText('1.4% saved')).toBeInTheDocument()
@@ -128,7 +127,7 @@ describe('ArchiveInspector', () => {
       ], { format: '7Z' }))
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     // Badges in the file table for solid-compressed files
     const badges = await screen.findAllByRole('button', { name: 'View details for block 1' })
@@ -160,9 +159,11 @@ describe('ArchiveInspector', () => {
     expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByLabelText('Block 1')).not.toBeInTheDocument()
 
-    // Reopening an archive resets the panel, expanded blocks, and highlighted block.
+    // Dropping another archive resets the panel, expanded blocks, and highlighted block.
     await user.click(toggleButton)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    fireEvent.drop(document.querySelector('.archive-inspector')!, {
+      dataTransfer: { files: [new File(['archive'], 'solid.7z')] }
+    })
     await screen.findAllByRole('button', { name: 'View details for block 1' })
     const reopenedToggle = screen.getByRole('button', { name: /Solid Compression Blocks/i })
     expect(reopenedToggle).toHaveAttribute('aria-expanded', 'false')
@@ -185,7 +186,7 @@ describe('ArchiveInspector', () => {
       ]))
     })
     renderWithI18n(<ArchiveInspector />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open file...' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Browse files' }))
     await screen.findByText('folder')
     fireEvent.click(screen.getByRole('button', { name: /folder/ }))
     fireEvent.change(screen.getByPlaceholderText(/Search this folder/), { target: { value: 'match' } })
@@ -202,7 +203,7 @@ describe('ArchiveInspector', () => {
       inspectArchive: vi.fn().mockReturnValue(pending)
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     expect(screen.getByText(/Analyzing archive headers/)).toBeInTheDocument()
 
     resolveInspection({ success: false, errorCode: 'unsafeArchive' })
@@ -232,7 +233,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry: vi.fn().mockReturnValue(pendingPreview)
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
 
     expect(screen.getByRole('dialog', { name: 'File preview' })).toBeInTheDocument()
@@ -268,7 +269,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'notText' })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /binary\.bin/ }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This file format is not supported for preview.')
@@ -289,7 +290,7 @@ describe('ArchiveInspector', () => {
       }))
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     const showVolumes = await screen.findByRole('button', { name: 'Show split archive volumes' })
     expect(showVolumes).toHaveTextContent('Split archive · 3 volumes')
@@ -328,7 +329,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'notText' })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     expect(await screen.findByText('/archives/archive.7z.001')).toBeInTheDocument()
     expect(screen.queryByText('/archives/archive.7z.003')).not.toBeInTheDocument()
@@ -350,7 +351,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'splitVolumeMissing' })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -378,7 +379,7 @@ describe('ArchiveInspector', () => {
       })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /photo\.png/ }))
 
     const image = await screen.findByRole('img', { name: 'Preview of photo.png' })
@@ -411,7 +412,7 @@ describe('ArchiveInspector', () => {
       })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /broken\.png/ }))
     fireEvent.error(await screen.findByRole('img'))
 
@@ -430,7 +431,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByRole('button', { name: /notes\.txt/ }))
     const requestId = previewArchiveEntry.mock.calls[0][2]
     await user.click(screen.getByRole('button', { name: 'Close file preview' }))
@@ -456,7 +457,7 @@ describe('ArchiveInspector', () => {
       inspectArchive
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     expect(await screen.findByText('Password-protected archive')).toBeInTheDocument()
 
@@ -492,7 +493,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
     await user.click(await screen.findByText('secret.txt'))
 
     expect(await screen.findByText('Password-protected archive')).toBeInTheDocument()
@@ -524,7 +525,7 @@ describe('ArchiveInspector', () => {
       previewArchiveEntry
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     await user.click(await screen.findByText('one.txt'))
     await user.type(await screen.findByPlaceholderText('Enter password'), 'hunter2')
@@ -584,7 +585,7 @@ describe('ArchiveInspector', () => {
       })
     })
     const { user } = renderWithI18n(<ArchiveInspector />)
-    await user.click(screen.getByRole('button', { name: 'Open file...' }))
+    await user.click(screen.getByRole('button', { name: 'Browse files' }))
 
     expect(await screen.findByText('50 4B 03 04 (ZIP)')).toBeInTheDocument()
     expect(screen.getByText('0x4D170E0E')).toBeInTheDocument()

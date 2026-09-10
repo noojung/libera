@@ -1,5 +1,5 @@
 import React from 'react'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExtractionPanel } from './ExtractionPanel'
 import { renderWithI18n } from '@/test/render'
@@ -64,15 +64,4 @@ describe('ExtractionPanel', () => {
     }))
   })
 
-  // The drop zone it used to live in is replaced by the file list, so the
-  // header is what keeps it reachable.
-  it('opens the supported formats table from its header', async () => {
-    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
-    const { user } = renderWithI18n(<ExtractionPanel items={[archive]} onStartBatchExtract={vi.fn()} />)
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
-
-    expect(within(screen.getByRole('dialog')).getByText('TAR.BZ2')).toBeInTheDocument()
-  })
 })

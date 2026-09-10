@@ -13,6 +13,28 @@ const callbacks = () => ({
 })
 
 describe('DropZone', () => {
+  it('opens format help without opening the file picker, before and after adding files', async () => {
+    const props = callbacks()
+    const { user, rerender } = renderWithI18n(
+      <DropZone items={[]} {...props} allowFolders={false} showSupportedFormats />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(props.onSelectFilesDialog).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    rerender(<DropZone
+      items={[{ path: '/archive.zip', name: 'archive.zip', size: 1024, isDirectory: false }]}
+      {...props}
+      allowFolders={false}
+      showSupportedFormats
+    />)
+    await user.click(screen.getByRole('button', { name: 'Which formats?' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(props.onSelectFilesDialog).not.toHaveBeenCalled()
+  })
+
   it('opens file and folder dialogs from their controls', async () => {
     installElectronApi()
     const props = callbacks()

@@ -7,7 +7,6 @@ import type { AppLanguage } from '@/i18n/language'
 import { useExpertMode } from '@/utils/expertMode'
 import type { FilenameEncoding, OverwritePolicy } from '@services/extractor'
 import { Select } from './Select'
-import { SupportedFormatsModal } from './SupportedFormatsModal'
 import './ExtractionPanel.css'
 
 export interface StartBatchExtractOptions {
@@ -35,7 +34,6 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
   const canRestoreSymlinks = (window as any).electronAPI?.platform !== 'windows'
 
   const [targetDir, setTargetDir] = useState<string>('')
-  const [showFormats, setShowFormats] = useState(false)
   const [createSubfolder, setCreateSubfolder] = useState<boolean>(true)
 
   // Expert options state
@@ -92,18 +90,9 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
           <FolderOutput className="extraction-panel__title-icon" size={18} />
           {t('extraction.title')}
         </h3>
-        <div className="extraction-panel__header-side">
-          <span className="extraction-panel__summary">
-            {t('extraction.selected', { count: items.length, size: formatBytes(totalBytes, language) })}
-          </span>
-          <button
-            type="button"
-            className="extraction-panel__formats-link"
-            onClick={() => setShowFormats(true)}
-          >
-            {t('supportedFormats.link')}
-          </button>
-        </div>
+        <span className="extraction-panel__summary">
+          {t('extraction.selected', { count: items.length, size: formatBytes(totalBytes, language) })}
+        </span>
       </div>
 
       {/* Target Directory Selector */}
@@ -276,8 +265,6 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
         <Download size={20} />
         {t('extraction.start')}
       </button>
-
-      {showFormats && <SupportedFormatsModal onClose={() => setShowFormats(false)} />}
     </div>
   )
 }

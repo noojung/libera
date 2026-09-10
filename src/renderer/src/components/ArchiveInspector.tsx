@@ -433,13 +433,6 @@ export const ArchiveInspector: React.FC = () => {
               <h3 className="archive-inspector__title">
                 {t('inspector.title')}
               </h3>
-              <button
-                type="button"
-                className="archive-inspector__formats-link"
-                onClick={() => setShowFormats(true)}
-              >
-                {t('supportedFormats.link')}
-              </button>
               {splitVolumes && (
                 <button
                   type="button"
@@ -460,7 +453,6 @@ export const ArchiveInspector: React.FC = () => {
             </p>
           </div>
         </div>
-        <button className="btn-secondary" onClick={handleOpenArchive}>{t('inspector.openFile')}</button>
       </div>
 
       {loading ? (
@@ -717,6 +709,13 @@ export const ArchiveInspector: React.FC = () => {
           <button type="button" className="btn-secondary" onClick={handleOpenArchive}>
             <FilePlus size={16} aria-hidden="true" />
             {t('dropZone.browseFiles')}
+          </button>
+          <button
+            type="button"
+            className="archive-inspector__formats-link"
+            onClick={() => setShowFormats(true)}
+          >
+            {t('supportedFormats.link')}
           </button>
         </div>
       )}
