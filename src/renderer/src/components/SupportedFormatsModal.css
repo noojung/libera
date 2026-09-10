@@ -1,4 +1,6 @@
 .supported-formats {
+  /* Deepen the light-theme green so the small check stays distinct on its tint. */
+  --supported-formats-check: color-mix(in srgb, var(--status-success) 75%, var(--text-main));
   position: fixed;
   z-index: 2000;
   inset: 0;
@@ -7,6 +9,10 @@
   align-items: center;
   justify-content: center;
   background: var(--modal-backdrop);
+}
+
+:root[data-theme="dark"] .supported-formats {
+  --supported-formats-check: var(--status-success);
 }
 
 .supported-formats__dialog {
@@ -143,8 +149,8 @@
 
 .supported-formats__ability.is-able {
   background: var(--status-success-soft);
-  color: var(--status-success);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-success) 35%, transparent);
+  color: var(--supported-formats-check);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--supported-formats-check) 35%, transparent);
 }
 
 .supported-formats__note {
