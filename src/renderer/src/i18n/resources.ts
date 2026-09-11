@@ -352,7 +352,8 @@ export const resources = {
         compressed: 'Compressed: {{size}}',
         saved: '{{ratio}}% saved!',
         volumes_one: 'Split into {{count}} file',
-        volumes_other: 'Split into {{count}} files'
+        volumes_other: 'Split into {{count}} files',
+        symbolicLinksExcluded: '{{count}} symbolic link(s) excluded'
       },
       errors: {
         genericCompression: 'Compression failed.',
@@ -763,7 +764,8 @@ export const resources = {
         original: '원본: {{size}}',
         compressed: '압축 후: {{size}}',
         saved: '{{ratio}}% 절감!',
-        volumes: '{{count}}개 파일로 분할'
+        volumes: '{{count}}개 파일로 분할',
+        symbolicLinksExcluded: '심볼릭 링크 {{count}}개가 제외됨'
       },
       errors: {
         genericCompression: '압축에 실패했습니다.',

@@ -239,7 +239,7 @@ describe('extractArchive security checks', () => {
     await expect(fs.access(path.join(outsideDir, 'escape.txt'))).rejects.toThrow()
   })
 
-  it.skipIf(process.platform === 'win32')('rejects TAR symbolic link entries before extraction', async () => {
+  it.skipIf(process.platform === 'win32')('restores TAR symbolic link entries by default', async () => {
     const directory = await createTemporaryDirectory()
     const sourceDir = path.join(directory, 'source')
     const archivePath = path.join(directory, 'archive.tar')
@@ -249,7 +249,9 @@ describe('extractArchive security checks', () => {
     await fs.symlink('file.txt', path.join(sourceDir, 'link.txt'))
     await tar.c({ cwd: sourceDir, file: archivePath }, ['link.txt'])
 
-    await expect(extractArchive({ archivePath, targetDir })).rejects.toThrow('symbolic and hard link entries are not supported')
+    const result = await extractArchive({ archivePath, targetDir })
+    expect(result.symbolicLinksExcluded).toBe(0)
+    expect((await fs.lstat(path.join(targetDir, 'link.txt'))).isSymbolicLink()).toBe(true)
   })
 
   it.skipIf(process.platform === 'win32')('recreates a ZIP symlink entry whose target stays inside the destination', async () => {
@@ -624,7 +626,7 @@ describe('Windows extraction behaviour', () => {
     vi.resetModules()
   })
 
-  it('rejects ZIP symlink entries, which Windows cannot create without a privilege', async () => {
+  it('excludes ZIP symlink entries by default on Windows', async () => {
     const directory = await createTemporaryDirectory()
     const archivePath = path.join(directory, 'archive.zip')
     const targetDir = path.join(directory, 'output')
@@ -635,8 +637,9 @@ describe('Windows extraction behaviour', () => {
 
     const { extractArchive: extractOnWindows } = await importExtractorAsWindows()
 
-    await expect(extractOnWindows({ archivePath, targetDir }))
-      .rejects.toThrow('symbolic and hard link entries are not supported')
+    const result = await extractOnWindows({ archivePath, targetDir })
+    expect(result.symbolicLinksExcluded).toBe(1)
+    await expect(fs.lstat(path.join(targetDir, 'link.txt'))).rejects.toThrow()
   })
 
   it('leaves unix modes unapplied, so a read-only entry stays deletable for rollback', async () => {

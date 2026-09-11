@@ -47,7 +47,6 @@ describe('ExtractionPanel', () => {
     await user.click(screen.getByRole('combobox', { name: 'File overwrite rule' }))
     await user.click(screen.getByRole('option', { name: 'Skip existing files' }))
     await user.click(screen.getByRole('checkbox', { name: /Restore Unix file permissions/ }))
-    await user.click(screen.getByRole('checkbox', { name: /Restore symbolic links/ }))
     await user.click(screen.getByRole('checkbox', { name: /Filter out macOS metadata/ }))
     await user.type(screen.getByPlaceholderText(/\*\.txt/), '*.txt, !secret*')
     await user.click(screen.getByRole('button', { name: /Start extraction/ }))

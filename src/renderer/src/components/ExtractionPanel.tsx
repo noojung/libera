@@ -31,7 +31,8 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
   const { t, i18n } = useTranslation()
   const language: AppLanguage = i18n.resolvedLanguage === 'ko' ? 'ko' : 'en'
   const [isExpertMode] = useExpertMode()
-  const canRestoreSymlinks = (window as any).electronAPI?.platform !== 'windows'
+  const platform = (window as any).electronAPI?.platform
+  const [canRestoreSymlinks, setCanRestoreSymlinks] = useState<boolean>(platform !== 'windows')
 
   const [targetDir, setTargetDir] = useState<string>('')
   const [createSubfolder, setCreateSubfolder] = useState<boolean>(true)
@@ -41,7 +42,7 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
   const [overwritePolicy, setOverwritePolicy] = useState<OverwritePolicy>('overwrite')
   const [restoreTimestamps, setRestoreTimestamps] = useState<boolean>(true)
   const [restorePermissions, setRestorePermissions] = useState<boolean>(true)
-  const [restoreSymlinks, setRestoreSymlinks] = useState<boolean>(false)
+  const [restoreSymlinks, setRestoreSymlinks] = useState<boolean>(platform !== 'windows')
   const [excludeMacMetadata, setExcludeMacMetadata] = useState<boolean>(false)
   const [strictCrc, setStrictCrc] = useState<boolean>(true)
   const [filterPattern, setFilterPattern] = useState<string>('')
@@ -53,6 +54,13 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
       })
     }
   }, [])
+
+  useEffect(() => {
+    const probe = (window as any).electronAPI?.canRestoreSymlinks
+    if (platform === 'windows' && probe) {
+      void probe().then((allowed: boolean) => setCanRestoreSymlinks(allowed))
+    }
+  }, [platform])
 
   const handleSelectFolder = async () => {
     if (!(window as any).electronAPI) return
@@ -216,7 +224,10 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
                 disabled={!canRestoreSymlinks}
                 onChange={(e) => setRestoreSymlinks(e.target.checked)}
               />
-              <span>{t('extraction.restoreSymlinks')}</span>
+              <span>
+                {t('extraction.restoreSymlinks')}
+                {platform === 'windows' && !canRestoreSymlinks && ` (${t('extraction.restoreSymlinksUnavailable')})`}
+              </span>
             </label>
 
             <label className="extraction-panel__checkbox-row">

@@ -421,7 +421,8 @@ export const App: React.FC = () => {
                   status: 'completed',
                   percent: 100,
                   phase: 'complete',
-                  durationMs: res.result.durationMs
+                  durationMs: res.result.durationMs,
+                  symbolicLinksExcluded: res.result.symbolicLinksExcluded
                 }
               } else {
                 return {

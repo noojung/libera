@@ -20,6 +20,7 @@ export function createElectronApiMock(overrides: Partial<ElectronAPI> = {}) {
     openFolder: vi.fn().mockResolvedValue(undefined),
     openExternalLink: vi.fn().mockResolvedValue(undefined),
     getDefaultOutputDir: vi.fn().mockResolvedValue(''),
+    canRestoreSymlinks: vi.fn().mockResolvedValue(false),
     getItemStat: vi.fn().mockResolvedValue([]),
     listArchiveInputChildren: vi.fn().mockResolvedValue([]),
     planSevenZipSolidBlocks: vi.fn().mockResolvedValue([]),

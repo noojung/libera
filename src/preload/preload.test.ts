@@ -82,6 +82,7 @@ const FORWARDS: [keyof ElectronAPI, unknown[], string, unknown[]][] = [
   ['openFolder', ['/tmp/out'], 'shell:openFolder', ['/tmp/out']],
   ['openExternalLink', ['https://example.com'], 'shell:openExternal', ['https://example.com']],
   ['getDefaultOutputDir', [], 'system:getDefaultOutputDir', []],
+  ['canRestoreSymlinks', [], 'system:canRestoreSymlinks', []],
   ['getItemStat', [['/a', '/b']], 'system:getItemStat', [['/a', '/b']]],
   ['listArchiveInputChildren', ['/dir'], 'system:listArchiveInputChildren', ['/dir']],
   ['planSevenZipSolidBlocks', [{ inputPaths: ['/a'] }], 'archive:planSevenZipSolidBlocks', [{ inputPaths: ['/a'] }]],

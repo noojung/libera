@@ -16,6 +16,7 @@ import {
   isWrongZipPasswordError,
   WRONG_ZIP_PASSWORD_ERROR_CODE
 } from '../services/extractor'
+import { canCreateSymbolicLinks } from '../services/extractionSafety'
 import { inspectArchive } from '../services/archiveInspector'
 import { SplitVolumeError } from '../services/zip/volumes'
 import {
@@ -480,6 +481,8 @@ ipcMain.handle('system:getDefaultOutputDir', async () => {
     return app.getPath('userData')
   }
 })
+
+ipcMain.handle('system:canRestoreSymlinks', async () => canCreateSymbolicLinks())
 
 ipcMain.handle('system:getItemStat', async (_, itemPaths: string[]) => {
   return Promise.all(itemPaths.map(async p => {

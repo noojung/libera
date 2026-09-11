@@ -179,6 +179,11 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ jobs, onOpenFolder, 
                   )}
                 </div>
               )}
+              {job.status === 'completed' && (job.symbolicLinksExcluded ?? 0) > 0 && (
+                <div role="status" className="queue-manager__warning">
+                  {t('queue.symbolicLinksExcluded', { count: job.symbolicLinksExcluded })}
+                </div>
+              )}
             </div>
           ))
         )}

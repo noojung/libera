@@ -95,6 +95,11 @@ async function extractWithJavaScript(
   const needsDerivedSelection = Boolean(
     requestedPaths || options.filterPattern || options.excludeMacMetadata || options.restoreSymlinks === false
   )
+  const linkCandidates = archive.entries.filter(entry =>
+    entry.isSymlink && matchesSelectedEntry(entry.path, requestedPaths) && filter(entry.path) &&
+    (!options.excludeMacMetadata || !isMacMetadataPath(entry.path))
+  )
+  const symbolicLinksExcluded = options.restoreSymlinks === false ? linkCandidates.length : 0
   const selectedPaths = needsDerivedSelection
     ? new Set(archive.entries
       .filter(entry => matchesSelectedEntry(entry.path, requestedPaths))
@@ -213,7 +218,7 @@ async function extractWithJavaScript(
   }
   meter.complete()
   await propagateQuarantine(archivePath, targetRoot, topLevelNames)
-  return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime }
+  return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime, symbolicLinksExcluded }
 }
 
 export const extractSevenZipArchive: FormatExtractor = async request => {

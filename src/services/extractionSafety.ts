@@ -1,6 +1,7 @@
 import fs, { promises as fsPromises } from 'fs'
 import type { FileHandle } from 'fs/promises'
 import path from 'path'
+import os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { ProgressCallback } from './compressor'
@@ -31,6 +32,7 @@ export interface ExtractionResult {
   targetDir: string
   extractedCount: number
   durationMs: number
+  symbolicLinksExcluded: number
 }
 
 /**
@@ -685,6 +687,27 @@ export async function propagateQuarantine(
 // supported" message instead of failing part way through with a privilege
 // error that the user cannot act on.
 export const restoresSymbolicLinks = process.platform !== 'win32'
+
+/**
+ * Windows permits symbolic links for elevated processes and for Developer
+ * Mode processes. A real, disposable symlink probe is more reliable than
+ * trying to infer either setting from registry or token details.
+ */
+export async function canCreateSymbolicLinks(): Promise<boolean> {
+  if (process.platform !== 'win32') return true
+  const directory = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'libera-symlink-probe-'))
+  const target = path.join(directory, 'target')
+  const link = path.join(directory, 'link')
+  try {
+    await fsPromises.writeFile(target, '')
+    await fsPromises.symlink('target', link)
+    return true
+  } catch {
+    return false
+  } finally {
+    await fsPromises.rm(directory, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
 
 // Windows collapses a whole unix mode onto a single read-only flag, so
 // restoring one buys nothing and costs a lot: an entry recorded as 0o444 would

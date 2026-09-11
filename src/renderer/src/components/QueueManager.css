@@ -58,6 +58,11 @@
   gap: 12px;
 }
 
+.queue-manager__warning {
+  color: var(--status-warning);
+  font-size: 13px;
+}
+
 .glass-panel.queue-manager__job--completed {
   border-left: 6px solid var(--status-success);
 }

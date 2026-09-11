@@ -41,6 +41,7 @@ export interface ElectronAPI {
   openFolder: (targetPath: string) => Promise<void>
   openExternalLink: (url: string) => Promise<void>
   getDefaultOutputDir: () => Promise<string>
+  canRestoreSymlinks: () => Promise<boolean>
   getItemStat: (itemPaths: string[]) => Promise<{ path: string; name: string; isDirectory: boolean; size: number }[]>
   listArchiveInputChildren: (directoryPath: string) => Promise<ArchiveInputTreeEntry[]>
   planSevenZipSolidBlocks: (options: SevenZipPlanOptions) => Promise<SevenZipSolidBlock[]>
@@ -66,6 +67,7 @@ const api: ElectronAPI = {
   openFolder: (targetPath) => ipcRenderer.invoke('shell:openFolder', targetPath),
   openExternalLink: (url) => ipcRenderer.invoke('shell:openExternal', url),
   getDefaultOutputDir: () => ipcRenderer.invoke('system:getDefaultOutputDir'),
+  canRestoreSymlinks: () => ipcRenderer.invoke('system:canRestoreSymlinks'),
   getItemStat: (itemPaths) => ipcRenderer.invoke('system:getItemStat', itemPaths),
   listArchiveInputChildren: (directoryPath) => ipcRenderer.invoke('system:listArchiveInputChildren', directoryPath),
   planSevenZipSolidBlocks: (options) => ipcRenderer.invoke('archive:planSevenZipSolidBlocks', options),

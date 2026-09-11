@@ -52,6 +52,7 @@ import {
   propagateQuarantine,
   resolveOutputPath,
   restoresSymbolicLinks,
+  canCreateSymbolicLinks,
   restoresUnixMode,
   securityError,
   throwIfAborted,
@@ -252,6 +253,11 @@ const extractZipArchive: FormatExtractor = async ({
       selectedEntries,
       extractionOptions ?? { archivePath, targetDir: targetRoot }
     )
+    const symbolicLinksExcluded = extractionOptions?.restoreSymlinks === false
+      ? archiveEntries.filter(entry => entry.isLink && matchesSelectedEntry(entry.archivePath, requestedPaths) &&
+          createArchiveEntryFilter(extractionOptions.filterPattern)(entry.archivePath) &&
+          (!extractionOptions.excludeMacMetadata || !isMacMetadataPath(entry.archivePath))).length
+      : 0
     const plan = buildExtractionPlan(archiveEntries, targetRoot, selectedPaths, policy)
     if (plan.selectedTotalBytes > diskBudget) {
       throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space for extraction and the configured reserve')
@@ -316,7 +322,7 @@ const extractZipArchive: FormatExtractor = async ({
       plan.entries.filter(entry => entry.shouldExtract).map(entry => topLevelSegment(entry.archivePath))
     )
     await propagateQuarantine(archivePath, targetRoot, topLevelNames)
-    return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime }
+    return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime, symbolicLinksExcluded }
   } finally {
     await zip.close()
   }
@@ -377,6 +383,12 @@ const extractTarArchive: FormatExtractor = async ({
 }) => {
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   const archiveEntries = await listTarEntries(archivePath, policy, options, signal)
+  const requestedPaths = selectedEntries ? new Set(selectedEntries) : null
+  const symbolicLinksExcluded = options.restoreSymlinks === false
+    ? archiveEntries.filter(entry => entry.isLink && matchesSelectedEntry(entry.archivePath, requestedPaths) &&
+        createArchiveEntryFilter(options.filterPattern)(entry.archivePath) &&
+        (!options.excludeMacMetadata || !isMacMetadataPath(entry.archivePath))).length
+    : 0
   const selectedPaths = selectedPathSet(
     archiveEntries.map(entry => ({ path: entry.archivePath, isLink: entry.isLink })),
     selectedEntries,
@@ -450,7 +462,8 @@ const extractTarArchive: FormatExtractor = async ({
   return {
     targetDir: targetRoot,
     extractedCount: selectedPlan.filter(entry => !entry.isDirectory).length,
-    durationMs: Date.now() - startTime
+    durationMs: Date.now() - startTime,
+    symbolicLinksExcluded
   }
 }
 
@@ -470,14 +483,14 @@ const extractGzArchive: FormatExtractor = async ({
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   if (!createArchiveEntryFilter(options.filterPattern)(outputName) ||
       (options.excludeMacMetadata && isMacMetadataPath(outputName))) {
-    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime }
+    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime, symbolicLinksExcluded: 0 }
   }
   const plan = buildExtractionPlan([
     { archivePath: outputName, isDirectory: false, size: 0 }
   ], targetRoot, null, policy)
   await prepareSelectedDestinations(targetRoot, plan.entries, destinationPolicy(options), transaction)
   if (!plan.entries[0].shouldExtract) {
-    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime }
+    return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime, symbolicLinksExcluded: 0 }
   }
   await ensureSafeParentDirectories(targetRoot, outputPath, transaction)
 
@@ -514,7 +527,7 @@ const extractGzArchive: FormatExtractor = async ({
 
   meter.complete(outputName)
   await propagateQuarantine(archivePath, targetRoot, [outputName])
-  return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime }
+  return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime, symbolicLinksExcluded: 0 }
 }
 
 async function readGzipModificationTime(archivePath: string): Promise<Date | undefined> {
@@ -573,6 +586,13 @@ export async function extractArchive(
       throw extractionError('INSUFFICIENT_DISK_SPACE', 'Not enough disk space to preserve the configured reserve')
     }
 
+    const symlinksCapable = await canCreateSymbolicLinks()
+    // Unix restores links by default. Windows excludes them by default even
+    // when the OS says restoration is possible; the UI can opt in then.
+    const effectiveOptions = process.platform === 'win32'
+      ? { ...options, restoreSymlinks: options.restoreSymlinks === true && symlinksCapable }
+      : { ...options, restoreSymlinks: options.restoreSymlinks !== false }
+
     const handler = FORMAT_EXTRACTORS.find(candidate => candidate.claims(archivePath))
     if (!handler) {
       throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
@@ -588,7 +608,7 @@ export async function extractArchive(
       transaction,
       signal: context.signal,
       onProgress,
-      options
+      options: effectiveOptions
     })
     await transaction.commit()
     return result

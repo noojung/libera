@@ -27,6 +27,7 @@ export interface ActiveJob {
   errorDetail?: string
   startTime: number
   durationMs?: number
+  symbolicLinksExcluded?: number
   compressedSize?: number
   originalSize?: number
   volumeCount?: number
