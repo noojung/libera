@@ -6,9 +6,15 @@ import { extractArchive, isSupportedArchivePath } from './extractor'
 import { inspectArchive } from './archiveInspector'
 import { previewArchiveEntry } from './archivePreview'
 import { isTarArchivePath, tarCompressionFor } from './tarCompression'
-import { TAR_BINARY_ENTRY, TAR_BZ2, TAR_BZ2_BAD_CRC, TAR_XZ } from './tarCompression.testData'
+import { TAR_BINARY_ENTRY, TAR_BZ2, TAR_BZ2_BAD_CRC, TAR_XZ, TAR_ZST } from './tarCompression.testData'
 
-const FIXTURES = { '.tar.xz': TAR_XZ, '.tar.bz2': TAR_BZ2 } as const
+// One tarball, one row per codec wrapped around it, so every reader is held to
+// the same three entries and the same bytes.
+const FIXTURES = {
+  '.tar.xz': { bytes: TAR_XZ, format: 'TAR.XZ', summary: 'XZ / LZMA2 Stream', codec: 'XZ (LZMA2)' },
+  '.tar.bz2': { bytes: TAR_BZ2, format: 'TAR.BZ2', summary: 'BZip2 Stream', codec: 'BZip2' },
+  '.tar.zst': { bytes: TAR_ZST, format: 'TAR.ZST', summary: 'Zstandard Stream', codec: 'Zstandard' }
+} as const
 const BINARY_ENTRY = Buffer.from(TAR_BINARY_ENTRY, 'base64')
 
 async function withArchive<T>(
@@ -18,7 +24,7 @@ async function withArchive<T>(
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'libera-tar-'))
   try {
     const archivePath = path.join(directory, `sample${suffix}`)
-    await fs.writeFile(archivePath, Buffer.from(FIXTURES[suffix], 'base64'))
+    await fs.writeFile(archivePath, Buffer.from(FIXTURES[suffix].bytes, 'base64'))
     return await run(archivePath, directory)
   } finally {
     await fs.rm(directory, { recursive: true, force: true })
@@ -34,7 +40,7 @@ describe.each(suffixes)('reading a %s', suffix => {
   it('lists what the tarball holds', async () => {
     await withArchive(suffix, async archivePath => {
       const inspected = await inspectArchive(archivePath)
-      expect(inspected.format).toBe(suffix === '.tar.xz' ? 'TAR.XZ' : 'TAR.BZ2')
+      expect(inspected.format).toBe(FIXTURES[suffix].format)
       expect(inspected.entries.filter(entry => !entry.isDirectory).map(entry => entry.path).sort())
         .toEqual(['src/a.txt', 'src/b.bin', 'src/nested/c.txt'])
     })
@@ -43,10 +49,9 @@ describe.each(suffixes)('reading a %s', suffix => {
   it('names the codec wrapped around it', async () => {
     await withArchive(suffix, async archivePath => {
       const inspected = await inspectArchive(archivePath)
-      expect(inspected.headerInfo?.codecSummary)
-        .toBe(suffix === '.tar.xz' ? 'XZ / LZMA2 Stream' : 'BZip2 Stream')
+      expect(inspected.headerInfo?.codecSummary).toBe(FIXTURES[suffix].summary)
       expect(inspected.entries.find(entry => entry.path === 'src/a.txt')?.codec)
-        .toBe(suffix === '.tar.xz' ? 'XZ (LZMA2)' : 'BZip2')
+        .toBe(FIXTURES[suffix].codec)
     })
   }, 60_000)
 
@@ -108,6 +113,9 @@ describe('recognising the suffixes', () => {
     ['archive.tar.bz2', 'bzip2'],
     ['archive.tbz2', 'bzip2'],
     ['archive.tbz', 'bzip2'],
+    ['archive.tar.zst', 'zstd'],
+    ['archive.tzst', 'zstd'],
+    ['ARCHIVE.TAR.ZST', 'zstd'],
     ['archive.tar', 'none'],
     ['archive.tar.gz', 'none'],
     ['archive.zip', 'none']
@@ -115,17 +123,18 @@ describe('recognising the suffixes', () => {
     expect(tarCompressionFor(name)).toBe(expected)
   })
 
-  it.each(['a.tar.xz', 'a.txz', 'a.tar.bz2', 'a.tbz2', 'a.tbz', 'a.tar', 'a.tgz', 'a.tar.gz'])(
-    'takes %s for a tarball',
-    name => { expect(isTarArchivePath(name)).toBe(true) }
+  it.each([
+    'a.tar.xz', 'a.txz', 'a.tar.bz2', 'a.tbz2', 'a.tbz',
+    'a.tar.zst', 'a.tzst', 'a.tar', 'a.tgz', 'a.tar.gz'
+  ])('takes %s for a tarball', name => { expect(isTarArchivePath(name)).toBe(true) })
+
+  it.each(['a.zip', 'a.7z', 'a.gz', 'a.xz', 'a.bz2', 'a.zst'])(
+    'does not take %s for a tarball',
+    name => { expect(isTarArchivePath(name)).toBe(false) }
   )
 
-  it.each(['a.zip', 'a.7z', 'a.gz', 'a.xz', 'a.bz2'])('does not take %s for a tarball', name => {
-    expect(isTarArchivePath(name)).toBe(false)
-  })
-
   it('offers the new suffixes to the open dialog', () => {
-    for (const name of ['a.tar.xz', 'a.txz', 'a.tar.bz2', 'a.tbz2', 'a.tbz']) {
+    for (const name of ['a.tar.xz', 'a.txz', 'a.tar.bz2', 'a.tbz2', 'a.tbz', 'a.tar.zst', 'a.tzst']) {
       expect(isSupportedArchivePath(name)).toBe(true)
     }
   })

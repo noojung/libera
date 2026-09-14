@@ -35,8 +35,15 @@ describe('renderer archive path helper', () => {
       '/tmp/archive.tar.gz',
       '/tmp/archive.tgz',
       '/tmp/archive.gz',
+      '/tmp/archive.xz',
+      '/tmp/archive.bz2',
+      '/tmp/archive.zst',
+      '/tmp/archive.tar.zst',
+      '/tmp/archive.tzst',
+      '/tmp/ARCHIVE.ZST',
       '/tmp/archive.7z',
       '/tmp/archive.rar',
+      '/tmp/archive.lz4',
       '/tmp/archive.z1',
       '/tmp/archive.zzz',
       '/tmp/notes.txt',
@@ -74,7 +81,7 @@ describe('renderer archive path helper', () => {
 // rules: CompressionPanel needs them and cannot import compressor.ts.
 describe('renderer compression format helper', () => {
   it('offers exactly the formats compressArchive accepts', () => {
-    const serviceFormats: ArchiveFormat[] = ['zip', 'tar', 'gz', 'tgz', '7z']
+    const serviceFormats: ArchiveFormat[] = ['zip', 'tar', 'gz', 'tgz', 'zst', 'tzst', '7z']
     expect([...renderer.COMPRESSION_FORMATS]).toEqual(serviceFormats)
   })
 

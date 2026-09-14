@@ -8,7 +8,15 @@ import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './ar
 import type { ArchiveVolumeInfo } from './archiveInputResolver'
 import { listSevenZipEntries } from './sevenZip/list'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZip/volumes'
-import { isTarArchivePath, tarCompressionFor, tarReadStages } from './tarCompression'
+import { isGzipTarPath, isTarArchivePath, tarCompressionFor, tarReadStages } from './tarCompression'
+import {
+  CODEC_DESCRIPTIONS,
+  SINGLE_FILE_FORMAT_LABELS,
+  streamCodecFor,
+  streamEntryName,
+  type CodecDescription,
+  type StreamCodec
+} from './codecStreams'
 
 export interface ArchiveEntry {
   id: string
@@ -167,19 +175,29 @@ async function readZipHeaderInfo(
 }
 
 /** The tar shapes the inspector names, one per codec wrapped around it. */
-type TarInspectionFormat = 'TAR' | 'TAR.GZ' | 'TAR.XZ' | 'TAR.BZ2'
+type TarInspectionFormat = 'TAR' | 'TAR.GZ' | 'TAR.XZ' | 'TAR.BZ2' | 'TAR.ZST'
 
-/** How each shape describes the codec around the tarball, if any. */
-const TAR_CODECS: Record<TarInspectionFormat, {
-  entry: string
-  summary: string
-  signature: string
-  version: string
-}> = {
-  TAR: { entry: 'None (Store)', summary: 'POSIX Tarball', signature: '', version: '' },
-  'TAR.GZ': { entry: 'Gzip (Deflate)', summary: 'Gzip / Deflate Stream', signature: '1F 8B (GZIP)', version: 'RFC 1952' },
-  'TAR.XZ': { entry: 'XZ (LZMA2)', summary: 'XZ / LZMA2 Stream', signature: 'FD 37 7A 58 5A 00 (XZ)', version: 'XZ 1.0.4' },
-  'TAR.BZ2': { entry: 'BZip2', summary: 'BZip2 Stream', signature: '42 5A 68 (BZh)', version: 'BZip2 0.9.0' }
+/** The codec wrapped around each shape; a bare tar has none. */
+const TAR_SHAPE_CODECS: Record<TarInspectionFormat, StreamCodec | null> = {
+  TAR: null,
+  'TAR.GZ': 'gzip',
+  'TAR.XZ': 'xz',
+  'TAR.BZ2': 'bzip2',
+  'TAR.ZST': 'zstd'
+}
+
+/** A bare tarball stores its entries, so it has no codec of its own to name. */
+const UNCOMPRESSED_TAR: CodecDescription = {
+  entry: 'None (Store)',
+  summary: 'POSIX Tarball',
+  signature: '',
+  version: ''
+}
+
+/** How a shape describes the codec around the tarball, if any. */
+function tarCodec(format: TarInspectionFormat): CodecDescription {
+  const codec = TAR_SHAPE_CODECS[format]
+  return codec ? CODEC_DESCRIPTIONS[codec] : UNCOMPRESSED_TAR
 }
 
 async function inspectTarArchive(
@@ -205,7 +223,7 @@ async function inspectTarArchive(
         isDirectory: isDir,
         size,
         date: entry.mtime ? new Date(entry.mtime).toLocaleDateString() : undefined,
-        codec: TAR_CODECS[format].entry,
+        codec: tarCodec(format).entry,
         encrypted: false,
         encryptionMethod: 'None',
         mode: entry.mode,
@@ -241,12 +259,12 @@ async function inspectTarArchive(
     headerInfo: {
       signature: format === 'TAR'
         ? hasUstarMagic ? formatSignature(tarMagic.subarray(0, 6), 'ustar') : 'TAR (legacy header)'
-        : TAR_CODECS[format].signature,
-      codecSummary: TAR_CODECS[format].summary,
+        : tarCodec(format).signature,
+      codecSummary: tarCodec(format).summary,
       encryptionAlgorithm: 'None',
       formatVersion: format === 'TAR'
         ? hasUstarMagic ? 'POSIX ustar' : 'V7 / legacy TAR'
-        : TAR_CODECS[format].version,
+        : tarCodec(format).version,
       solid: false
     }
   }
@@ -420,11 +438,16 @@ export async function inspectArchive(
     return inspectTarArchive(archivePath, totalCompressedSize, tarInspectionFormat(archivePath))
   }
 
-  if (ext === '.gz') {
-    const baseName = path.basename(archivePath, '.gz')
+  // A lone codec stream has no entry table: it holds one file, whose size is
+  // only knowable by decoding the whole thing, so the listing says so rather
+  // than paying for a decode nobody asked for.
+  const streamCodec = streamCodecFor(archivePath)
+  if (streamCodec) {
+    const description = CODEC_DESCRIPTIONS[streamCodec]
+    const baseName = streamEntryName(archivePath)
     return {
       archivePath,
-      format: 'GZ',
+      format: SINGLE_FILE_FORMAT_LABELS[streamCodec],
       passwordProtected: false,
       totalFiles: 1,
       totalUncompressedSize: null,
@@ -439,15 +462,15 @@ export async function inspectArchive(
           size: null,
           compressedSize: totalCompressedSize,
           ratio: null,
-          codec: 'Deflate (Gzip)',
+          codec: description.entry,
           encrypted: false,
           encryptionMethod: 'None'
         }
       ],
       headerInfo: {
-        signature: '1F 8B (GZIP)',
-        formatVersion: 'RFC 1952',
-        codecSummary: 'Deflate / Gzip Stream',
+        signature: description.signature,
+        formatVersion: description.version,
+        codecSummary: description.summary,
         encryptionAlgorithm: 'None',
         solid: false
       }
@@ -462,6 +485,6 @@ function tarInspectionFormat(archivePath: string): TarInspectionFormat {
   const compression = tarCompressionFor(archivePath)
   if (compression === 'xz') return 'TAR.XZ'
   if (compression === 'bzip2') return 'TAR.BZ2'
-  const normalized = archivePath.toLowerCase()
-  return normalized.endsWith('.tgz') || normalized.endsWith('.tar.gz') ? 'TAR.GZ' : 'TAR'
+  if (compression === 'zstd') return 'TAR.ZST'
+  return isGzipTarPath(archivePath) ? 'TAR.GZ' : 'TAR'
 }

@@ -3,7 +3,12 @@ import { AsyncLocalStorage } from 'async_hooks'
 import zlib from 'zlib'
 import { registerCodec } from '@zip.js/zip.js'
 import { LzmaStreamDecoder, LzmaStreamEncoder, parseLzma1Properties } from 'libera7z'
+import { createCodecCompressor, supportsZstd } from '../codecStreams'
 import type { DeflateStrategy } from './methodOverrides'
+
+// Re-exported so the ZIP writer's callers keep asking the codec module whether
+// Zstandard is available, rather than reaching past it.
+export { supportsZstd }
 
 // Method numbers as they appear in a ZIP entry header. Store (0), Deflate (8),
 // Deflate64 (9) and AES (99) are zip.js built-ins and cannot be re-registered.
@@ -229,12 +234,6 @@ class LzmaDecompressionStream implements TransformStreamLike {
   }
 }
 
-/** Maps the archive levels 1-9 onto the Zstandard levels 1-19. */
-function zstdLevel(level?: number): number {
-  if (level === undefined) return 3
-  return Math.max(1, Math.min(19, Math.round((level / 9) * 19)))
-}
-
 function webTransform(duplex: Duplex): TransformStreamLike {
   return Duplex.toWeb(duplex) as unknown as TransformStreamLike
 }
@@ -244,9 +243,7 @@ class ZstdCompressionStream implements TransformStreamLike {
   writable: WritableStream
 
   constructor(_format: string, options: { level?: number } = {}) {
-    const stream = webTransform(zlib.createZstdCompress({
-      params: { [zlib.constants.ZSTD_c_compressionLevel]: zstdLevel(options.level) }
-    }))
+    const stream = webTransform(createCodecCompressor('zstd', { level: options.level }))
     this.readable = stream.readable
     this.writable = stream.writable
   }
@@ -261,11 +258,6 @@ class ZstdDecompressionStream implements TransformStreamLike {
     this.readable = stream.readable
     this.writable = stream.writable
   }
-}
-
-/** Zstandard rides on Node's zlib bindings, which only carry it from Node 22. */
-export function supportsZstd(): boolean {
-  return typeof zlib.createZstdCompress === 'function'
 }
 
 let registered = false

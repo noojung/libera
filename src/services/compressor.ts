@@ -3,6 +3,7 @@ import path from 'path'
 import archiver from 'archiver'
 import zlib from 'zlib'
 import { supportsZstd } from './zip/codecs'
+import { createCodecCompressor } from './codecStreams'
 import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
@@ -37,7 +38,17 @@ async function totalOutputSize(outputPaths: string[]): Promise<number> {
   return sizes.reduce((total, size) => total + size, 0)
 }
 
-export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z'
+export type ArchiveFormat = 'zip' | 'tar' | 'gz' | 'tgz' | '7z' | 'zst' | 'tzst'
+
+/** The formats that wrap a single file rather than carrying an entry table. */
+export function isSingleFileFormat(format: ArchiveFormat): boolean {
+  return format === 'gz' || format === 'zst'
+}
+
+/** The formats whose writer is a tarball inside a codec stream. */
+export function isTarFormat(format: ArchiveFormat): boolean {
+  return format === 'tar' || format === 'tgz' || format === 'tzst'
+}
 export type ZipEncryptionMethod = 'zip20' | 'aes256' | 'aes128'
 export type { ZipMethod, ZipMethodOverride } from './zip/methodOverrides'
 export type { DeflateStrategy } from './zip/methodOverrides'
@@ -103,11 +114,16 @@ export function supportsSplit(format: ArchiveFormat): boolean {
 // six, so offering ten would leave half the slider doing nothing.
 const DEFLATE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
 const SEVEN_ZIP_LEVELS = [0, 1, 3, 5, 7, 9] as const
+// Zstandard's own scale runs to 19. The slider keeps the ten steps every other
+// format uses and the writer maps them across, so a level means the same
+// strength here as it does anywhere else in the app.
+const ZSTD_LEVELS = DEFLATE_LEVELS
 
 /** The levels a format's writer actually distinguishes, in slider order. */
 export function compressionLevels(format: ArchiveFormat): readonly number[] {
   if (format === 'tar') return []
-  return format === '7z' ? SEVEN_ZIP_LEVELS : DEFLATE_LEVELS
+  if (format === '7z') return SEVEN_ZIP_LEVELS
+  return format === 'zst' || format === 'tzst' ? ZSTD_LEVELS : DEFLATE_LEVELS
 }
 
 /** TAR only concatenates files, so a compression level would do nothing. */
@@ -262,11 +278,14 @@ export async function compressArchive(
     throw new Error('7Z codec options can only be used with 7Z archives.')
   }
   if (
-    format === 'gz' &&
+    isSingleFileFormat(format) &&
     (options.excludeSymlinks !== undefined || options.excludeMacMetadata !== undefined ||
       options.excludeHiddenFiles !== undefined || options.filterPattern !== undefined)
   ) {
-    throw new Error('Source filters can only be used with ZIP, TAR, TAR.GZ, or 7Z archives.')
+    throw new Error('Source filters cannot be used with a format that wraps a single file.')
+  }
+  if ((format === 'zst' || format === 'tzst') && !supportsZstd()) {
+    throw new Error('Zstandard is unavailable in this runtime.')
   }
   if (
     !['zip', 'gz', 'tgz'].includes(format) &&
@@ -465,7 +484,7 @@ export async function compressArchive(
     }
   }
 
-  if (format === 'tar' || format === 'tgz') {
+  if (isTarFormat(format)) {
     const filter = createCompressionInputFilter(filters)
     const rootName = createUniqueRootNamer()
     const archiveInputs: { itemPath: string; isDirectory: boolean; storedName: string }[] = []
@@ -494,7 +513,6 @@ export async function compressArchive(
     return new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outputPath)
 
-      const archiverFormat = format === 'tgz' ? 'tar' : format
       const strategy = mapDeflateStrategy(options.deflateStrategy)
       const archiveOptions: archiver.ArchiverOptions = {
         zlib: {
@@ -513,7 +531,13 @@ export async function compressArchive(
         }
       }
 
-      const archive = archiver(archiverFormat as archiver.Format, archiveOptions)
+      const archive = archiver('tar', archiveOptions)
+
+      // Archiver gzips a tarball itself but knows nothing of Zstandard, so
+      // that one is encoded between the tar writer and the file.
+      const encoder = format === 'tzst' ? createCodecCompressor('zstd', { level }) : null
+      const archiveSink = encoder ?? output
+      encoder?.pipe(output)
 
       let processedBytes = 0
       let settled = false
@@ -526,11 +550,22 @@ export async function compressArchive(
         // write to `output` after it starts closing - writing post-close
         // throws ERR_STREAM_DESTROYED as an uncaught exception since archiver
         // owns that write, not this promise.
-        archive.unpipe(output)
+        archive.unpipe(archiveSink)
+        if (encoder) {
+          encoder.unpipe(output)
+          encoder.destroy()
+        }
         archive.abort()
         output.end()
       }
       signal?.addEventListener('abort', onAbort, { once: true })
+
+      encoder?.on('error', (err) => {
+        if (settled || cancelled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        reject(err)
+      })
 
       output.on('error', (err) => {
         if (settled || cancelled) return
@@ -571,7 +606,7 @@ export async function compressArchive(
         }
       })
 
-      archive.pipe(output)
+      archive.pipe(archiveSink)
 
       for (const { itemPath, isDirectory, storedName } of archiveInputs) {
         if (isDirectory) {
@@ -628,25 +663,29 @@ export async function compressArchive(
 
       archive.finalize()
     })
-  } else if (format === 'gz') {
+  } else if (isSingleFileFormat(format)) {
+    const label = format.toUpperCase()
     if (inputPaths.length === 0) {
-      throw new Error('No input files specified for GZ compression.')
+      throw new Error(`No input files specified for ${label} compression.`)
     }
 
     const sourceFile = inputPaths[0]
     const inputStat = await fsPromises.lstat(sourceFile)
     if (inputStat.isDirectory()) {
-      throw new Error('GZ format supports single files only. Please use .tgz or .zip for folder compression.')
+      const tarEquivalent = format === 'zst' ? '.tar.zst' : '.tgz'
+      throw new Error(
+        `${label} format supports single files only. Please use ${tarEquivalent} or .zip for folder compression.`
+      )
     }
 
     throwIfAborted(signal)
 
     return new Promise((resolve, reject) => {
       const strategy = mapDeflateStrategy(options.deflateStrategy)
-      const gzip = zlib.createGzip({
+      const encoder = createCodecCompressor(format === 'zst' ? 'zstd' : 'gzip', {
         level,
-        ...(strategy !== undefined ? { strategy } : {}),
-        ...(options.memLevel !== undefined ? { memLevel: options.memLevel } : {})
+        strategy,
+        memLevel: options.memLevel
       })
       const readStream = fs.createReadStream(sourceFile)
       const writeStream = fs.createWriteStream(outputPath)
@@ -658,13 +697,13 @@ export async function compressArchive(
         if (settled || cancelled) return
         cancelled = true
         // Unpipe before ending `writeStream` so a chunk already in flight from
-        // `readStream`/`gzip` cannot write to it after it starts closing -
+        // `readStream`/`encoder` cannot write to it after it starts closing -
         // writing post-close throws ERR_STREAM_DESTROYED as an uncaught
         // exception since the pipe owns that write, not this promise.
-        readStream.unpipe(gzip)
-        gzip.unpipe(writeStream)
+        readStream.unpipe(encoder)
+        encoder.unpipe(writeStream)
         readStream.destroy()
-        gzip.destroy()
+        encoder.destroy()
         writeStream.end()
       }
       signal?.addEventListener('abort', onAbort, { once: true })
@@ -683,7 +722,7 @@ export async function compressArchive(
         }
       })
 
-      readStream.pipe(gzip).pipe(writeStream)
+      readStream.pipe(encoder).pipe(writeStream)
 
       writeStream.on('finish', async () => {
         if (settled) return
@@ -716,7 +755,7 @@ export async function compressArchive(
       }
       writeStream.on('error', onError)
       readStream.on('error', onError)
-      gzip.on('error', onError)
+      encoder.on('error', onError)
     })
   } else {
     throw new Error(`Unsupported format: ${format}`)

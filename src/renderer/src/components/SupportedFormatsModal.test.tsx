@@ -86,7 +86,7 @@ describe('the table against the extensions the app accepts', () => {
 
   it('marks a format as writable only when it can be written', () => {
     const writable = SUPPORTED_FORMATS.filter(format => format.compress).map(format => format.name)
-    expect(writable).toEqual(['ZIP', '7Z', 'TAR', 'TAR.GZ', 'GZ'])
+    expect(writable).toEqual(['ZIP', '7Z', 'TAR', 'TAR.GZ', 'TAR.ZST', 'GZ', 'ZST'])
   })
 
   it('says every listed format can be extracted and read', () => {

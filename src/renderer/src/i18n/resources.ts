@@ -379,7 +379,7 @@ export const resources = {
         tooManyEntries: 'The archive contains more than 100,000 entries.',
         archiveTooLarge: 'The extracted archive would exceed the 1 TiB limit.',
         fileTooLarge: 'A file in the archive would exceed the 1 TiB limit.',
-        invalidGzInput: 'GZ compression supports one file only.'
+        invalidSingleFileInput: 'GZ and ZST compression support one file only.'
       },
       unsupportedFormat: {
         description: 'Choose another archive file, or check the formats supported by Libera.',
@@ -791,7 +791,7 @@ export const resources = {
         tooManyEntries: '압축 파일에 100,000개를 초과하는 항목이 있습니다.',
         archiveTooLarge: '압축 해제 결과가 1 TiB 제한을 초과합니다.',
         fileTooLarge: '압축 파일 내부의 파일이 1 TiB 제한을 초과합니다.',
-        invalidGzInput: 'GZ 압축은 파일 하나만 지원합니다.'
+        invalidSingleFileInput: 'GZ와 ZST 압축은 파일 하나만 지원합니다.'
       },
       unsupportedFormat: {
         description: '다른 압축 파일을 선택하거나 Libera가 지원하는 포맷을 확인해 주세요.',

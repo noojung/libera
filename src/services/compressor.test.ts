@@ -72,6 +72,8 @@ describe('compression levels', () => {
     expect(compressionLevels('zip')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(compressionLevels('gz')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(compressionLevels('tgz')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(compressionLevels('zst')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(compressionLevels('tzst')).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(compressionLevels('7z')).toEqual([0, 1, 3, 5, 7, 9])
     expect(compressionLevels('tar')).toEqual([])
   })
@@ -132,6 +134,80 @@ describe('compressArchive', () => {
       percent: 100,
       currentFile: 'report.txt'
     })
+  })
+
+  it('creates a ZST archive for a single file and reports completion progress', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'report.txt')
+    const outputPath = path.join(directory, 'report.txt.zst')
+    const contents = 'compress this file with zstandard'
+    const progress: ProgressData[] = []
+    await fs.writeFile(inputPath, contents)
+
+    const result = await compressArchive(
+      { inputPaths: [inputPath], outputPath, format: 'zst' },
+      update => progress.push(update)
+    )
+
+    expect(result.originalSize).toBe(Buffer.byteLength(contents))
+    expect(zlib.zstdDecompressSync(await fs.readFile(outputPath)).toString()).toBe(contents)
+    expect(progress.at(-1)).toMatchObject({
+      processedBytes: Buffer.byteLength(contents),
+      totalBytes: Buffer.byteLength(contents),
+      percent: 100,
+      currentFile: 'report.txt'
+    })
+  })
+
+  it('refuses a folder for ZST, which wraps one file', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir, { recursive: true })
+
+    await expect(compressArchive({
+      inputPaths: [sourceDir],
+      outputPath: path.join(directory, 'source.zst'),
+      format: 'zst'
+    })).rejects.toThrow(/ZST format supports single files only/)
+  })
+
+  it('creates a TAR.ZST the app reads back with its hierarchy intact', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(path.join(sourceDir, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'docs', 'readme.txt'), 'archive content')
+    const outputPath = path.join(directory, 'archive.tar.zst')
+
+    const result = await compressArchive({ inputPaths: [sourceDir], outputPath, format: 'tzst' })
+
+    expect(result.originalSize).toBe(Buffer.byteLength('archive content'))
+    // The bytes are a Zstandard frame, not a bare tarball.
+    expect((await fs.readFile(outputPath)).subarray(0, 4))
+      .toEqual(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]))
+
+    const inspected = await inspectArchive(outputPath)
+    expect(inspected.format).toBe('TAR.ZST')
+    expect(inspected.entries.map(entry => entry.path)).toContain('source/docs/readme.txt')
+
+    const targetDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: outputPath, targetDir } as never)
+    expect(await fs.readFile(path.join(targetDir, 'source', 'docs', 'readme.txt'), 'utf8'))
+      .toBe('archive content')
+  })
+
+  it('turns the level slider into a stronger Zstandard setting', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.txt')
+    // Compressible enough that the levels have room to disagree.
+    await fs.writeFile(inputPath, 'libera '.repeat(20_000))
+
+    const sizeAt = async (level: number) => {
+      const outputPath = path.join(directory, `payload-${level}.zst`)
+      await compressArchive({ inputPaths: [inputPath], outputPath, format: 'zst', level })
+      return (await fs.stat(outputPath)).size
+    }
+
+    expect(await sizeAt(9)).toBeLessThanOrEqual(await sizeAt(0))
   })
 
   it('creates readable AES-128 with a per-file Deflate strategy and Store ZIP archives', async () => {

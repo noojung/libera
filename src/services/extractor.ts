@@ -12,7 +12,6 @@ import {
   type FileEntry
 } from '@zip.js/zip.js'
 import * as tar from 'tar'
-import zlib from 'zlib'
 import type { ProgressCallback } from './compressor'
 import { openZipArchive } from './zip/fileReader'
 import { isNumberedVolumePath } from './zip/volumes'
@@ -28,6 +27,7 @@ import {
 } from './appleDouble'
 import { createArchiveEntryFilter } from './entryPatterns'
 import { isTarArchivePath, tarReadStages } from './tarCompression'
+import { createCodecDecompressor, streamCodecFor, streamEntryName } from './codecStreams'
 import {
   archivePermissions,
   buildExtractionPlan,
@@ -116,7 +116,8 @@ function destinationPolicy(options: ExtractionOptions): 'reject' | 'overwrite' |
 export const SUPPORTED_ARCHIVE_EXTENSIONS = [
   '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
   '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
-  '.gz', '.7z'
+  '.tar.zst', '.tzst',
+  '.gz', '.xz', '.bz2', '.zst', '.7z'
 ] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
@@ -467,7 +468,14 @@ const extractTarArchive: FormatExtractor = async ({
   }
 }
 
-const extractGzArchive: FormatExtractor = async ({
+/**
+ * Writes out the lone file inside a codec stream - a `.gz`, `.xz`, `.bz2` or
+ * `.zst` that wraps one file and carries no entry table.
+ *
+ * The name comes from the archive's own, minus the codec suffix, because that
+ * is all these formats record about what is inside them.
+ */
+const extractCodecStreamArchive: FormatExtractor = async ({
   archivePath,
   targetRoot,
   startTime,
@@ -478,7 +486,9 @@ const extractGzArchive: FormatExtractor = async ({
   onProgress,
   options: extractionOptions
 }) => {
-  const outputName = normalizeEntryPath(path.basename(archivePath, '.gz'))
+  const codec = streamCodecFor(archivePath)
+  if (!codec) throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
+  const outputName = normalizeEntryPath(streamEntryName(archivePath))
   const outputPath = resolveOutputPath(targetRoot, outputName)
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   if (!createArchiveEntryFilter(options.filterPattern)(outputName) ||
@@ -511,7 +521,7 @@ const extractGzArchive: FormatExtractor = async ({
   try {
     await pipeline(
       fs.createReadStream(archivePath),
-      zlib.createGunzip(),
+      createCodecDecompressor(codec),
       byteLimit,
       output.stream,
       { signal }
@@ -520,7 +530,9 @@ const extractGzArchive: FormatExtractor = async ({
     await output.handle.close().catch(() => undefined)
   }
 
-  if (options.restoreTimestamps === true) {
+  // Gzip is the only one of these that records when the file was last written,
+  // so it is the only one a restore can read a timestamp back out of.
+  if (options.restoreTimestamps === true && codec === 'gzip') {
     const header = await readGzipModificationTime(archivePath)
     if (header) await fsPromises.utimes(outputPath, header, header)
   }
@@ -543,8 +555,8 @@ async function readGzipModificationTime(archivePath: string): Promise<Date | und
   }
 }
 
-function isGzArchivePath(archivePath: string): boolean {
-  return path.extname(archivePath).toLowerCase() === '.gz'
+function isCodecStreamPath(archivePath: string): boolean {
+  return streamCodecFor(archivePath) !== null
 }
 
 // Order matters: a `.tar.gz` is a tar before it is a gz, so the tar handler has
@@ -553,7 +565,7 @@ const FORMAT_EXTRACTORS: readonly { claims: (archivePath: string) => boolean; ex
   { claims: archivePath => isZipFormatExtension(path.extname(archivePath).toLowerCase()), extract: extractZipArchive },
   { claims: isTarArchivePath, extract: extractTarArchive },
   { claims: isSevenZipArchivePath, extract: extractSevenZipArchive },
-  { claims: isGzArchivePath, extract: extractGzArchive }
+  { claims: isCodecStreamPath, extract: extractCodecStreamArchive }
 ]
 
 export async function extractArchive(

@@ -75,11 +75,16 @@ const SPLIT_CHOICES = [
 
 type SplitPreset = (typeof SPLIT_CHOICES)[number]['id']
 
+// Six is where Deflate's own default sits, and the writer maps it onto
+// Zstandard 13 - which finishes a mixed payload in about the time gzip -6
+// takes, and smaller - so the same number means the same trade for both.
 const DEFAULT_LEVELS = {
   zip: 6,
   tar: 0,
   gz: 6,
   tgz: 6,
+  zst: 6,
+  tzst: 6,
   '7z': 5
 } as const satisfies Record<ArchiveFormat, number>
 
@@ -279,11 +284,16 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const effectiveLevel = storeSelected ? 0 : compressedMethodSelected && level === 0 ? 1 : level
   const deflateTuned = (format === 'zip' && !zipPerFileActive && zipMethod === 'deflate') ||
     format === 'tgz' || format === 'gz'
+  // Strategy and memory level are Deflate's own knobs, so the Zstandard
+  // formats get the level slider and nothing else.
   const deflateTuningShown = (format === 'zip' && (zipPerFileActive || zipMethod === 'deflate')) ||
     format === 'tgz' || format === 'gz'
   const sevenZipGlobalTuning = format === '7z' && !sevenZipPerFileActive && sevenZipMethod === 'lzma2'
   const sevenZipTuningShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
-  const sourceFiltersShown = isExpertMode && format !== 'gz'
+  // The single-file formats wrap one file that is handed over whole, so there
+  // is no walk for a filter to narrow.
+  const singleFileFormat = format === 'gz' || format === 'zst'
+  const sourceFiltersShown = isExpertMode && !singleFileFormat
   const solidBlockShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
 
 

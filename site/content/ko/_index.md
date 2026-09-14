@@ -36,7 +36,7 @@ features:
   items:
     - icon: 📦
       title: 원하는 형식으로 압축
-      description: ZIP, 7Z, TAR, TAR.GZ, GZ를 지원하며 속도와 용량 사이에서 압축 강도를 조절할 수 있습니다.
+      description: ZIP, 7Z, TAR, TAR.GZ, TAR.ZST, GZ, ZST를 지원하며 속도와 용량 사이에서 압축 강도를 조절할 수 있습니다.
     - icon: 📂
       title: 안전하게 압축 해제
       description: 여러 압축 파일을 한 번에 풀고, 파일별 하위 폴더를 만들 수 있습니다. 안전 검사는 항상 적용됩니다.
@@ -77,7 +77,7 @@ how_to:
         - 저장 위치를 정하고 시작합니다.
     - number: "02"
       title: 압축 풀기
-      description: ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2 또는 GZ 파일을 안전하게 풉니다.
+      description: ZIP, JAR, WAR, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.BZ2, TAR.ZST, GZ, ZST, XZ, BZ2 파일을 안전하게 풉니다.
       steps:
         - 압축 파일을 하나 이상 추가합니다.
         - 저장 폴더와 하위 폴더 옵션을 고릅니다.
@@ -106,8 +106,16 @@ formats:
       detail: 해제 · 미리보기
     - name: TAR.BZ2
       detail: 해제 · 미리보기
+    - name: TAR.ZST
+      detail: 압축 · 해제 · 미리보기
     - name: GZ
       detail: 압축 · 해제 · 미리보기
+    - name: ZST
+      detail: 압축 · 해제 · 미리보기
+    - name: XZ
+      detail: 해제 · 미리보기
+    - name: BZ2
+      detail: 해제 · 미리보기
     - name: JAR
       detail: 해제 · 미리보기
     - name: WAR

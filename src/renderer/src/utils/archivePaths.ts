@@ -6,7 +6,8 @@
 export const SUPPORTED_ARCHIVE_EXTENSIONS = [
   '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
   '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
-  '.gz', '.7z'
+  '.tar.zst', '.tzst',
+  '.gz', '.xz', '.bz2', '.zst', '.7z'
 ] as const
 
 export const NUMBERED_VOLUME_SUFFIX = /\.z\d{2,}$/i
@@ -68,12 +69,13 @@ export function canonicalArchivePath(archivePath: string): string {
 
 /** Extensions offered in the extract file dialog, first volume included. */
 export const EXTRACT_DIALOG_EXTENSIONS = [
-  'zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'txz', 'tbz2', 'tbz', 'xz', 'bz2', 'gz', '7z', '001'
+  'zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'txz', 'tbz2', 'tbz', 'tzst',
+  'xz', 'bz2', 'zst', 'gz', '7z', '001'
 ]
 
 // The compression formats the panel offers, mirroring compressor.ts's own
 // union and capability helpers for the same reason as the path rules above.
-export const COMPRESSION_FORMATS = ['zip', 'tar', 'gz', 'tgz', '7z'] as const
+export const COMPRESSION_FORMATS = ['zip', 'tar', 'gz', 'tgz', 'zst', 'tzst', '7z'] as const
 
 export type ArchiveFormat = (typeof COMPRESSION_FORMATS)[number]
 
@@ -93,11 +95,13 @@ export function supportsSplit(format: ArchiveFormat): boolean {
 
 const DEFLATE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const
 const SEVEN_ZIP_LEVELS = [0, 1, 3, 5, 7, 9] as const
+const ZSTD_LEVELS = DEFLATE_LEVELS
 
 /** The levels a format's writer actually distinguishes, in slider order. */
 export function compressionLevels(format: ArchiveFormat): readonly number[] {
   if (format === 'tar') return []
-  return format === '7z' ? SEVEN_ZIP_LEVELS : DEFLATE_LEVELS
+  if (format === '7z') return SEVEN_ZIP_LEVELS
+  return format === 'zst' || format === 'tzst' ? ZSTD_LEVELS : DEFLATE_LEVELS
 }
 
 /** TAR only concatenates files, so a compression level would do nothing. */
@@ -114,12 +118,18 @@ export function nearestLevel(level: number, format: ArchiveFormat): number {
   )
 }
 
-/** The extension written for each format. TGZ archives are named `.tar.gz`. */
+/**
+ * The extension written for each format. The two tar-inside-a-codec formats
+ * are named for what they are - `.tar.gz` and `.tar.zst` - rather than for
+ * their short aliases.
+ */
 const FORMAT_EXTENSIONS: Record<ArchiveFormat, string> = {
   zip: '.zip',
   tar: '.tar',
   gz: '.gz',
   tgz: '.tar.gz',
+  zst: '.zst',
+  tzst: '.tar.zst',
   '7z': '.7z'
 }
 
@@ -129,6 +139,8 @@ const FORMAT_EXTENSION_ALIASES: Record<ArchiveFormat, readonly string[]> = {
   tar: [],
   gz: [],
   tgz: ['.tgz', '.tar', '.gz'],
+  zst: [],
+  tzst: ['.tzst', '.tar', '.zst'],
   '7z': []
 }
 
@@ -143,7 +155,9 @@ export function saveDialogExtension(format: ArchiveFormat): string {
 
 /** How a format is named in the UI, so `tgz` reads as TAR.GZ. */
 export function formatLabel(format: string): string {
-  return (format === 'tgz' ? 'tar.gz' : format).toUpperCase()
+  if (format === 'tgz') return 'TAR.GZ'
+  if (format === 'tzst') return 'TAR.ZST'
+  return format.toUpperCase()
 }
 
 /** Forces `filePath` to carry the format's extension, replacing a known alias. */
@@ -161,12 +175,16 @@ export function withArchiveExtension(filePath: string, format: ArchiveFormat): s
 export function formatFromArchiveName(archiveName: string): string {
   const normalizedName = archiveName.toLowerCase()
   if (normalizedName.endsWith('.tar.gz') || normalizedName.endsWith('.tgz')) return 'tgz'
+  if (normalizedName.endsWith('.tar.zst') || normalizedName.endsWith('.tzst')) return 'tzst'
   return normalizedName.split('.').pop() || 'zip'
 }
 
 /** An archive's name without its extension, `.tar.gz` counting as one. */
 export function archiveBaseName(archiveName: string): string {
-  if (archiveName.toLowerCase().endsWith('.tar.gz')) return archiveName.slice(0, -'.tar.gz'.length)
+  const normalizedName = archiveName.toLowerCase()
+  for (const compound of ['.tar.gz', '.tar.xz', '.tar.bz2', '.tar.zst']) {
+    if (normalizedName.endsWith(compound)) return archiveName.slice(0, -compound.length)
+  }
   return archiveName.replace(/\.[^/.]+$/, '')
 }
 
@@ -193,7 +211,7 @@ export interface SupportedFormat {
 
 /** The compression format each readable one corresponds to, where there is one. */
 const WRITABLE_AS: Partial<Record<string, ArchiveFormat>> = {
-  ZIP: 'zip', '7Z': '7z', TAR: 'tar', 'TAR.GZ': 'tgz', GZ: 'gz'
+  ZIP: 'zip', '7Z': '7z', TAR: 'tar', 'TAR.GZ': 'tgz', 'TAR.ZST': 'tzst', GZ: 'gz', ZST: 'zst'
 }
 
 const READABLE_FORMATS: readonly (readonly [string, readonly string[]])[] = [
@@ -203,7 +221,11 @@ const READABLE_FORMATS: readonly (readonly [string, readonly string[]])[] = [
   ['TAR.GZ', ['.tar.gz', '.tgz']],
   ['TAR.XZ', ['.tar.xz', '.txz']],
   ['TAR.BZ2', ['.tar.bz2', '.tbz2', '.tbz']],
+  ['TAR.ZST', ['.tar.zst', '.tzst']],
   ['GZ', ['.gz']],
+  ['XZ', ['.xz']],
+  ['BZ2', ['.bz2']],
+  ['ZST', ['.zst']],
   ['JAR', ['.jar']],
   ['WAR', ['.war']]
 ]

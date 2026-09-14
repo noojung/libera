@@ -204,7 +204,10 @@ function classifyError(error: unknown, operation: Operation): string {
   }
   if (/unsupported archive format/i.test(message)) return 'unsupportedArchive'
   if (/does not exist/i.test(message)) return 'archiveMissing'
-  if (/GZ format supports single files only|No input files specified for GZ/i.test(message)) return 'invalidGzInput'
+  // GZ and ZST both wrap exactly one file, and refuse a folder the same way.
+  if (/(GZ|ZST) format supports single files only|No input files specified for (GZ|ZST)/i.test(message)) {
+    return 'invalidSingleFileInput'
+  }
   if (operation === 'compression') return 'genericCompression'
   if (operation === 'extraction') return 'genericExtraction'
   return 'genericInspection'

@@ -117,13 +117,24 @@ Pages automatically when changes under `site/` are pushed to `main`.
 | TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
 | TAR.XZ | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread. Also `.txz` |
 | TAR.BZ2 | Extract · Preview | Read: BZip2 | Read-only. Also `.tbz2` and `.tbz` |
+| TAR.ZST | Compress · Extract · Preview | Zstandard | Stores multiple files through TAR. Also `.tzst` |
 | GZ | Compress · Extract · Preview | GZIP/Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
+| ZST | Compress · Extract · Preview | Zstandard | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
+| XZ | Extract · Preview | Read: LZMA2 | Read-only. One file per stream |
+| BZ2 | Extract · Preview | Read: BZip2 | Read-only. One file per stream |
 | JAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
 | WAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
 
-TAR.XZ and TAR.BZ2 are read but not written: LZMA2 and BZip2 both decode here,
-and only LZMA2 encodes, so writing either would offer one of them alone. 7Z
-already writes LZMA2, and at a better ratio than either wrapper reaches.
+XZ and BZ2 are read but not written, whether they wrap a tarball or a lone
+file: LZMA2 and BZip2 both decode here, and only LZMA2 encodes, so writing
+either would offer one of them alone. 7Z already writes LZMA2, and at a better
+ratio than either wrapper reaches. Zstandard goes both ways, since Node's zlib
+bindings carry an encoder as well as a decoder.
+
+The compression level slider keeps its ten steps for Zstandard and the writer
+maps them onto the codec's own 1-19 scale, so level 6 - the default everywhere
+but 7Z - lands on Zstandard 13, which finishes a mixed payload in about the
+time `gzip -6` takes and smaller.
 
 Preview includes archive browsing and search, 1 MiB text previews, and PNG,
 JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting
@@ -132,7 +143,7 @@ remain together. Volume details are collapsed by default and can be expanded.
 
 ## Compression Source Filters
 Expert mode decides what the input tree contributes to an archive. Every filter
-applies to ZIP, TAR, TAR.GZ, and 7Z; GZ compresses a single stream the user
+applies to ZIP, TAR, TAR.GZ, TAR.ZST, and 7Z; GZ and ZST compress a single stream the user
 picked themselves, so it offers none of them. Excluded files are left out of the
 progress total as well, so the percentage still ends on 100.
 
@@ -166,7 +177,7 @@ The following checks are applied before and during extraction:
 inside the same validation and transaction layer, and content that disagrees
 with the sizes or CRCs declared by the archive is rejected.
 
-TAR.XZ and TAR.BZ2 are decoded through the same reader as they are read, so the
+XZ and BZ2 are decoded through the same reader as they are read, so the
 limits above count the expansion as it lands rather than after it. Both verify
 the integrity check their container carries and stop on a mismatch instead of
 handing back what decoded before it. The one difference is where the compressed

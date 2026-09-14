@@ -4,7 +4,6 @@ import { Readable, Writable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { type FileEntry } from '@zip.js/zip.js'
 import * as tar from 'tar'
-import zlib from 'zlib'
 import { MAX_ARCHIVE_ENTRIES, isWrongZipPasswordError } from './extractor'
 import { openZipArchive } from './zip/fileReader'
 import { canonicalArchivePath, isZipFormatExtension } from './archiveVolumes'
@@ -12,6 +11,7 @@ import { isSevenZipArchivePath } from './sevenZip/volumes'
 import { Libera7zError } from 'libera7z'
 import { openLibera7zFile } from './sevenZip/node'
 import { isTarArchivePath, tarReadStages } from './tarCompression'
+import { createCodecDecompressor, streamCodecFor, type StreamCodec } from './codecStreams'
 
 export const MAX_ARCHIVE_PREVIEW_BYTES = 1024 * 1024
 export const MAX_IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
@@ -334,8 +334,13 @@ async function readTarEntry(
   return collectedEntry(collector, totalBytes)
 }
 
-async function readGzEntry(
+/**
+ * Reads the lone file a codec stream holds. There is only ever entry zero, so
+ * an id past it names an entry the archive does not have.
+ */
+async function readCodecStreamEntry(
   archivePath: string,
+  codec: StreamCodec,
   entryIndex: number,
   signal?: AbortSignal
 ): Promise<CollectedArchiveEntry> {
@@ -344,7 +349,7 @@ async function readGzEntry(
   try {
     await pipeline(
       fs.createReadStream(archivePath),
-      zlib.createGunzip(),
+      createCodecDecompressor(codec),
       collector,
       { signal }
     )
@@ -604,6 +609,9 @@ export async function previewArchiveEntry(
   if (!stat.isFile()) throw new Error('Archive preview requires a file')
 
   const ext = path.extname(archivePath).toLowerCase()
+  // A `.tar.gz` is a tarball before it is a gzip stream, so the branches below
+  // offer it to the tar reader first, exactly as the extractor does.
+  const streamCodec = streamCodecFor(archivePath)
   let preview: CollectedArchiveEntry
   if (isZipFormatExtension(ext)) {
     preview = await readZipEntry(archivePath, entryIndex, context.password, context.signal)
@@ -611,8 +619,8 @@ export async function previewArchiveEntry(
     preview = await readTarEntry(archivePath, entryIndex, context.signal)
   } else if (isSevenZipArchivePath(archivePath)) {
     preview = await readSevenZipEntry(archivePath, entryIndex, context.password, context.signal)
-  } else if (ext === '.gz') {
-    preview = await readGzEntry(archivePath, entryIndex, context.signal)
+  } else if (streamCodec) {
+    preview = await readCodecStreamEntry(archivePath, streamCodec, entryIndex, context.signal)
   } else {
     throw new Error(`Unsupported archive format: ${ext}`)
   }
