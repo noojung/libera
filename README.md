@@ -109,21 +109,23 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 ## Supported Formats
 
-| Format | Supported features | Codec support | Notes |
-| --- | --- | --- | --- |
-| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate, LZMA, Zstandard<br>Read: Store, Deflate, Deflate64, LZMA, Zstandard<br>Encryption: ZipCrypto, AES-128, AES-256 | Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Choosing Deflate or Zstandard brings that codec's own options with it. Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
-| 7Z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2, AES-256<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2, AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
-| TAR | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
-| TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
-| TAR.XZ | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread. Also `.txz` |
-| TAR.BZ2 | Extract · Preview | Read: BZip2 | Read-only. Also `.tbz2` and `.tbz` |
-| TAR.ZST | Compress · Extract · Preview | Zstandard | Stores multiple files through TAR. Expert mode picks the search strategy, the window size, and long distance matching. Also `.tzst` |
-| GZ | Compress · Extract · Preview | GZIP/Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
-| ZST | Compress · Extract · Preview | Zstandard | Supports one file per stream, with the same expert codec options as TAR.ZST. Expanded size and compression ratio remain unknown until extraction |
-| XZ | Extract · Preview | Read: LZMA2 | Read-only. One file per stream |
-| BZ2 | Extract · Preview | Read: BZip2 | Read-only. One file per stream |
-| JAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
-| WAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
+<!-- begin generated format table -->
+| Format | Extensions | Supported features | Codec support | Notes |
+| --- | --- | --- | --- | --- |
+| ZIP | .zip | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate, LZMA, Zstandard<br>Read: Store, Deflate, Deflate64, LZMA, Zstandard<br>Encryption: ZipCrypto, AES-128, AES-256 | Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Choosing Deflate or Zstandard brings that codec's own options with it. Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
+| 7Z | .7z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2<br>Encryption: AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
+| TAR | .tar | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
+| TAR.GZ | .tar.gz .tgz | Compress · Extract · Preview | Deflate | Stores multiple files through TAR |
+| TAR.XZ | .tar.xz .txz | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread |
+| TAR.BZ2 | .tar.bz2 .tbz2 .tbz | Extract · Preview | Read: BZip2 | Read-only |
+| TAR.ZST | .tar.zst .tzst | Compress · Extract · Preview | Zstandard | Stores multiple files through TAR. Expert mode picks the search strategy, the window size, long distance matching, and the thread count |
+| GZ | .gz | Compress · Extract · Preview | Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
+| XZ | .xz | Extract · Preview | Read: LZMA2 | Read-only. One file per stream |
+| BZ2 | .bz2 | Extract · Preview | Read: BZip2 | Read-only. One file per stream |
+| ZST | .zst | Compress · Extract · Preview | Zstandard | Supports one file per stream, with the same expert codec options as TAR.ZST. Expanded size and compression ratio remain unknown until extraction |
+| JAR | .jar | Extract · Preview | Read: Store, Deflate, Deflate64 | Read-only ZIP container |
+| WAR | .war | Extract · Preview | Read: Store, Deflate, Deflate64 | Read-only ZIP container |
+<!-- end generated format table -->
 
 XZ and BZ2 are read but not written, whether they wrap a tarball or a lone
 file: LZMA2 and BZip2 both decode here, and only LZMA2 encodes, so writing
@@ -140,6 +142,7 @@ Expert mode sets what the level would otherwise decide: the search strategy
 (Fast through Binary Tree Ultra2), the window size, long distance matching, and
 how many threads the encoder may use. The same four apply to a ZIP whose method
 is Zstandard, since it is the same encoder writing its entries.
+
 The window stops at 128 MB because a decoder allocates the whole window before
 it reads and refuses a frame asking for more than its own limit, which is
 128 MB by default everywhere - a wider window would write archives only a

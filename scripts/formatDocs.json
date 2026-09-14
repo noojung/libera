@@ -1,0 +1,47 @@
+{
+  "comment": "What the README says about a format beyond what the app itself knows. The names, suffixes, abilities and codecs come from src/renderer/src/utils/archivePaths.ts; this file holds only the prose and the detail no screen shows.",
+  "formats": {
+    "ZIP": {
+      "encryption": ["ZipCrypto", "AES-128", "AES-256"],
+      "notes": "Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Choosing Deflate or Zstandard brings that codec's own options with it. Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file"
+    },
+    "7Z": {
+      "encryption": ["AES-256"],
+      "readFilters": ["Delta", "BCJ", "BCJ2", "ARM64", "RISC-V", "Swap2/4", "PPC", "IA64", "ARM/Thumb", "SPARC"],
+      "notes": "Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file"
+    },
+    "TAR": {
+      "notes": "Stores multiple files without a compression codec"
+    },
+    "TAR.GZ": {
+      "notes": "Stores multiple files through TAR"
+    },
+    "TAR.XZ": {
+      "notes": "Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread"
+    },
+    "TAR.BZ2": {
+      "notes": "Read-only"
+    },
+    "TAR.ZST": {
+      "notes": "Stores multiple files through TAR. Expert mode picks the search strategy, the window size, long distance matching, and the thread count"
+    },
+    "GZ": {
+      "notes": "Supports one file per stream. Expanded size and compression ratio remain unknown until extraction"
+    },
+    "ZST": {
+      "notes": "Supports one file per stream, with the same expert codec options as TAR.ZST. Expanded size and compression ratio remain unknown until extraction"
+    },
+    "XZ": {
+      "notes": "Read-only. One file per stream"
+    },
+    "BZ2": {
+      "notes": "Read-only. One file per stream"
+    },
+    "JAR": {
+      "notes": "Read-only ZIP container"
+    },
+    "WAR": {
+      "notes": "Read-only ZIP container"
+    }
+  }
+}

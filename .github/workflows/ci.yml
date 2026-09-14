@@ -40,7 +40,7 @@ jobs:
       - name: Check generated metadata is up to date
         run: |
           npm run generate:metadata
-          git diff --exit-code src/renderer/src/generated site/data
+          git diff --exit-code src/renderer/src/generated site/data README.md
 
       - name: Lint
         run: npm run lint
