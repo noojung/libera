@@ -309,6 +309,27 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Deflate strategy')).toBeInTheDocument()
   })
 
+  it('drops the expert card entirely for a format with nothing to configure', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+
+    // ZST wraps one file with Zstandard, so there is no codec row, no Deflate
+    // tuning and no input walk to filter - the card would be a bare heading.
+    await user.click(screen.getByRole('button', { name: '.ZST' }))
+    expect(screen.queryByText(/Expert compression settings/)).not.toBeInTheDocument()
+    // The level slider is not part of the card, so it stays.
+    expect(screen.getByText('Compression level')).toBeInTheDocument()
+
+    // TAR.ZST still walks an input tree, so it keeps the filters.
+    await user.click(screen.getByRole('button', { name: '.TAR.ZST' }))
+    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Exclude hidden files/ })).toBeInTheDocument()
+    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+  })
+
   it('sends the source filters and keeps them across a format change', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })

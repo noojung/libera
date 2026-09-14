@@ -56,9 +56,11 @@
 
 .compression-panel__format-grid {
   display: grid;
-  /* Fits however many formats there are rather than a hardcoded count, so a
-     fifth one does not wrap onto a row of its own. */
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  /* Fits however many formats there are rather than a hardcoded count. The
+     floor is what the longest name - `.TAR.ZST` - needs, so a column never
+     clips the format it offers; a panel too narrow for another column wraps to
+     another row instead. */
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 10px;
 }
 
@@ -75,6 +77,13 @@
   text-align: center;
   cursor: pointer;
   transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Trimmed at the sides so the longest format name fits without shrinking the
+   type. The vertical padding is untouched, so the button keeps its height. */
+.compression-panel__format-button {
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 .compression-panel__format-button.is-active,

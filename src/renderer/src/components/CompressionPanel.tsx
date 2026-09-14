@@ -295,6 +295,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const singleFileFormat = format === 'gz' || format === 'zst'
   const sourceFiltersShown = isExpertMode && !singleFileFormat
   const solidBlockShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
+  // Every section the card can hold. ZST has none of them - its only setting is
+  // the level slider above - so without this the card would be a heading with
+  // nothing under it.
+  const expertCardShown = isExpertMode && (
+    format === 'zip' || format === '7z' || deflateTuningShown || sourceFiltersShown || solidBlockShown
+  )
 
 
   const splitSize = (() => {
@@ -423,8 +429,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
       )}
 
       {/* Expert Mode Compression Configuration Card. TAR has no codec to
-          configure, so for it the card holds the source filters alone. */}
-      {isExpertMode && (
+          configure, so for it the card holds the source filters alone, and a
+          format with nothing to configure at all does not draw the card. */}
+      {expertCardShown && (
         <div className="expert-card">
           <div className="expert-card__header">
             <div className="expert-card__title">
