@@ -90,36 +90,23 @@ how_to:
         - 폴더를 이동하거나 이름을 검색합니다.
         - 텍스트나 이미지를 눌러 내용을 봅니다.
 formats:
-  kicker: 익숙한 형식을 그대로
+  kicker: 익숙한 형식, 바로 사용
   title: 지원 형식
-  description: 일반적으로 사용하는 압축 형식을 간결하게 지원합니다.
-  items:
-    - name: ZIP
-      detail: 압축 · 해제 · 미리보기 · 비밀번호
-    - name: 7Z
-      detail: 압축 · 해제 · 미리보기 · 비밀번호
-    - name: TAR
-      detail: 압축 · 해제 · 미리보기
-    - name: TAR.GZ
-      detail: 압축 · 해제 · 미리보기
-    - name: TAR.XZ
-      detail: 해제 · 미리보기
-    - name: TAR.BZ2
-      detail: 해제 · 미리보기
-    - name: TAR.ZST
-      detail: 압축 · 해제 · 미리보기
-    - name: GZ
-      detail: 압축 · 해제 · 미리보기
-    - name: ZST
-      detail: 압축 · 해제 · 미리보기
-    - name: XZ
-      detail: 해제 · 미리보기
-    - name: BZ2
-      detail: 해제 · 미리보기
-    - name: JAR
-      detail: 해제 · 미리보기
-    - name: WAR
-      detail: 해제 · 미리보기
+  description: 자주 쓰이는 압축 형식을 지원합니다. 아래 표는 앱이 실제로 읽는 목록에서 그대로 만들어지므로, 이번 릴리스가 할 수 있는 일을 그대로 보여줍니다.
+  columns:
+    format: 형식
+    extensions: 확장자
+    abilities: 가능한 작업
+    codecs: 코덱
+  abilities:
+    compress: 압축
+    extract: 해제
+    read: 미리보기
+    password: 비밀번호
+    split: 분할 압축
+  codec_write: 쓰기
+  codec_read: 읽기
+  codec_none: 코덱 없이 저장
   security_title: 압축 비밀번호 안내
   security_description: 7Z는 AES-256을 사용하고 파일 이름까지 숨길 수 있어 민감한 파일에 적합합니다. ZIP은 호환성을 위해 ZipCrypto가 기본값이므로, 내용이 민감하다면 전문가 모드에서 AES-256으로 바꿔 주세요.
 download:

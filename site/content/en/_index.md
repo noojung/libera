@@ -92,34 +92,21 @@ how_to:
 formats:
   kicker: Familiar formats, ready to go
   title: Supported formats
-  description: Libera focuses on the archive formats people use most often.
-  items:
-    - name: ZIP
-      detail: compress · extract · preview · password
-    - name: 7Z
-      detail: compress · extract · preview · password
-    - name: TAR
-      detail: compress · extract · preview
-    - name: TAR.GZ
-      detail: compress · extract · preview
-    - name: TAR.XZ
-      detail: extract · preview
-    - name: TAR.BZ2
-      detail: extract · preview
-    - name: TAR.ZST
-      detail: compress · extract · preview
-    - name: GZ
-      detail: compress · extract · preview
-    - name: ZST
-      detail: compress · extract · preview
-    - name: XZ
-      detail: extract · preview
-    - name: BZ2
-      detail: extract · preview
-    - name: JAR
-      detail: extract · preview
-    - name: WAR
-      detail: extract · preview
+  description: Libera focuses on the archive formats people use most often. The table is built from the same list the app itself reads, so it says what this release actually does.
+  columns:
+    format: Format
+    extensions: Extensions
+    abilities: What you can do
+    codecs: Codecs
+  abilities:
+    compress: Compress
+    extract: Extract
+    read: Preview
+    password: Password
+    split: Split volumes
+  codec_write: Write
+  codec_read: Read
+  codec_none: Stores entries, no codec
   security_title: About archive passwords
   security_description: 7Z uses AES-256 and can hide file names as well, so it is the choice for sensitive files. ZIP defaults to ZipCrypto for compatibility, so switch it to AES-256 in expert mode when the contents are sensitive.
 download:

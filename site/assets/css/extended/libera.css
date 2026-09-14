@@ -387,7 +387,7 @@ body.list {
 .value-card,
 .feature-card,
 .workflow-card,
-.format-item,
+.format-table-wrap,
 .os-card,
 .showcase-card {
   border: 2px solid var(--border);
@@ -562,32 +562,100 @@ body.list {
   background: var(--libera-paper);
 }
 
-.format-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.format-item {
-  display: flex;
-  min-height: 104px;
-  padding: 18px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
+/* The table is wider than a phone, so it scrolls inside its own frame rather
+   than pushing the page sideways. The region is focusable so it can be reached
+   and scrolled without a pointer. */
+.format-table-wrap {
+  overflow-x: auto;
   border-radius: 15px;
 }
 
-.format-item strong {
-  color: var(--primary);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 18px;
+.format-table-wrap:focus-visible {
+  outline: 3px solid var(--libera-peach);
+  outline-offset: 2px;
 }
 
-.format-item span {
+.format-table {
+  width: 100%;
+  /* Without a floor the table squeezes itself into a narrow panel and clips its
+     own cells instead of letting the frame above scroll. */
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 14px;
+  text-align: left;
+}
+
+.format-table th,
+.format-table td {
+  padding: 14px 18px;
+  border-bottom: 1.5px solid var(--tertiary);
+  vertical-align: top;
+}
+
+.format-table thead th {
+  /* Not sticky: the site has its own fixed header, and a row pinned under it
+     would sit on top of the first format rather than beside it. */
+  background: var(--libera-paper);
+  color: var(--primary);
+  font-family: "Gaegu", cursive;
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.format-table tbody tr:last-child th,
+.format-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.format-table td {
   color: var(--secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+.format-table__name {
+  color: var(--primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.format-table__ext {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  /* Suffixes wrap one per line rather than running together mid-name. */
+  white-space: pre-line;
+}
+
+.format-table__codecs {
+  min-width: 210px;
+}
+
+.format-table__codec {
+  display: block;
+}
+
+.format-table__codec + .format-table__codec {
+  margin-top: 4px;
+}
+
+.format-table__codec em {
+  display: inline-block;
+  min-width: 44px;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+
+.format-table__codec--none {
+  font-style: italic;
 }
 
 .download-panel {
@@ -810,8 +878,7 @@ body.list {
   .value-grid,
   .feature-grid,
   .workflow-grid,
-  .showcase,
-  .format-list {
+  .showcase {
     grid-template-columns: 1fr;
   }
 

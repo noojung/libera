@@ -30,7 +30,7 @@
     }
   },
   "scripts": {
-    "generate:metadata": "node scripts/generateThirdPartyLicenses.cjs && node scripts/generateAppInfo.cjs",
+    "generate:metadata": "node scripts/generateThirdPartyLicenses.cjs && node scripts/generateAppInfo.cjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generateSiteFormats.cjs",
     "predev": "npm run generate:metadata && npm run build:lib",
     "dev": "vite",
     "prebuild": "npm run generate:metadata && npm run build:lib",

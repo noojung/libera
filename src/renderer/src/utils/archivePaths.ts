@@ -207,6 +207,42 @@ export interface SupportedFormat {
   read: boolean
   password: boolean
   split: boolean
+  codecs: FormatCodecs
+}
+
+/**
+ * The codecs a format carries. `write` is empty for one this app only reads,
+ * and both are empty for TAR, which stores its entries rather than coding them.
+ */
+export interface FormatCodecs {
+  write: readonly string[]
+  read: readonly string[]
+}
+
+/**
+ * What each format is coded with. A reader this app has but no writer for shows
+ * up as a read entry alone, which is what makes the read-only rows read-only.
+ */
+const FORMAT_CODECS: Record<string, FormatCodecs> = {
+  ZIP: {
+    write: ['Store', 'Deflate', 'LZMA', 'Zstandard'],
+    read: ['Store', 'Deflate', 'Deflate64', 'LZMA', 'Zstandard']
+  },
+  '7Z': {
+    write: ['Copy', 'LZMA2'],
+    read: ['Copy', 'LZMA', 'LZMA2', 'PPMd7', 'Deflate', 'Deflate64', 'BZip2']
+  },
+  TAR: { write: [], read: [] },
+  'TAR.GZ': { write: ['Deflate'], read: ['Deflate'] },
+  'TAR.XZ': { write: [], read: ['LZMA2'] },
+  'TAR.BZ2': { write: [], read: ['BZip2'] },
+  'TAR.ZST': { write: ['Zstandard'], read: ['Zstandard'] },
+  GZ: { write: ['Deflate'], read: ['Deflate'] },
+  XZ: { write: [], read: ['LZMA2'] },
+  BZ2: { write: [], read: ['BZip2'] },
+  ZST: { write: ['Zstandard'], read: ['Zstandard'] },
+  JAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] },
+  WAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] }
 }
 
 /** The compression format each readable one corresponds to, where there is one. */
@@ -242,7 +278,10 @@ export const SUPPORTED_FORMATS: readonly SupportedFormat[] = READABLE_FORMATS.ma
       extract: true,
       read: true,
       password: writable !== undefined && supportsPassword(writable),
-      split: writable !== undefined && supportsSplit(writable)
+      split: writable !== undefined && supportsSplit(writable),
+      // A format with no entry here is one nobody said how to code, which the
+      // table would render as a blank cell rather than fail on.
+      codecs: FORMAT_CODECS[name] ?? { write: [], read: [] }
     }
   }
 )

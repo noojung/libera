@@ -116,13 +116,45 @@
       <h2 id="formats-title">{{ .title }}</h2>
       <p>{{ .description }}</p>
     </div>
-    <div class="format-list">
-      {{- range .items }}
-      <div class="format-item">
-        <strong>{{ .name }}</strong>
-        <span>{{ .detail }}</span>
-      </div>
-      {{- end }}
+    {{- $labels := . }}
+    <div class="format-table-wrap" tabindex="0" role="region" aria-labelledby="formats-title">
+      <table class="format-table">
+        <thead>
+          <tr>
+            <th scope="col">{{ $labels.columns.format }}</th>
+            <th scope="col">{{ $labels.columns.extensions }}</th>
+            <th scope="col">{{ $labels.columns.abilities }}</th>
+            <th scope="col">{{ $labels.columns.codecs }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{- range site.Data.formats.formats }}
+          {{- $abilities := slice }}
+          {{- if .compress }}{{ $abilities = $abilities | append $labels.abilities.compress }}{{ end }}
+          {{- if .extract }}{{ $abilities = $abilities | append $labels.abilities.extract }}{{ end }}
+          {{- if .read }}{{ $abilities = $abilities | append $labels.abilities.read }}{{ end }}
+          {{- if .password }}{{ $abilities = $abilities | append $labels.abilities.password }}{{ end }}
+          {{- if .split }}{{ $abilities = $abilities | append $labels.abilities.split }}{{ end }}
+          <tr>
+            <th scope="row" class="format-table__name">{{ .name }}</th>
+            <td class="format-table__ext">{{ delimit .extensions " " }}</td>
+            <td>{{ delimit $abilities " · " }}</td>
+            <td class="format-table__codecs">
+              {{- $write := delimit .codecs.write ", " }}
+              {{- $read := delimit .codecs.read ", " }}
+              {{- if and (not $write) (not $read) }}
+              <span class="format-table__codec format-table__codec--none">{{ $labels.codec_none }}</span>
+              {{- else if eq $write $read }}
+              <span class="format-table__codec">{{ $read }}</span>
+              {{- else }}
+              {{- with $write }}<span class="format-table__codec"><em>{{ $labels.codec_write }}</em>{{ . }}</span>{{ end }}
+              <span class="format-table__codec"><em>{{ $labels.codec_read }}</em>{{ $read }}</span>
+              {{- end }}
+            </td>
+          </tr>
+          {{- end }}
+        </tbody>
+      </table>
     </div>
     <aside class="security-note">
       <span aria-hidden="true">🔐</span>
