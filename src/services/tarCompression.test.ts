@@ -5,7 +5,7 @@ import path from 'path'
 import { extractArchive, isSupportedArchivePath } from './extractor'
 import { inspectArchive } from './archiveInspector'
 import { previewArchiveEntry } from './archivePreview'
-import { isTarArchivePath, tarCompressionFor } from './tarCompression'
+import { isTarArchivePath, tarCompressionFor, tarWrapperFor } from './tarCompression'
 import { TAR_BINARY_ENTRY, TAR_BZ2, TAR_BZ2_BAD_CRC, TAR_XZ, TAR_ZST } from './tarCompression.testData'
 
 // One tarball, one row per codec wrapped around it, so every reader is held to
@@ -113,14 +113,31 @@ describe('recognising the suffixes', () => {
     ['archive.tar.bz2', 'bzip2'],
     ['archive.tbz2', 'bzip2'],
     ['archive.tbz', 'bzip2'],
+    ['archive.tar', 'none'],
+    // The `tar` package finds gzip and Zstandard in the leading bytes and
+    // unwraps both itself, so nothing goes in front of them.
+    ['archive.tar.gz', 'none'],
+    ['archive.tar.zst', 'none'],
+    ['archive.tzst', 'none'],
+    ['archive.zip', 'none']
+  ])('reads %s through a %s decoder of our own', (name, expected) => {
+    expect(tarCompressionFor(name)).toBe(expected)
+  })
+
+  it.each([
+    ['archive.tar.xz', 'xz'],
+    ['archive.txz', 'xz'],
+    ['archive.tar.bz2', 'bzip2'],
+    ['archive.tbz', 'bzip2'],
+    ['archive.tar.gz', 'gzip'],
+    ['archive.tgz', 'gzip'],
     ['archive.tar.zst', 'zstd'],
     ['archive.tzst', 'zstd'],
     ['ARCHIVE.TAR.ZST', 'zstd'],
-    ['archive.tar', 'none'],
-    ['archive.tar.gz', 'none'],
-    ['archive.zip', 'none']
-  ])('reads %s as %s', (name, expected) => {
-    expect(tarCompressionFor(name)).toBe(expected)
+    ['archive.tar', null],
+    ['archive.zip', null]
+  ] as const)('names %s as wrapped in %s', (name, expected) => {
+    expect(tarWrapperFor(name)).toBe(expected)
   })
 
   it.each([

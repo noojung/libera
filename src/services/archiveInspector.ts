@@ -8,7 +8,7 @@ import { canonicalArchivePath, isZipFormatExtension, zipFormatLabel } from './ar
 import type { ArchiveVolumeInfo } from './archiveInputResolver'
 import { listSevenZipEntries } from './sevenZip/list'
 import { discoverSevenZipVolumes, isSevenZipArchivePath } from './sevenZip/volumes'
-import { isGzipTarPath, isTarArchivePath, tarCompressionFor, tarReadStages } from './tarCompression'
+import { isTarArchivePath, tarReadStages, tarWrapperFor } from './tarCompression'
 import {
   CODEC_DESCRIPTIONS,
   SINGLE_FILE_FORMAT_LABELS,
@@ -177,13 +177,12 @@ async function readZipHeaderInfo(
 /** The tar shapes the inspector names, one per codec wrapped around it. */
 type TarInspectionFormat = 'TAR' | 'TAR.GZ' | 'TAR.XZ' | 'TAR.BZ2' | 'TAR.ZST'
 
-/** The codec wrapped around each shape; a bare tar has none. */
-const TAR_SHAPE_CODECS: Record<TarInspectionFormat, StreamCodec | null> = {
-  TAR: null,
-  'TAR.GZ': 'gzip',
-  'TAR.XZ': 'xz',
-  'TAR.BZ2': 'bzip2',
-  'TAR.ZST': 'zstd'
+/** How each codec names the tar shape it wraps. */
+const TAR_SHAPE_NAMES: Record<StreamCodec, TarInspectionFormat> = {
+  gzip: 'TAR.GZ',
+  xz: 'TAR.XZ',
+  bzip2: 'TAR.BZ2',
+  zstd: 'TAR.ZST'
 }
 
 /** A bare tarball stores its entries, so it has no codec of its own to name. */
@@ -194,18 +193,19 @@ const UNCOMPRESSED_TAR: CodecDescription = {
   version: ''
 }
 
-/** How a shape describes the codec around the tarball, if any. */
-function tarCodec(format: TarInspectionFormat): CodecDescription {
-  const codec = TAR_SHAPE_CODECS[format]
-  return codec ? CODEC_DESCRIPTIONS[codec] : UNCOMPRESSED_TAR
+/** How the codec around a tarball is described, if there is one. */
+function tarCodec(wrapper: StreamCodec | null): CodecDescription {
+  return wrapper ? CODEC_DESCRIPTIONS[wrapper] : UNCOMPRESSED_TAR
 }
 
 async function inspectTarArchive(
   archivePath: string,
   totalCompressedSize: number,
-  format: TarInspectionFormat
+  wrapper: StreamCodec | null
 ): Promise<ArchiveInspectionResult> {
-  const tarMagic = format === 'TAR' ? await readFileBytes(archivePath, 257, 8) : undefined
+  const format: TarInspectionFormat = wrapper ? TAR_SHAPE_NAMES[wrapper] : 'TAR'
+  const codec = tarCodec(wrapper)
+  const tarMagic = wrapper === null ? await readFileBytes(archivePath, 257, 8) : undefined
   const hasUstarMagic = tarMagic !== undefined && Buffer.from(tarMagic.subarray(0, 5)).toString('ascii') === 'ustar'
   const entries: ArchiveEntry[] = []
   let totalUncompressedSize = 0
@@ -223,7 +223,7 @@ async function inspectTarArchive(
         isDirectory: isDir,
         size,
         date: entry.mtime ? new Date(entry.mtime).toLocaleDateString() : undefined,
-        codec: tarCodec(format).entry,
+        codec: codec.entry,
         encrypted: false,
         encryptionMethod: 'None',
         mode: entry.mode,
@@ -257,14 +257,14 @@ async function inspectTarArchive(
       : 0,
     entries,
     headerInfo: {
-      signature: format === 'TAR'
+      signature: tarMagic
         ? hasUstarMagic ? formatSignature(tarMagic.subarray(0, 6), 'ustar') : 'TAR (legacy header)'
-        : tarCodec(format).signature,
-      codecSummary: tarCodec(format).summary,
+        : codec.signature,
+      codecSummary: codec.summary,
       encryptionAlgorithm: 'None',
-      formatVersion: format === 'TAR'
+      formatVersion: tarMagic
         ? hasUstarMagic ? 'POSIX ustar' : 'V7 / legacy TAR'
-        : tarCodec(format).version,
+        : codec.version,
       solid: false
     }
   }
@@ -435,7 +435,7 @@ export async function inspectArchive(
   }
 
   if (isTarArchivePath(archivePath)) {
-    return inspectTarArchive(archivePath, totalCompressedSize, tarInspectionFormat(archivePath))
+    return inspectTarArchive(archivePath, totalCompressedSize, tarWrapperFor(archivePath))
   }
 
   // A lone codec stream has no entry table: it holds one file, whose size is
@@ -480,11 +480,3 @@ export async function inspectArchive(
   throw new Error(`Unsupported archive format: ${ext}`)
 }
 
-/** Which of the tar shapes a path names. */
-function tarInspectionFormat(archivePath: string): TarInspectionFormat {
-  const compression = tarCompressionFor(archivePath)
-  if (compression === 'xz') return 'TAR.XZ'
-  if (compression === 'bzip2') return 'TAR.BZ2'
-  if (compression === 'zstd') return 'TAR.ZST'
-  return isGzipTarPath(archivePath) ? 'TAR.GZ' : 'TAR'
-}
