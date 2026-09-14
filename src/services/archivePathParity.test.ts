@@ -12,6 +12,22 @@ import {
 } from './compressor'
 import * as renderer from '../renderer/src/utils/archivePaths'
 
+/** What an open dialog filters on: the last suffix segment of a path. */
+function dialogExtension(extension: string): string {
+  return extension.split('.').pop() as string
+}
+
+/**
+ * The two the dialog offers that name a volume rather than a whole archive,
+ * each with the file it is there to let through. A 7z set's first volume is
+ * `name.7z.001`, so the filter needs `001` even though `name.001` alone is
+ * not an archive.
+ */
+const VOLUME_DIALOG_EXTENSIONS = [
+  { offered: 'z01', example: '/tmp/archive.z01' },
+  { offered: '001', example: '/tmp/archive.7z.001' }
+]
+
 // The renderer cannot import the services (they pull in fs/path), so it keeps
 // its own copy of the archive path rules. This pins the two together.
 describe('renderer archive path helper', () => {
@@ -52,6 +68,38 @@ describe('renderer archive path helper', () => {
 
     for (const candidate of candidates) {
       expect(renderer.isSupportedArchivePath(candidate)).toBe(isSupportedArchivePath(candidate))
+    }
+  })
+
+  // The open dialog filters on the last segment of a name, so `.tar.gz` reaches
+  // it as `gz`. Nothing held these two together before, which is how the dialog
+  // came to offer `.xz` and `.bz2` months before either could be opened.
+  it('offers every extension the extractor accepts', () => {
+    const offered = new Set(renderer.EXTRACT_DIALOG_EXTENSIONS)
+
+    for (const extension of SUPPORTED_ARCHIVE_EXTENSIONS) {
+      expect(offered, `${extension} is supported but the dialog hides it`)
+        .toContain(dialogExtension(extension))
+    }
+  })
+
+  it('offers nothing the extractor would then refuse', () => {
+    const accepted = new Set(SUPPORTED_ARCHIVE_EXTENSIONS.map(dialogExtension))
+
+    const volumeOffers = VOLUME_DIALOG_EXTENSIONS.map(volume => volume.offered)
+    for (const offered of renderer.EXTRACT_DIALOG_EXTENSIONS) {
+      if (volumeOffers.includes(offered)) continue
+      expect(accepted, `the dialog offers .${offered}, which cannot be opened`)
+        .toContain(offered)
+      // And the file the filter lets through really is one the app takes.
+      expect(isSupportedArchivePath(`/tmp/archive.${offered}`)).toBe(true)
+    }
+  })
+
+  it('offers the volume suffixes that stand in for a split set', () => {
+    for (const { offered, example } of VOLUME_DIALOG_EXTENSIONS) {
+      expect(renderer.EXTRACT_DIALOG_EXTENSIONS).toContain(offered)
+      expect(isSupportedArchivePath(example)).toBe(true)
     }
   })
 
