@@ -7,7 +7,9 @@ import {
   createCodecCompressor,
   isZstdStrategy,
   isZstdWindowSize,
+  isZstdWorkers,
   ZSTD_MAX_WINDOW_SIZE,
+  ZSTD_MAX_WORKERS,
   ZSTD_MIN_WINDOW_SIZE,
   type ZstdStrategy,
   type ZstdTuning
@@ -70,7 +72,7 @@ export type {
 export type { SevenZipPlanOptions, SevenZipSolidBlock } from './sevenZip/node'
 export type { CompressionInputFilters } from './compressionInputs'
 export type { ZstdStrategy } from './codecStreams'
-export { ZSTD_MAX_WINDOW_SIZE, ZSTD_MIN_WINDOW_SIZE } from './codecStreams'
+export { ZSTD_MAX_WINDOW_SIZE, ZSTD_MAX_WORKERS, ZSTD_MIN_WINDOW_SIZE } from './codecStreams'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface CompressionOptions extends CompressionInputFilters {
@@ -97,6 +99,7 @@ export interface CompressionOptions extends CompressionInputFilters {
   zstdStrategy?: ZstdStrategy
   zstdWindowSize?: number
   zstdLongDistance?: boolean
+  zstdWorkers?: number
 }
 
 export function mapDeflateStrategy(strategy?: DeflateStrategy): number | undefined {
@@ -303,9 +306,16 @@ export async function compressArchive(
   }
   const zstdTuned = options.zstdStrategy !== undefined ||
     options.zstdWindowSize !== undefined ||
-    options.zstdLongDistance !== undefined
-  if (zstdTuned && format !== 'zst' && format !== 'tzst') {
-    throw new Error('Zstandard codec options can only be used with ZST and TAR.ZST archives.')
+    options.zstdLongDistance !== undefined ||
+    options.zstdWorkers !== undefined
+  // ZIP carries Zstandard as one of its methods, so the codec's own options
+  // belong to it as much as to the two formats that are nothing else.
+  const zstdCapableFormat = format === 'zst' || format === 'tzst' || format === 'zip'
+  if (zstdTuned && !zstdCapableFormat) {
+    throw new Error('Zstandard codec options can only be used with ZST, TAR.ZST, or ZIP archives.')
+  }
+  if (options.zstdWorkers !== undefined && !isZstdWorkers(options.zstdWorkers)) {
+    throw new RangeError(`Zstandard worker count must be between 0 and ${ZSTD_MAX_WORKERS}.`)
   }
   if (options.zstdStrategy !== undefined && !isZstdStrategy(options.zstdStrategy)) {
     throw new RangeError('Zstandard strategy is unsupported.')
@@ -395,7 +405,8 @@ export async function compressArchive(
   const zstd: ZstdTuning = {
     strategy: options.zstdStrategy,
     windowSize: options.zstdWindowSize,
-    longDistanceMatching: options.zstdLongDistance
+    longDistanceMatching: options.zstdLongDistance,
+    workers: options.zstdWorkers
   }
 
   const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath, filters)
@@ -459,7 +470,8 @@ export async function compressArchive(
             method: options.zipMethod,
             methodOverrides: options.zipMethodOverrides,
             deflateStrategy: options.deflateStrategy,
-            memLevel: options.memLevel
+            memLevel: options.memLevel,
+            zstd
           }
         },
         onProgress,
@@ -503,7 +515,8 @@ export async function compressArchive(
           method: options.zipMethod,
           methodOverrides: options.zipMethodOverrides,
           deflateStrategy: options.deflateStrategy,
-          memLevel: options.memLevel
+          memLevel: options.memLevel,
+          zstd
         }
       }, onProgress, { signal })
     } catch (error) {

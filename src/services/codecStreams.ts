@@ -1,5 +1,5 @@
 import path from 'path'
-import { Transform } from 'stream'
+import { compose, Transform, type Duplex } from 'stream'
 import zlib from 'zlib'
 import { decodeBzip2Blocks } from 'libera7z'
 import { XzStreamDecoder } from './xz/reader'
@@ -130,6 +130,39 @@ export function isZstdWindowSize(windowSize: number): boolean {
     Number.isInteger(zstdWindowLog(windowSize))
 }
 
+/**
+ * Threads the encoder may hand work to. Zero keeps it on the calling thread,
+ * which is what the codec does when nothing asks otherwise.
+ */
+export const ZSTD_MAX_WORKERS = 16
+
+export function isZstdWorkers(workers: number): boolean {
+  return Number.isInteger(workers) && workers >= 0 && workers <= ZSTD_MAX_WORKERS
+}
+
+/**
+ * The largest write handed to a worker-backed encoder.
+ *
+ * Node's binding drops the whole stream - no output, no error - when a single
+ * write past about 16 MiB reaches a Zstandard encoder running workers. Every
+ * caller here feeds it a read stream's chunks, which are far smaller, but the
+ * encoder splits its input anyway so the failure cannot be reached by a caller
+ * that one day hands it a whole buffer.
+ */
+const ZSTD_WORKER_WRITE_LIMIT = 4 * 1024 * 1024
+
+/** Cuts oversized writes down before they reach a stream that cannot take them. */
+function createWriteSplitter(limit: number): Transform {
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      for (let offset = 0; offset < chunk.length; offset += limit) {
+        this.push(chunk.subarray(offset, offset + limit))
+      }
+      callback()
+    }
+  })
+}
+
 /** What expert mode can say about a Zstandard stream beyond its level. */
 export interface ZstdTuning {
   strategy?: ZstdStrategy
@@ -139,6 +172,8 @@ export interface ZstdTuning {
    * the input coarsely alongside the ordinary match search.
    */
   longDistanceMatching?: boolean
+  /** Threads the encoder hands blocks to; 0 keeps it on the calling thread. */
+  workers?: number
 }
 
 /** Maps the archive levels 0-9 onto the Zstandard levels 1-19. */
@@ -183,6 +218,7 @@ function zstdParams(level: number | undefined, tuning: ZstdTuning = {}): Record<
   if (tuning.strategy) params[zlib.constants.ZSTD_c_strategy] = ZSTD_STRATEGIES[tuning.strategy]
   if (tuning.windowSize) params[zlib.constants.ZSTD_c_windowLog] = zstdWindowLog(tuning.windowSize)
   if (tuning.longDistanceMatching) params[zlib.constants.ZSTD_c_enableLongDistanceMatching] = 1
+  if (tuning.workers) params[zlib.constants.ZSTD_c_nbWorkers] = tuning.workers
   return params
 }
 
@@ -194,10 +230,12 @@ function zstdParams(level: number | undefined, tuning: ZstdTuning = {}): Record<
 export function createCodecCompressor(
   codec: 'gzip' | 'zstd',
   options: CodecCompressorOptions = {}
-): Transform {
+): Duplex {
   if (codec === 'zstd') {
     requireZstd()
-    return zlib.createZstdCompress({ params: zstdParams(options.level, options.zstd) })
+    const encoder = zlib.createZstdCompress({ params: zstdParams(options.level, options.zstd) })
+    if (!options.zstd?.workers) return encoder
+    return compose(createWriteSplitter(ZSTD_WORKER_WRITE_LIMIT), encoder)
   }
   return zlib.createGzip({
     level: options.level,

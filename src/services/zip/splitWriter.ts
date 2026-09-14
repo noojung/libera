@@ -12,10 +12,12 @@ import {
 import {
   registerZipCodecs,
   withZipDeflateOptions,
+  withZipZstdOptions,
   ZipDeflateCompressionStream,
   ZIP_LZMA_METHOD,
   ZIP_ZSTD_METHOD
 } from './codecs'
+import type { ZstdTuning } from '../codecStreams'
 import {
   resolveZipMethod,
   type DeflateStrategy,
@@ -58,6 +60,8 @@ export interface ZipSqueezeOptions {
   methodOverrides?: ZipMethodOverride[]
   deflateStrategy?: DeflateStrategy
   memLevel?: number
+  /** Applies to whichever entries end up on the Zstandard method. */
+  zstd?: ZstdTuning
 }
 
 export interface ZipFileOptions {
@@ -382,13 +386,16 @@ export async function writeSplitZip(
         const method = entryMethodOptions(options.squeeze, methodOptions, entry)
         // Entries are added one at a time on purpose: concurrent adds make
         // zip.js buffer each whole compressed entry in memory.
-        await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
-          ...method.options,
-          lastModDate: entry.lastModDate,
-          unixMode: entry.unixMode,
-          signal,
-          onprogress: (progress) => report(entryStart + progress, entry.entryName)
-        }))
+        await withZipDeflateOptions(
+          { strategy: method.deflateStrategy, memLevel: method.memLevel },
+          () => withZipZstdOptions(options.squeeze.zstd, () => zipWriter.add(entry.entryName, reader, {
+            ...method.options,
+            lastModDate: entry.lastModDate,
+            unixMode: entry.unixMode,
+            signal,
+            onprogress: (progress) => report(entryStart + progress, entry.entryName)
+          }))
+        )
         processedBytes = entryStart + entry.size
         report(processedBytes, entry.entryName)
       } catch (err) {
@@ -501,13 +508,16 @@ export async function writeZipFile(
       const entryStart = processedBytes
       try {
         const method = entryMethodOptions(squeeze, methodOptions, entry)
-        await withZipDeflateOptions({ strategy: method.deflateStrategy, memLevel: method.memLevel }, () => zipWriter.add(entry.entryName, reader, {
-          ...method.options,
-          lastModDate: entry.lastModDate,
-          unixMode: entry.unixMode,
-          signal,
-          onprogress: progress => report(entryStart + progress, entry.entryName)
-        }))
+        await withZipDeflateOptions(
+          { strategy: method.deflateStrategy, memLevel: method.memLevel },
+          () => withZipZstdOptions(squeeze.zstd, () => zipWriter.add(entry.entryName, reader, {
+            ...method.options,
+            lastModDate: entry.lastModDate,
+            unixMode: entry.unixMode,
+            signal,
+            onprogress: progress => report(entryStart + progress, entry.entryName)
+          }))
+        )
         processedBytes += entry.size
         report(processedBytes, entry.entryName)
       } catch (error) {

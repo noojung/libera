@@ -281,14 +281,82 @@ describe('compressArchive', () => {
     expect(inspected.entries.map(entry => entry.path)).toContain('source/a.txt')
   }, 60_000)
 
+  it('carries the Zstandard options into a ZIP written with that method', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.bin')
+    const block = crypto.randomBytes(2 * 1024 * 1024)
+    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+
+    const sizeWith = async (name: string, extra: Record<string, unknown>) => {
+      const outputPath = path.join(directory, name)
+      await compressArchive({
+        inputPaths: [inputPath], outputPath, format: 'zip', zipMethod: 'zstd', level: 3, ...extra
+      } as never)
+      return (await fs.stat(outputPath)).size
+    }
+
+    const narrow = await sizeWith('narrow.zip', { zstdWindowSize: 4 * 1024 * 1024 })
+    const wide = await sizeWith('wide.zip', { zstdWindowSize: 32 * 1024 * 1024 })
+    expect(narrow - wide).toBeGreaterThan(1024 * 1024)
+
+    // Still an ordinary ZIP holding a Zstandard entry, readable either way.
+    const widePath = path.join(directory, 'wide.zip')
+    expect((await inspectArchive(widePath)).entries[0].codec).toBe('Zstd')
+    const targetDir = path.join(directory, 'out')
+    await extractArchive({ archivePath: widePath, targetDir } as never)
+    expect((await fs.stat(path.join(targetDir, 'payload.bin'))).size).toBe(10 * 1024 * 1024)
+  }, 120_000)
+
+  it('leaves a ZIP written with another method untouched by them', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.txt')
+    await fs.writeFile(inputPath, 'libera '.repeat(20_000))
+
+    const sizeWith = async (name: string, extra: Record<string, unknown>) => {
+      const outputPath = path.join(directory, name)
+      await compressArchive({
+        inputPaths: [inputPath], outputPath, format: 'zip', zipMethod: 'deflate', ...extra
+      } as never)
+      return (await fs.stat(outputPath)).size
+    }
+
+    // The options ride along, but a Deflate entry never reads them.
+    expect(await sizeWith('tuned.zip', { zstdWindowSize: 32 * 1024 * 1024, zstdLongDistance: true }))
+      .toBe(await sizeWith('plain.zip', {}))
+  }, 60_000)
+
+  it('writes the same archive whether or not threads helped', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.txt')
+    const contents = 'libera '.repeat(300_000)
+    await fs.writeFile(inputPath, contents)
+
+    // Threads change how fast the bytes are produced, not what they decode to.
+    for (const zstdWorkers of [0, 4]) {
+      const outputPath = path.join(directory, `w${zstdWorkers}.zst`)
+      await compressArchive({ inputPaths: [inputPath], outputPath, format: 'zst', level: 9, zstdWorkers })
+      expect(zlib.zstdDecompressSync(await fs.readFile(outputPath)).toString()).toBe(contents)
+    }
+  }, 60_000)
+
+  it('refuses a thread count the encoder would not take', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'a.txt')
+    await fs.writeFile(inputPath, 'libera')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath], outputPath: path.join(directory, 'a.zst'), format: 'zst', zstdWorkers: 64
+    })).rejects.toThrow(/worker count must be between 0 and 16/)
+  })
+
   it('refuses Zstandard options on a format that has no Zstandard in it', async () => {
     const directory = await createTemporaryDirectory()
     const inputPath = path.join(directory, 'a.txt')
     await fs.writeFile(inputPath, 'libera')
 
     await expect(compressArchive({
-      inputPaths: [inputPath], outputPath: path.join(directory, 'a.zip'), format: 'zip', zstdStrategy: 'lazy2'
-    })).rejects.toThrow(/only be used with ZST and TAR.ZST/)
+      inputPaths: [inputPath], outputPath: path.join(directory, 'a.tar'), format: 'tar', zstdStrategy: 'lazy2'
+    })).rejects.toThrow(/only be used with ZST, TAR.ZST, or ZIP/)
   })
 
   it('refuses a strategy or window size the codec would not take', async () => {

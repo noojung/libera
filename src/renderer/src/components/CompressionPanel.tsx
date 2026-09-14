@@ -55,6 +55,7 @@ export interface StartCompressOptions {
   zstdStrategy?: ZstdStrategy
   zstdWindowSize?: number
   zstdLongDistance?: boolean
+  zstdWorkers?: number
   excludeSymlinks?: boolean
   excludeMacMetadata?: boolean
   excludeHiddenFiles?: boolean
@@ -102,6 +103,9 @@ const CLEARED_VALUE = '—'
 /** Zstandard's own default strategy for the level, left to the codec. */
 const DEFAULT_ZSTD_STRATEGY: ZstdStrategy = 'lazy2'
 const DEFAULT_ZSTD_WINDOW_SIZE = 8 * 1024 * 1024
+/** Off by default: threads change nothing about the archive but how fast it is written. */
+const DEFAULT_ZSTD_WORKERS = 0
+const ZSTD_WORKER_CHOICES = [0, 2, 4, 8]
 
 /**
  * The reach of the match window. It stops at 128 MB because a reader refuses a
@@ -189,6 +193,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [zstdStrategy, setZstdStrategy] = useState<ZstdStrategy>(DEFAULT_ZSTD_STRATEGY)
   const [zstdWindowSize, setZstdWindowSize] = useState<number>(DEFAULT_ZSTD_WINDOW_SIZE)
   const [zstdLongDistance, setZstdLongDistance] = useState<boolean>(false)
+  const [zstdWorkers, setZstdWorkers] = useState<number>(DEFAULT_ZSTD_WORKERS)
   const [excludeSymlinks, setExcludeSymlinks] = useState<boolean>(false)
   const [excludeMacMetadata, setExcludeMacMetadata] = useState<boolean>(false)
   const [excludeHiddenFiles, setExcludeHiddenFiles] = useState<boolean>(false)
@@ -267,6 +272,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     setZstdStrategy(DEFAULT_ZSTD_STRATEGY)
     setZstdWindowSize(DEFAULT_ZSTD_WINDOW_SIZE)
     setZstdLongDistance(false)
+    setZstdWorkers(DEFAULT_ZSTD_WORKERS)
   }
 
   // Pressing the per-file toggle hands the settings between two owners, so the
@@ -323,8 +329,12 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   // The single-file formats wrap one file that is handed over whole, so there
   // is no walk for a filter to narrow.
   const singleFileFormat = format === 'gz' || format === 'zst'
-  // Zstandard's own knobs, for the two formats whose whole stream is one.
-  const zstdTuningShown = isExpertMode && (format === 'zst' || format === 'tzst')
+  // Zstandard's own knobs: the two formats that are nothing but a Zstandard
+  // stream, and ZIP when that is the method its entries are written with. The
+  // per-file dialog picks a method for each entry but carries no codec options
+  // of its own, so these stay out of its way rather than clearing.
+  const zipZstdSelected = format === 'zip' && !zipPerFileActive && zipMethod === 'zstd'
+  const zstdTuningShown = isExpertMode && (format === 'zst' || format === 'tzst' || zipZstdSelected)
   const sourceFiltersShown = isExpertMode && !singleFileFormat
   const solidBlockShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
   // Every section the card can hold. ZST has none of them - its only setting is
@@ -398,6 +408,7 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             zstdStrategy: zstdTuningShown ? zstdStrategy : undefined,
             zstdWindowSize: zstdTuningShown ? zstdWindowSize : undefined,
             zstdLongDistance: zstdTuningShown ? zstdLongDistance : undefined,
+            zstdWorkers: zstdTuningShown ? zstdWorkers : undefined,
             // GZ compresses one stream that the user picked themselves, so it
             // has no entry list for either filter to leave anything out of.
             excludeSymlinks: sourceFiltersShown ? excludeSymlinks : undefined,
@@ -655,6 +666,22 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
                   value={zstdWindowSize}
                   onChange={setZstdWindowSize}
                   options={ZSTD_WINDOW_SIZES.map(size => ({ value: size.value, label: size.label }))}
+                />
+              </div>
+
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label" htmlFor="compression-zstd-workers">
+                  {t('compression.zstdWorkers')}
+                </label>
+                <Select<number>
+                  id="compression-zstd-workers"
+                  ariaLabel={t('compression.zstdWorkers')}
+                  value={zstdWorkers}
+                  onChange={setZstdWorkers}
+                  options={ZSTD_WORKER_CHOICES.map(workers => ({
+                    value: workers,
+                    label: workers === 0 ? t('compression.zstdWorkersOff') : String(workers)
+                  }))}
                 />
               </div>
             </>

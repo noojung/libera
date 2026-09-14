@@ -111,7 +111,7 @@ Pages automatically when changes under `site/` are pushed to `main`.
 
 | Format | Supported features | Codec support | Notes |
 | --- | --- | --- | --- |
-| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate, LZMA, Zstandard<br>Read: Store, Deflate, Deflate64, LZMA, Zstandard<br>Encryption: ZipCrypto, AES-128, AES-256 | Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
+| ZIP | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate, LZMA, Zstandard<br>Read: Store, Deflate, Deflate64, LZMA, Zstandard<br>Encryption: ZipCrypto, AES-128, AES-256 | Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Choosing Deflate or Zstandard brings that codec's own options with it. Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
 | 7Z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2, AES-256<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2, AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
 | TAR | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
 | TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
@@ -137,13 +137,21 @@ but 7Z - lands on Zstandard 13, which finishes a mixed payload in about the
 time `gzip -6` takes and smaller.
 
 Expert mode sets what the level would otherwise decide: the search strategy
-(Fast through Binary Tree Ultra2), the window size, and long distance matching.
+(Fast through Binary Tree Ultra2), the window size, long distance matching, and
+how many threads the encoder may use. The same four apply to a ZIP whose method
+is Zstandard, since it is the same encoder writing its entries.
 The window stops at 128 MB because a decoder allocates the whole window before
 it reads and refuses a frame asking for more than its own limit, which is
 128 MB by default everywhere - a wider window would write archives only a
 specially configured reader could open. Long distance matching widens the reach
 on its own, but it can never look past the window, so pinning a window narrower
 than the gap between two repeats cancels it.
+
+Threads change only how fast an archive is written, never what it decodes to,
+and are off unless asked for. Node's binding loses a Zstandard stream outright -
+no output, and no error to say so - when a single write past about 16 MiB
+reaches an encoder running them, so the encoder splits its own input and no
+caller can reach that.
 
 Preview includes archive browsing and search, 1 MiB text previews, and PNG,
 JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting

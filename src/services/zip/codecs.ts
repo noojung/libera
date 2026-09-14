@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'async_hooks'
 import zlib from 'zlib'
 import { registerCodec } from '@zip.js/zip.js'
 import { LzmaStreamDecoder, LzmaStreamEncoder, parseLzma1Properties } from 'libera7z'
-import { createCodecCompressor, supportsZstd } from '../codecStreams'
+import { createCodecCompressor, supportsZstd, type ZstdTuning } from '../codecStreams'
 import type { DeflateStrategy } from './methodOverrides'
 
 // Re-exported so the ZIP writer's callers keep asking the codec module whether
@@ -44,6 +44,11 @@ interface ZipDeflateOptions {
 
 const zipDeflateOptionsContext = new AsyncLocalStorage<ZipDeflateOptions>()
 
+// Zstandard's own options reach an entry the same way Deflate's do: zip.js
+// constructs the codec itself and hands it nothing but a level, so what the
+// archive chose is put where the constructor can read it.
+const zipZstdOptionsContext = new AsyncLocalStorage<ZstdTuning>()
+
 function nodeDeflateStrategy(strategy?: DeflateStrategy): number {
   switch (strategy) {
     case 'filtered': return zlib.constants.Z_FILTERED
@@ -81,6 +86,15 @@ export function withZipDeflateOptions<T>(
   return options.strategy === undefined && options.memLevel === undefined
     ? action()
     : zipDeflateOptionsContext.run(options, action)
+}
+
+/** Scopes one entry's Zstandard options to the writer call that produces it. */
+export function withZipZstdOptions<T>(
+  tuning: ZstdTuning | undefined,
+  action: () => Promise<T>
+): Promise<T> {
+  const tuned = tuning && Object.values(tuning).some(value => value !== undefined)
+  return tuned ? zipZstdOptionsContext.run(tuning, action) : action()
 }
 
 /** Rounds up to a power of two so the declared size is one LZMA accepts. */
@@ -243,7 +257,10 @@ class ZstdCompressionStream implements TransformStreamLike {
   writable: WritableStream
 
   constructor(_format: string, options: { level?: number } = {}) {
-    const stream = webTransform(createCodecCompressor('zstd', { level: options.level }))
+    const stream = webTransform(createCodecCompressor('zstd', {
+      level: options.level,
+      zstd: zipZstdOptionsContext.getStore()
+    }))
     this.readable = stream.readable
     this.writable = stream.writable
   }

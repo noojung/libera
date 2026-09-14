@@ -318,8 +318,8 @@ describe('CompressionPanel', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '.ZST' }))
-    expect(screen.getByLabelText('Zstandard strategy')).toBeInTheDocument()
-    expect(screen.getByLabelText('Window size')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Zstandard strategy' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Window size' })).toBeInTheDocument()
     // Deflate's knobs are not Zstandard's, so they stay out of the card.
     expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
     expect(screen.queryByText(/Memory level/)).not.toBeInTheDocument()
@@ -340,15 +340,63 @@ describe('CompressionPanel', () => {
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
 
+    // ZIP shows them only once its entries are actually written with the codec.
     for (const name of ['.ZIP', '.TAR.GZ', '.7Z']) {
       await user.click(screen.getByRole('button', { name }))
-      expect(screen.queryByLabelText('Zstandard strategy')).not.toBeInTheDocument()
+      expect(screen.queryByRole('combobox', { name: 'Zstandard strategy' })).not.toBeInTheDocument()
     }
 
     // TAR.ZST compresses the whole tarball as one stream, so it gets them too.
     await user.click(screen.getByRole('button', { name: '.TAR.ZST' }))
-    expect(screen.getByLabelText('Zstandard strategy')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Zstandard strategy' })).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Exclude hidden files/ })).toBeInTheDocument()
+  })
+
+  it('offers the Zstandard rows to ZIP once that is the method', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: 'C:\\a.txt', name: 'a.txt', isDirectory: false, size: 10 }]} onStartCompress={onStart} />
+    )
+
+    // Deflate is the default, and Deflate has no Zstandard options.
+    expect(screen.queryByRole('combobox', { name: 'Zstandard strategy' })).not.toBeInTheDocument()
+    expect(screen.getByText('Deflate strategy')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox', { name: 'ZIP compression method' }))
+    await user.click(screen.getByRole('option', { name: 'Zstandard (93)' }))
+    expect(screen.getByRole('combobox', { name: 'Zstandard strategy' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Window size' })).toBeInTheDocument()
+    // Deflate's own knobs go when Deflate does.
+    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Start compression/i }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'zip',
+      zipMethod: 'zstd',
+      zstdStrategy: 'lazy2',
+      zstdWindowSize: 8 * 1024 * 1024
+    }))
+  })
+
+  it('sends the thread count the Zstandard rows were left on', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: 'C:\\a.txt', name: 'a.txt', isDirectory: false, size: 10 }]} onStartCompress={onStart} />
+    )
+
+    await user.click(screen.getByRole('button', { name: '.ZST' }))
+    // Single threaded until asked, since threads only change how fast it runs.
+    expect(screen.getByRole('combobox', { name: 'CPU threads' }))
+      .toHaveTextContent('Off (single thread)')
+
+    await user.click(screen.getByRole('combobox', { name: 'CPU threads' }))
+    await user.click(screen.getByRole('option', { name: '4' }))
+    await user.click(screen.getByRole('button', { name: /Start compression/i }))
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ format: 'zst', zstdWorkers: 4 }))
   })
 
   it('never draws the expert card as a bare heading', async () => {
