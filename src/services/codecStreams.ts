@@ -83,6 +83,64 @@ export function supportsZstd(): boolean {
   return typeof zlib.createZstdCompress === 'function'
 }
 
+/**
+ * The search strategies Zstandard offers, weakest and fastest first. The names
+ * are the codec's own, so what is picked here reads the same as it does in the
+ * reference tool.
+ */
+export type ZstdStrategy =
+  | 'fast' | 'dfast' | 'greedy' | 'lazy' | 'lazy2' | 'btlazy2' | 'btopt' | 'btultra' | 'btultra2'
+
+const ZSTD_STRATEGIES: Record<ZstdStrategy, number> = {
+  fast: zlib.constants.ZSTD_fast,
+  dfast: zlib.constants.ZSTD_dfast,
+  greedy: zlib.constants.ZSTD_greedy,
+  lazy: zlib.constants.ZSTD_lazy,
+  lazy2: zlib.constants.ZSTD_lazy2,
+  btlazy2: zlib.constants.ZSTD_btlazy2,
+  btopt: zlib.constants.ZSTD_btopt,
+  btultra: zlib.constants.ZSTD_btultra,
+  btultra2: zlib.constants.ZSTD_btultra2
+}
+
+export function isZstdStrategy(value: string): value is ZstdStrategy {
+  return value in ZSTD_STRATEGIES
+}
+
+/**
+ * The reach of the match window, as bytes rather than the log the codec takes.
+ *
+ * The ceiling is what a reader will accept rather than what the encoder can do:
+ * a decoder allocates the whole window up front and refuses a frame asking for
+ * more than its own limit, which is 128 MiB by default everywhere. Writing past
+ * that would produce archives only a specially configured reader could open.
+ */
+export const ZSTD_MIN_WINDOW_SIZE = 1024 * 1024
+export const ZSTD_MAX_WINDOW_SIZE = 128 * 1024 * 1024
+
+/** The log the codec wants, for a window size already known to be legal. */
+export function zstdWindowLog(windowSize: number): number {
+  return Math.log2(windowSize)
+}
+
+export function isZstdWindowSize(windowSize: number): boolean {
+  return Number.isInteger(windowSize) &&
+    windowSize >= ZSTD_MIN_WINDOW_SIZE &&
+    windowSize <= ZSTD_MAX_WINDOW_SIZE &&
+    Number.isInteger(zstdWindowLog(windowSize))
+}
+
+/** What expert mode can say about a Zstandard stream beyond its level. */
+export interface ZstdTuning {
+  strategy?: ZstdStrategy
+  windowSize?: number
+  /**
+   * Finds repeats further apart than the window reaches, cheaply, by indexing
+   * the input coarsely alongside the ordinary match search.
+   */
+  longDistanceMatching?: boolean
+}
+
 /** Maps the archive levels 0-9 onto the Zstandard levels 1-19. */
 export function zstdLevel(level?: number): number {
   if (level === undefined) return 3
@@ -110,6 +168,22 @@ export interface CodecCompressorOptions {
   /** Deflate-only tuning, ignored by every other codec. */
   strategy?: number
   memLevel?: number
+  /** Zstandard-only tuning, ignored by every other codec. */
+  zstd?: ZstdTuning
+}
+
+/**
+ * The encoder settings for one Zstandard stream. The level goes in first and
+ * the rest after, because each one set here replaces what the level implied.
+ */
+function zstdParams(level: number | undefined, tuning: ZstdTuning = {}): Record<number, number> {
+  const params: Record<number, number> = {
+    [zlib.constants.ZSTD_c_compressionLevel]: zstdLevel(level)
+  }
+  if (tuning.strategy) params[zlib.constants.ZSTD_c_strategy] = ZSTD_STRATEGIES[tuning.strategy]
+  if (tuning.windowSize) params[zlib.constants.ZSTD_c_windowLog] = zstdWindowLog(tuning.windowSize)
+  if (tuning.longDistanceMatching) params[zlib.constants.ZSTD_c_enableLongDistanceMatching] = 1
+  return params
 }
 
 /**
@@ -123,9 +197,7 @@ export function createCodecCompressor(
 ): Transform {
   if (codec === 'zstd') {
     requireZstd()
-    return zlib.createZstdCompress({
-      params: { [zlib.constants.ZSTD_c_compressionLevel]: zstdLevel(options.level) }
-    })
+    return zlib.createZstdCompress({ params: zstdParams(options.level, options.zstd) })
   }
   return zlib.createGzip({
     level: options.level,

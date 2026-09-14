@@ -23,7 +23,8 @@ import type {
   SevenZipMethod,
   SevenZipMethodOverride,
   ZipMethod,
-  ZipMethodOverride
+  ZipMethodOverride,
+  ZstdStrategy
 } from '@services/compressor'
 import { ZipMethodOverridesModal } from './ZipMethodOverridesModal'
 import { SevenZipMethodOverridesModal } from './SevenZipMethodOverridesModal'
@@ -51,6 +52,9 @@ export interface StartCompressOptions {
   solidArchive?: boolean
   deflateStrategy?: DeflateStrategy
   memLevel?: number
+  zstdStrategy?: ZstdStrategy
+  zstdWindowSize?: number
+  zstdLongDistance?: boolean
   excludeSymlinks?: boolean
   excludeMacMetadata?: boolean
   excludeHiddenFiles?: boolean
@@ -94,6 +98,26 @@ const DEFAULT_SEARCH_CYCLES = 32
 const DEFAULT_MEM_LEVEL = 8
 /** Stands in for a setting the per-file dialog has taken over. */
 const CLEARED_VALUE = '—'
+
+/** Zstandard's own default strategy for the level, left to the codec. */
+const DEFAULT_ZSTD_STRATEGY: ZstdStrategy = 'lazy2'
+const DEFAULT_ZSTD_WINDOW_SIZE = 8 * 1024 * 1024
+
+/**
+ * The reach of the match window. It stops at 128 MB because a reader refuses a
+ * frame that asks for more than its own limit, and 128 MB is that limit
+ * everywhere by default.
+ */
+const ZSTD_WINDOW_SIZES = [
+  { label: '1 MB', value: 1024 * 1024 },
+  { label: '2 MB', value: 2 * 1024 * 1024 },
+  { label: '4 MB', value: 4 * 1024 * 1024 },
+  { label: '8 MB', value: 8 * 1024 * 1024 },
+  { label: '16 MB', value: 16 * 1024 * 1024 },
+  { label: '32 MB', value: 32 * 1024 * 1024 },
+  { label: '64 MB', value: 64 * 1024 * 1024 },
+  { label: '128 MB', value: 128 * 1024 * 1024 }
+]
 
 const DICTIONARY_SIZES = [
   { label: '64 KB', value: 64 * 1024 },
@@ -162,6 +186,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   const [solidBlock, setSolidBlock] = useState<boolean>(false)
   const [deflateStrategy, setDeflateStrategy] = useState<DeflateStrategy>('default')
   const [memLevel, setMemLevel] = useState<number>(DEFAULT_MEM_LEVEL)
+  const [zstdStrategy, setZstdStrategy] = useState<ZstdStrategy>(DEFAULT_ZSTD_STRATEGY)
+  const [zstdWindowSize, setZstdWindowSize] = useState<number>(DEFAULT_ZSTD_WINDOW_SIZE)
+  const [zstdLongDistance, setZstdLongDistance] = useState<boolean>(false)
   const [excludeSymlinks, setExcludeSymlinks] = useState<boolean>(false)
   const [excludeMacMetadata, setExcludeMacMetadata] = useState<boolean>(false)
   const [excludeHiddenFiles, setExcludeHiddenFiles] = useState<boolean>(false)
@@ -237,6 +264,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
     setSolidBlock(false)
     setDeflateStrategy('default')
     setMemLevel(DEFAULT_MEM_LEVEL)
+    setZstdStrategy(DEFAULT_ZSTD_STRATEGY)
+    setZstdWindowSize(DEFAULT_ZSTD_WINDOW_SIZE)
+    setZstdLongDistance(false)
   }
 
   // Pressing the per-file toggle hands the settings between two owners, so the
@@ -293,13 +323,16 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
   // The single-file formats wrap one file that is handed over whole, so there
   // is no walk for a filter to narrow.
   const singleFileFormat = format === 'gz' || format === 'zst'
+  // Zstandard's own knobs, for the two formats whose whole stream is one.
+  const zstdTuningShown = isExpertMode && (format === 'zst' || format === 'tzst')
   const sourceFiltersShown = isExpertMode && !singleFileFormat
   const solidBlockShown = format === '7z' && (sevenZipPerFileActive || sevenZipMethod === 'lzma2')
   // Every section the card can hold. ZST has none of them - its only setting is
   // the level slider above - so without this the card would be a heading with
   // nothing under it.
   const expertCardShown = isExpertMode && (
-    format === 'zip' || format === '7z' || deflateTuningShown || sourceFiltersShown || solidBlockShown
+    format === 'zip' || format === '7z' ||
+    deflateTuningShown || zstdTuningShown || sourceFiltersShown || solidBlockShown
   )
 
 
@@ -362,6 +395,9 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
               : undefined,
             deflateStrategy: deflateTuned ? deflateStrategy : undefined,
             memLevel: deflateTuned ? memLevel : undefined,
+            zstdStrategy: zstdTuningShown ? zstdStrategy : undefined,
+            zstdWindowSize: zstdTuningShown ? zstdWindowSize : undefined,
+            zstdLongDistance: zstdTuningShown ? zstdLongDistance : undefined,
             // GZ compresses one stream that the user picked themselves, so it
             // has no entry list for either filter to leave anything out of.
             excludeSymlinks: sourceFiltersShown ? excludeSymlinks : undefined,
@@ -582,12 +618,68 @@ export const CompressionPanel: React.FC<CompressionPanelProps> = ({ items, onSta
             </>
           )}
 
+          {/* Zstandard's search and reach. Both formats compress one stream, so
+              unlike ZIP and 7Z there is no per-file mode to hand these to. */}
+          {zstdTuningShown && (
+            <>
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label" htmlFor="compression-zstd-strategy">
+                  {t('compression.zstdStrategy')}
+                </label>
+                <Select<ZstdStrategy>
+                  id="compression-zstd-strategy"
+                  ariaLabel={t('compression.zstdStrategy')}
+                  value={zstdStrategy}
+                  onChange={setZstdStrategy}
+                  options={[
+                    { value: 'fast', label: t('compression.zstdStrategyFast') },
+                    { value: 'dfast', label: t('compression.zstdStrategyDfast') },
+                    { value: 'greedy', label: t('compression.zstdStrategyGreedy') },
+                    { value: 'lazy', label: t('compression.zstdStrategyLazy') },
+                    { value: 'lazy2', label: t('compression.zstdStrategyLazy2') },
+                    { value: 'btlazy2', label: t('compression.zstdStrategyBtlazy2') },
+                    { value: 'btopt', label: t('compression.zstdStrategyBtopt') },
+                    { value: 'btultra', label: t('compression.zstdStrategyBtultra') },
+                    { value: 'btultra2', label: t('compression.zstdStrategyBtultra2') }
+                  ]}
+                />
+              </div>
+
+              <div className="compression-panel__expert-row">
+                <label className="compression-panel__expert-label" htmlFor="compression-zstd-window">
+                  {t('compression.zstdWindowSize')}
+                </label>
+                <Select<number>
+                  id="compression-zstd-window"
+                  ariaLabel={t('compression.zstdWindowSize')}
+                  value={zstdWindowSize}
+                  onChange={setZstdWindowSize}
+                  options={ZSTD_WINDOW_SIZES.map(size => ({ value: size.value, label: size.label }))}
+                />
+              </div>
+            </>
+          )}
+
           {/* Every toggle the card holds, as one list - the extraction panel's
               expert card reads the same way. What each one means beyond its
               label is a tooltip rather than a line of its own, so the list
               stays as dense as the rows above it. */}
-          {(solidBlockShown || sourceFiltersShown) && (
+          {(solidBlockShown || zstdTuningShown || sourceFiltersShown) && (
             <div className="compression-panel__expert-checkboxes">
+              {/* Sits with the codec rows above it: it changes how the stream
+                  is searched, not what goes into it. */}
+              {zstdTuningShown && (
+                <label className="compression-panel__checkbox-row" title={t('compression.zstdLongDistanceHint')}>
+                  <input
+                    type="checkbox"
+                    className="compression-panel__checkbox"
+                    checked={zstdLongDistance}
+                    onChange={(e) => setZstdLongDistance(e.target.checked)}
+                  />
+                  <span>{t('compression.zstdLongDistance')}</span>
+                </label>
+              )}
+
               {/* What reaches the archive rather than how it is written, so
                   these sit below the codec rows - and are the whole card for
                   TAR. */}

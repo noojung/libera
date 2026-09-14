@@ -3,7 +3,15 @@ import path from 'path'
 import archiver from 'archiver'
 import zlib from 'zlib'
 import { supportsZstd } from './zip/codecs'
-import { createCodecCompressor } from './codecStreams'
+import {
+  createCodecCompressor,
+  isZstdStrategy,
+  isZstdWindowSize,
+  ZSTD_MAX_WINDOW_SIZE,
+  ZSTD_MIN_WINDOW_SIZE,
+  type ZstdStrategy,
+  type ZstdTuning
+} from './codecStreams'
 import {
   MAX_SPLIT_VOLUMES,
   MIN_SPLIT_SIZE,
@@ -61,6 +69,8 @@ export type {
 } from './sevenZip/methodOverrides'
 export type { SevenZipPlanOptions, SevenZipSolidBlock } from './sevenZip/node'
 export type { CompressionInputFilters } from './compressionInputs'
+export type { ZstdStrategy } from './codecStreams'
+export { ZSTD_MAX_WINDOW_SIZE, ZSTD_MIN_WINDOW_SIZE } from './codecStreams'
 export type MatchFinderWordSize = 32 | 64 | 128 | 273
 
 export interface CompressionOptions extends CompressionInputFilters {
@@ -83,6 +93,10 @@ export interface CompressionOptions extends CompressionInputFilters {
   solidArchive?: boolean
   deflateStrategy?: DeflateStrategy
   memLevel?: number
+  // Zstandard, for the ZST and TAR.ZST formats:
+  zstdStrategy?: ZstdStrategy
+  zstdWindowSize?: number
+  zstdLongDistance?: boolean
 }
 
 export function mapDeflateStrategy(strategy?: DeflateStrategy): number | undefined {
@@ -287,6 +301,20 @@ export async function compressArchive(
   if ((format === 'zst' || format === 'tzst') && !supportsZstd()) {
     throw new Error('Zstandard is unavailable in this runtime.')
   }
+  const zstdTuned = options.zstdStrategy !== undefined ||
+    options.zstdWindowSize !== undefined ||
+    options.zstdLongDistance !== undefined
+  if (zstdTuned && format !== 'zst' && format !== 'tzst') {
+    throw new Error('Zstandard codec options can only be used with ZST and TAR.ZST archives.')
+  }
+  if (options.zstdStrategy !== undefined && !isZstdStrategy(options.zstdStrategy)) {
+    throw new RangeError('Zstandard strategy is unsupported.')
+  }
+  if (options.zstdWindowSize !== undefined && !isZstdWindowSize(options.zstdWindowSize)) {
+    throw new RangeError(
+      `Zstandard window size must be a power of two between ${ZSTD_MIN_WINDOW_SIZE} and ${ZSTD_MAX_WINDOW_SIZE} bytes.`
+    )
+  }
   if (
     !['zip', 'gz', 'tgz'].includes(format) &&
     (options.deflateStrategy !== undefined || options.memLevel !== undefined)
@@ -362,6 +390,12 @@ export async function compressArchive(
     excludeMacMetadata: options.excludeMacMetadata,
     excludeHiddenFiles: options.excludeHiddenFiles,
     filterPattern: options.filterPattern
+  }
+
+  const zstd: ZstdTuning = {
+    strategy: options.zstdStrategy,
+    windowSize: options.zstdWindowSize,
+    longDistanceMatching: options.zstdLongDistance
   }
 
   const totalBytes = await calculateTotalSize(inputPaths, resolvedOutputPath, filters)
@@ -535,7 +569,7 @@ export async function compressArchive(
 
       // Archiver gzips a tarball itself but knows nothing of Zstandard, so
       // that one is encoded between the tar writer and the file.
-      const encoder = format === 'tzst' ? createCodecCompressor('zstd', { level }) : null
+      const encoder = format === 'tzst' ? createCodecCompressor('zstd', { level, zstd }) : null
       const archiveSink = encoder ?? output
       encoder?.pipe(output)
 
@@ -685,7 +719,8 @@ export async function compressArchive(
       const encoder = createCodecCompressor(format === 'zst' ? 'zstd' : 'gzip', {
         level,
         strategy,
-        memLevel: options.memLevel
+        memLevel: options.memLevel,
+        zstd
       })
       const readStream = fs.createReadStream(sourceFile)
       const writeStream = fs.createWriteStream(outputPath)

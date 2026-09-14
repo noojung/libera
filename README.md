@@ -117,9 +117,9 @@ Pages automatically when changes under `site/` are pushed to `main`.
 | TAR.GZ | Compress · Extract · Preview | GZIP/Deflate | Stores multiple files through TAR |
 | TAR.XZ | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread. Also `.txz` |
 | TAR.BZ2 | Extract · Preview | Read: BZip2 | Read-only. Also `.tbz2` and `.tbz` |
-| TAR.ZST | Compress · Extract · Preview | Zstandard | Stores multiple files through TAR. Also `.tzst` |
+| TAR.ZST | Compress · Extract · Preview | Zstandard | Stores multiple files through TAR. Expert mode picks the search strategy, the window size, and long distance matching. Also `.tzst` |
 | GZ | Compress · Extract · Preview | GZIP/Deflate | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
-| ZST | Compress · Extract · Preview | Zstandard | Supports one file per stream. Expanded size and compression ratio remain unknown until extraction |
+| ZST | Compress · Extract · Preview | Zstandard | Supports one file per stream, with the same expert codec options as TAR.ZST. Expanded size and compression ratio remain unknown until extraction |
 | XZ | Extract · Preview | Read: LZMA2 | Read-only. One file per stream |
 | BZ2 | Extract · Preview | Read: BZip2 | Read-only. One file per stream |
 | JAR | Extract · Preview | Read: ZIP Store, Deflate, Deflate64 | Read-only ZIP container |
@@ -135,6 +135,15 @@ The compression level slider keeps its ten steps for Zstandard and the writer
 maps them onto the codec's own 1-19 scale, so level 6 - the default everywhere
 but 7Z - lands on Zstandard 13, which finishes a mixed payload in about the
 time `gzip -6` takes and smaller.
+
+Expert mode sets what the level would otherwise decide: the search strategy
+(Fast through Binary Tree Ultra2), the window size, and long distance matching.
+The window stops at 128 MB because a decoder allocates the whole window before
+it reads and refuses a frame asking for more than its own limit, which is
+128 MB by default everywhere - a wider window would write archives only a
+specially configured reader could open. Long distance matching widens the reach
+on its own, but it can never look past the window, so pinning a window narrower
+than the gap between two repeats cancels it.
 
 Preview includes archive browsing and search, 1 MiB text previews, and PNG,
 JPEG, WebP, and GIF image previews. For split ZIP and 7Z archives, selecting

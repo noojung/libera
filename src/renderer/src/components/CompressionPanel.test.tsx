@@ -309,25 +309,63 @@ describe('CompressionPanel', () => {
     expect(screen.getByText('Deflate strategy')).toBeInTheDocument()
   })
 
-  it('drops the expert card entirely for a format with nothing to configure', async () => {
+  it('gives ZST its own codec rows and sends what they hold', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(
+      <CompressionPanel items={[{ path: 'C:\\a.txt', name: 'a.txt', isDirectory: false, size: 10 }]} onStartCompress={onStart} />
+    )
+
+    await user.click(screen.getByRole('button', { name: '.ZST' }))
+    expect(screen.getByLabelText('Zstandard strategy')).toBeInTheDocument()
+    expect(screen.getByLabelText('Window size')).toBeInTheDocument()
+    // Deflate's knobs are not Zstandard's, so they stay out of the card.
+    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Memory level/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('checkbox', { name: /Long distance matching/ }))
+    await user.click(screen.getByRole('button', { name: /Start compression/i }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'zst',
+      zstdStrategy: 'lazy2',
+      zstdWindowSize: 8 * 1024 * 1024,
+      zstdLongDistance: true
+    }))
+  })
+
+  it('keeps the Zstandard rows out of every format that has no Zstandard in it', async () => {
     localStorage.setItem('libera_expert_mode', 'true')
     installElectronApi()
     const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
 
-    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    for (const name of ['.ZIP', '.TAR.GZ', '.7Z']) {
+      await user.click(screen.getByRole('button', { name }))
+      expect(screen.queryByLabelText('Zstandard strategy')).not.toBeInTheDocument()
+    }
 
-    // ZST wraps one file with Zstandard, so there is no codec row, no Deflate
-    // tuning and no input walk to filter - the card would be a bare heading.
-    await user.click(screen.getByRole('button', { name: '.ZST' }))
-    expect(screen.queryByText(/Expert compression settings/)).not.toBeInTheDocument()
-    // The level slider is not part of the card, so it stays.
-    expect(screen.getByText('Compression level')).toBeInTheDocument()
-
-    // TAR.ZST still walks an input tree, so it keeps the filters.
+    // TAR.ZST compresses the whole tarball as one stream, so it gets them too.
     await user.click(screen.getByRole('button', { name: '.TAR.ZST' }))
-    expect(screen.getByText(/Expert compression settings/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Zstandard strategy')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Exclude hidden files/ })).toBeInTheDocument()
-    expect(screen.queryByText('Deflate strategy')).not.toBeInTheDocument()
+  })
+
+  it('never draws the expert card as a bare heading', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi()
+    const { user } = renderWithI18n(<CompressionPanel items={[]} onStartCompress={vi.fn()} />)
+
+    // Either a format has something to configure, or it does not draw the card
+    // at all. What must never happen is a heading with no rows beneath it.
+    for (const name of ['.ZIP', '.TAR', '.GZ', '.TAR.GZ', '.ZST', '.TAR.ZST', '.7Z']) {
+      await user.click(screen.getByRole('button', { name }))
+      const heading = screen.queryByText(/Expert compression settings/)
+      if (!heading) continue
+      const card = heading.closest('.expert-card')!
+      // The header is the first child; a card worth drawing has more than it.
+      expect(card.children.length).toBeGreaterThan(1)
+    }
   })
 
   it('sends the source filters and keeps them across a format change', async () => {

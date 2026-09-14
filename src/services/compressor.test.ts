@@ -195,6 +195,121 @@ describe('compressArchive', () => {
       .toBe('archive content')
   })
 
+  it('reaches further for a repeat when the window is widened', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.bin')
+    // Two identical blocks 8 MiB apart, so only a window that spans the gap
+    // can collapse the second into a reference to the first.
+    const block = crypto.randomBytes(2 * 1024 * 1024)
+    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+
+    const sizeWith = async (zstdWindowSize: number) => {
+      const outputPath = path.join(directory, `w${zstdWindowSize}.zst`)
+      await compressArchive({ inputPaths: [inputPath], outputPath, format: 'zst', level: 3, zstdWindowSize })
+      return (await fs.stat(outputPath)).size
+    }
+
+    const narrow = await sizeWith(4 * 1024 * 1024)
+    const wide = await sizeWith(32 * 1024 * 1024)
+    // The far block is 2 MiB of random bytes; spanning the gap removes it.
+    expect(narrow - wide).toBeGreaterThan(1024 * 1024)
+  }, 60_000)
+
+  it('finds the same far repeat through long distance matching', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.bin')
+    const block = crypto.randomBytes(2 * 1024 * 1024)
+    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+
+    const sizeWith = async (name: string, options: Record<string, unknown>) => {
+      const outputPath = path.join(directory, name)
+      await compressArchive({ inputPaths: [inputPath], outputPath, format: 'zst', level: 3, ...options } as never)
+      return (await fs.stat(outputPath)).size
+    }
+
+    // Left to itself the codec widens the window to reach, so the far block
+    // collapses into a reference to the near one.
+    const plain = await sizeWith('plain.zst', {})
+    const ldm = await sizeWith('ldm.zst', { zstdLongDistance: true })
+    expect(plain - ldm).toBeGreaterThan(1024 * 1024)
+
+    // Pinned to a window narrower than the gap there is nothing to reach: a
+    // back-reference can never point further than the window, so the flag is
+    // spent for nothing. That is the codec's own rule, and the hint says so.
+    const narrow = await sizeWith('narrow.zst', { zstdWindowSize: 4 * 1024 * 1024 })
+    const narrowLdm = await sizeWith('narrow-ldm.zst', {
+      zstdWindowSize: 4 * 1024 * 1024,
+      zstdLongDistance: true
+    })
+    expect(narrowLdm).toBe(narrow)
+  }, 60_000)
+
+  it('writes a strategy the reference decoder still reads back', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'payload.txt')
+    const contents = 'libera '.repeat(20_000)
+    await fs.writeFile(inputPath, contents)
+
+    const strategies = ['fast', 'greedy', 'lazy2', 'btultra2'] as const
+    for (const zstdStrategy of strategies) {
+      const outputPath = path.join(directory, `${zstdStrategy}.zst`)
+      await compressArchive({ inputPaths: [inputPath], outputPath, format: 'zst', zstdStrategy })
+      expect(zlib.zstdDecompressSync(await fs.readFile(outputPath)).toString()).toBe(contents)
+    }
+  }, 60_000)
+
+  it('carries the Zstandard settings into a TAR.ZST as well', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    await fs.mkdir(sourceDir, { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'libera '.repeat(10_000))
+    const outputPath = path.join(directory, 'archive.tar.zst')
+
+    await compressArchive({
+      inputPaths: [sourceDir],
+      outputPath,
+      format: 'tzst',
+      zstdStrategy: 'btultra2',
+      zstdWindowSize: 16 * 1024 * 1024,
+      zstdLongDistance: true
+    })
+
+    expect((await fs.readFile(outputPath)).subarray(0, 4))
+      .toEqual(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]))
+    const inspected = await inspectArchive(outputPath)
+    expect(inspected.format).toBe('TAR.ZST')
+    expect(inspected.entries.map(entry => entry.path)).toContain('source/a.txt')
+  }, 60_000)
+
+  it('refuses Zstandard options on a format that has no Zstandard in it', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'a.txt')
+    await fs.writeFile(inputPath, 'libera')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath], outputPath: path.join(directory, 'a.zip'), format: 'zip', zstdStrategy: 'lazy2'
+    })).rejects.toThrow(/only be used with ZST and TAR.ZST/)
+  })
+
+  it('refuses a strategy or window size the codec would not take', async () => {
+    const directory = await createTemporaryDirectory()
+    const inputPath = path.join(directory, 'a.txt')
+    await fs.writeFile(inputPath, 'libera')
+    const outputPath = path.join(directory, 'a.zst')
+
+    await expect(compressArchive({
+      inputPaths: [inputPath], outputPath, format: 'zst', zstdStrategy: 'turbo' as never
+    })).rejects.toThrow(/strategy is unsupported/)
+
+    // A window a reader would refuse to allocate, and one that is not a power of two.
+    await expect(compressArchive({
+      inputPaths: [inputPath], outputPath, format: 'zst', zstdWindowSize: 256 * 1024 * 1024
+    })).rejects.toThrow(/window size must be a power of two/)
+    await expect(compressArchive({
+      inputPaths: [inputPath], outputPath, format: 'zst', zstdWindowSize: 3 * 1024 * 1024
+    })).rejects.toThrow(/window size must be a power of two/)
+  })
+
   it('turns the level slider into a stronger Zstandard setting', async () => {
     const directory = await createTemporaryDirectory()
     const inputPath = path.join(directory, 'payload.txt')
