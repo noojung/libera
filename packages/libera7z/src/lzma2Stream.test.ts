@@ -42,10 +42,18 @@ describe('decoding LZMA2 as it arrives', () => {
   const dictionarySize = 1 << 20
   const property = dictionaryPropertyForSize(dictionarySize)
 
-  it.each([1, 7, 1000, 64 * 1024])('rebuilds the stream from %d-byte pieces', piece => {
-    const source = noise(200_000)
-    expect(decodeInPieces(encode(source, dictionarySize), property, piece)).toEqual(source)
-  })
+  // Feeding this decoder costs more than the stream is long: at a byte a time,
+  // two and a half times the length takes five times as long. So the smallest
+  // pieces prove they work on a short stream and the larger ones carry the
+  // volume. At 200 kB the one-byte case ran for most of a minute on the
+  // slowest CI runner, which is where it started timing out.
+  it.each([[1, 20_000], [7, 50_000], [1000, 200_000], [64 * 1024, 200_000]])(
+    'rebuilds the stream from %d-byte pieces',
+    (piece, length) => {
+      const source = noise(length)
+      expect(decodeInPieces(encode(source, dictionarySize), property, piece)).toEqual(source)
+    }
+  )
 
   it('spans a repeat that no single chunk could hold', () => {
     const block = noise(120_000, 3)

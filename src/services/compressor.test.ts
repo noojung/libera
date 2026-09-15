@@ -26,6 +26,24 @@ async function createTemporaryDirectory(): Promise<string> {
   return directory
 }
 
+// Two identical blocks with a gap between them, so only a window reaching past
+// the gap can collapse the second into a reference to the first. The blocks are
+// incompressible random bytes, which makes the saving unmistakable, and the
+// whole thing is small enough not to hold a slow CI runner for half a minute.
+const FAR_REPEAT_BLOCK = 512 * 1024
+const FAR_REPEAT_GAP = 2 * 1024 * 1024
+const FAR_REPEAT_SIZE = FAR_REPEAT_BLOCK * 2 + FAR_REPEAT_GAP
+/** A window under this cannot reach the first block from the second. */
+const FAR_REPEAT_NARROW_WINDOW = 1024 * 1024
+const FAR_REPEAT_WIDE_WINDOW = 8 * 1024 * 1024
+/** Most of a block's worth, so the assertion clears measurement noise. */
+const FAR_REPEAT_SAVING = 256 * 1024
+
+async function writeFarRepeat(inputPath: string): Promise<void> {
+  const block = crypto.randomBytes(FAR_REPEAT_BLOCK)
+  await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(FAR_REPEAT_GAP), block]))
+}
+
 async function listTarPaths(archivePath: string): Promise<string[]> {
   const entries: string[] = []
   await tar.t({
@@ -200,8 +218,7 @@ describe('compressArchive', () => {
     const inputPath = path.join(directory, 'payload.bin')
     // Two identical blocks 8 MiB apart, so only a window that spans the gap
     // can collapse the second into a reference to the first.
-    const block = crypto.randomBytes(2 * 1024 * 1024)
-    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+    await writeFarRepeat(inputPath)
 
     const sizeWith = async (zstdWindowSize: number) => {
       const outputPath = path.join(directory, `w${zstdWindowSize}.zst`)
@@ -209,17 +226,17 @@ describe('compressArchive', () => {
       return (await fs.stat(outputPath)).size
     }
 
-    const narrow = await sizeWith(4 * 1024 * 1024)
-    const wide = await sizeWith(32 * 1024 * 1024)
-    // The far block is 2 MiB of random bytes; spanning the gap removes it.
-    expect(narrow - wide).toBeGreaterThan(1024 * 1024)
+    const narrow = await sizeWith(FAR_REPEAT_NARROW_WINDOW)
+    const wide = await sizeWith(FAR_REPEAT_WIDE_WINDOW)
+    // Spanning the gap removes the far block, which is random bytes and so
+    // could not have been squeezed any other way.
+    expect(narrow - wide).toBeGreaterThan(FAR_REPEAT_SAVING)
   }, 60_000)
 
   it('finds the same far repeat through long distance matching', async () => {
     const directory = await createTemporaryDirectory()
     const inputPath = path.join(directory, 'payload.bin')
-    const block = crypto.randomBytes(2 * 1024 * 1024)
-    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+    await writeFarRepeat(inputPath)
 
     const sizeWith = async (name: string, options: Record<string, unknown>) => {
       const outputPath = path.join(directory, name)
@@ -231,14 +248,14 @@ describe('compressArchive', () => {
     // collapses into a reference to the near one.
     const plain = await sizeWith('plain.zst', {})
     const ldm = await sizeWith('ldm.zst', { zstdLongDistance: true })
-    expect(plain - ldm).toBeGreaterThan(1024 * 1024)
+    expect(plain - ldm).toBeGreaterThan(FAR_REPEAT_SAVING)
 
     // Pinned to a window narrower than the gap there is nothing to reach: a
     // back-reference can never point further than the window, so the flag is
     // spent for nothing. That is the codec's own rule, and the hint says so.
-    const narrow = await sizeWith('narrow.zst', { zstdWindowSize: 4 * 1024 * 1024 })
+    const narrow = await sizeWith('narrow.zst', { zstdWindowSize: FAR_REPEAT_NARROW_WINDOW })
     const narrowLdm = await sizeWith('narrow-ldm.zst', {
-      zstdWindowSize: 4 * 1024 * 1024,
+      zstdWindowSize: FAR_REPEAT_NARROW_WINDOW,
       zstdLongDistance: true
     })
     expect(narrowLdm).toBe(narrow)
@@ -284,8 +301,7 @@ describe('compressArchive', () => {
   it('carries the Zstandard options into a ZIP written with that method', async () => {
     const directory = await createTemporaryDirectory()
     const inputPath = path.join(directory, 'payload.bin')
-    const block = crypto.randomBytes(2 * 1024 * 1024)
-    await fs.writeFile(inputPath, Buffer.concat([block, crypto.randomBytes(6 * 1024 * 1024), block]))
+    await writeFarRepeat(inputPath)
 
     const sizeWith = async (name: string, extra: Record<string, unknown>) => {
       const outputPath = path.join(directory, name)
@@ -295,16 +311,16 @@ describe('compressArchive', () => {
       return (await fs.stat(outputPath)).size
     }
 
-    const narrow = await sizeWith('narrow.zip', { zstdWindowSize: 4 * 1024 * 1024 })
-    const wide = await sizeWith('wide.zip', { zstdWindowSize: 32 * 1024 * 1024 })
-    expect(narrow - wide).toBeGreaterThan(1024 * 1024)
+    const narrow = await sizeWith('narrow.zip', { zstdWindowSize: FAR_REPEAT_NARROW_WINDOW })
+    const wide = await sizeWith('wide.zip', { zstdWindowSize: FAR_REPEAT_WIDE_WINDOW })
+    expect(narrow - wide).toBeGreaterThan(FAR_REPEAT_SAVING)
 
     // Still an ordinary ZIP holding a Zstandard entry, readable either way.
     const widePath = path.join(directory, 'wide.zip')
     expect((await inspectArchive(widePath)).entries[0].codec).toBe('Zstd')
     const targetDir = path.join(directory, 'out')
     await extractArchive({ archivePath: widePath, targetDir } as never)
-    expect((await fs.stat(path.join(targetDir, 'payload.bin'))).size).toBe(10 * 1024 * 1024)
+    expect((await fs.stat(path.join(targetDir, 'payload.bin'))).size).toBe(FAR_REPEAT_SIZE)
   }, 120_000)
 
   it('leaves a ZIP written with another method untouched by them', async () => {
