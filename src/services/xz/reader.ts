@@ -355,12 +355,20 @@ export class XzStreamDecoder {
     this.compact()
   }
 
+  /**
+   * Releases buffers the cursor has moved past, in one splice rather than a
+   * shift each: shifting moves every remaining entry, so a caller pushing
+   * small pieces would pay the square of what is still queued. The LZMA2
+   * decoder this reader feeds keeps the same rule.
+   */
   private compact(): void {
-    while (this.pending.length > 0 && this.offset >= this.pending[0].length) {
-      this.offset -= this.pending[0].length
-      this.pendingLength -= this.pending[0].length
-      this.pending.shift()
+    let dropped = 0
+    while (dropped < this.pending.length && this.offset >= this.pending[dropped].length) {
+      this.offset -= this.pending[dropped].length
+      this.pendingLength -= this.pending[dropped].length
+      dropped += 1
     }
+    if (dropped > 0) this.pending.splice(0, dropped)
   }
 }
 
