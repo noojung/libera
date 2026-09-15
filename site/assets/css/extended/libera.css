@@ -369,7 +369,6 @@ body.list {
 
 .section-heading > p:last-child,
 .section-heading--split > p,
-.formats-panel > div > p:last-child,
 .download-panel__copy > p {
   margin-top: 16px;
   color: var(--secondary);
@@ -551,15 +550,35 @@ body.list {
 }
 
 .formats-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   margin: 36px 0 110px;
   padding: 44px;
-  grid-template-columns: 0.85fr 1.15fr;
-  align-items: center;
-  gap: 58px;
+  gap: 32px;
   border: 2px dashed var(--border);
   border-radius: 24px;
   background: var(--libera-paper);
+}
+
+.formats-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+}
+
+.formats-panel__header h2 {
+  margin-top: 8px;
+  font-size: clamp(40px, 5vw, 58px);
+  line-height: 1;
+}
+
+.formats-panel__description {
+  max-width: 520px;
+  margin: 0;
+  color: var(--secondary);
+  font-size: 16px;
+  line-height: 1.75;
 }
 
 /* The table is wider than a phone, so it scrolls inside its own frame rather
@@ -567,7 +586,10 @@ body.list {
    and scrolled without a pointer. */
 .format-table-wrap {
   overflow-x: auto;
-  border-radius: 15px;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  background: var(--entry);
+  box-shadow: 4px 5px 0 var(--libera-shadow);
 }
 
 .format-table-wrap:focus-visible {
@@ -577,9 +599,7 @@ body.list {
 
 .format-table {
   width: 100%;
-  /* Without a floor the table squeezes itself into a narrow panel and clips its
-     own cells instead of letting the frame above scroll. */
-  min-width: 560px;
+  min-width: 680px;
   border-collapse: collapse;
   font-size: 14px;
   text-align: left;
@@ -587,20 +607,49 @@ body.list {
 
 .format-table th,
 .format-table td {
-  padding: 14px 18px;
+  padding: 14px 20px;
   border-bottom: 1.5px solid var(--tertiary);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .format-table thead th {
-  /* Not sticky: the site has its own fixed header, and a row pinned under it
-     would sit on top of the first format rather than beside it. */
-  background: var(--libera-paper);
+  padding: 16px 20px;
+  background: var(--code-bg);
+  border-bottom: 2px solid var(--border);
   color: var(--primary);
   font-family: "Gaegu", cursive;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+.format-table__th-name {
+  width: 130px;
+}
+
+.format-table__th-ext {
+  width: 180px;
+}
+
+.format-table__th-abilities {
+  width: 340px;
+}
+
+.format-table__th-codecs {
+  min-width: 240px;
+}
+
+.format-table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.format-table tbody tr:hover {
+  background-color: rgba(255, 142, 114, 0.08);
+}
+
+[data-theme="dark"] .format-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.04);
 }
 
 .format-table tbody tr:last-child th,
@@ -624,8 +673,24 @@ body.list {
 .format-table__ext {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
-  /* Suffixes wrap one per line rather than running together mid-name. */
-  white-space: pre-line;
+}
+
+.format-table__tag {
+  display: inline-block;
+  padding: 2px 7px;
+  margin: 2px 3px 2px 0;
+  border: 1px solid var(--tertiary);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.format-table__abilities {
+  color: var(--content);
 }
 
 .format-table__codecs {
@@ -784,9 +849,18 @@ body.list {
   }
 
   .section-heading--split,
-  .formats-panel,
   .download-panel {
     grid-template-columns: 1fr;
+  }
+
+  .formats-panel__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .formats-panel__description {
+    max-width: none;
   }
 
   .value-grid,

@@ -111,20 +111,22 @@
 
   {{- with .Params.formats }}
   <section class="formats-panel" aria-labelledby="formats-title">
-    <div>
-      <p class="section-kicker">{{ .kicker }}</p>
-      <h2 id="formats-title">{{ .title }}</h2>
-      <p>{{ .description }}</p>
+    <div class="formats-panel__header">
+      <div class="formats-panel__title-group">
+        <p class="section-kicker">{{ .kicker }}</p>
+        <h2 id="formats-title">{{ .title }}</h2>
+      </div>
+      <p class="formats-panel__description">{{ .description }}</p>
     </div>
     {{- $labels := . }}
     <div class="format-table-wrap" tabindex="0" role="region" aria-labelledby="formats-title">
       <table class="format-table">
         <thead>
           <tr>
-            <th scope="col">{{ $labels.columns.format }}</th>
-            <th scope="col">{{ $labels.columns.extensions }}</th>
-            <th scope="col">{{ $labels.columns.abilities }}</th>
-            <th scope="col">{{ $labels.columns.codecs }}</th>
+            <th scope="col" class="format-table__th-name">{{ $labels.columns.format }}</th>
+            <th scope="col" class="format-table__th-ext">{{ $labels.columns.extensions }}</th>
+            <th scope="col" class="format-table__th-abilities">{{ $labels.columns.abilities }}</th>
+            <th scope="col" class="format-table__th-codecs">{{ $labels.columns.codecs }}</th>
           </tr>
         </thead>
         <tbody>
@@ -137,8 +139,12 @@
           {{- if .split }}{{ $abilities = $abilities | append $labels.abilities.split }}{{ end }}
           <tr>
             <th scope="row" class="format-table__name">{{ .name }}</th>
-            <td class="format-table__ext">{{ delimit .extensions " " }}</td>
-            <td>{{ delimit $abilities " · " }}</td>
+            <td class="format-table__ext">
+              {{- range .extensions }}
+              <span class="format-table__tag">{{ . }}</span>
+              {{- end }}
+            </td>
+            <td class="format-table__abilities">{{ delimit $abilities " · " }}</td>
             <td class="format-table__codecs">
               {{- $write := delimit .codecs.write ", " }}
               {{- $read := delimit .codecs.read ", " }}
