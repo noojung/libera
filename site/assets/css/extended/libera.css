@@ -46,6 +46,8 @@ html {
 body {
   font-family: "Gowun Dodum", "Apple SD Gothic Neo", sans-serif;
   color: var(--content);
+  word-break: keep-all;
+  overflow-wrap: break-word;
   background:
     radial-gradient(circle at 15% 8%, rgba(255, 209, 102, 0.19), transparent 24rem),
     radial-gradient(circle at 88% 18%, rgba(255, 142, 114, 0.18), transparent 28rem),
@@ -123,7 +125,11 @@ body.list {
 }
 
 .menu .active {
+  color: var(--primary);
+  text-decoration: underline;
   text-decoration-color: var(--libera-peach);
+  text-underline-offset: 6px;
+  text-decoration-thickness: 3px;
 }
 
 .main {
@@ -171,7 +177,7 @@ body.list {
 .hero h1 {
   margin: 18px 0 24px;
   font-size: clamp(54px, 6.5vw, 84px);
-  line-height: 0.92;
+  line-height: 1.08;
 }
 
 .hero h1 span {
@@ -198,6 +204,7 @@ body.list {
   padding: 11px 22px;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   border: 2px solid var(--border);
   border-radius: 14px;
   box-shadow: 3px 3px 0 var(--libera-shadow);
@@ -212,6 +219,11 @@ body.list {
   box-shadow: 5px 6px 0 var(--libera-shadow);
 }
 
+.button:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--libera-shadow);
+}
+
 .button--primary,
 .button--download {
   background: linear-gradient(135deg, var(--libera-cta-start), var(--libera-cta-end));
@@ -219,7 +231,6 @@ body.list {
 }
 
 .button--secondary {
-  gap: 8px;
   background: var(--entry);
   color: var(--primary);
 }
@@ -304,6 +315,13 @@ body.list {
   background: #fff3e4;
   box-shadow: 5px 6px 0 var(--libera-shadow);
   transform: rotate(-7deg);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  cursor: pointer;
+}
+
+.mascot-badge:hover {
+  transform: rotate(-2deg) scale(1.06);
+  box-shadow: 7px 8px 0 var(--libera-shadow);
 }
 
 [data-theme="dark"] .mascot-badge {
@@ -392,6 +410,14 @@ body.list {
   border: 2px solid var(--border);
   background: var(--entry);
   box-shadow: 4px 5px 0 var(--libera-shadow);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.value-card:hover,
+.workflow-card:hover,
+.showcase-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 7px 0 var(--libera-shadow);
 }
 
 .value-card {
@@ -412,8 +438,16 @@ body.list {
   background: #edf5ff;
 }
 
-[data-theme="dark"] .value-card {
-  background: var(--entry);
+[data-theme="dark"] .value-card:nth-child(1) {
+  background: linear-gradient(135deg, rgba(255, 173, 153, 0.12), var(--entry));
+}
+
+[data-theme="dark"] .value-card:nth-child(2) {
+  background: linear-gradient(135deg, rgba(107, 190, 102, 0.12), var(--entry));
+}
+
+[data-theme="dark"] .value-card:nth-child(3) {
+  background: linear-gradient(135deg, rgba(90, 158, 237, 0.12), var(--entry));
 }
 
 .card-icon {
@@ -452,6 +486,10 @@ body.list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.feature-grid > :last-child {
+  grid-column: 1 / -1;
 }
 
 .feature-card {
@@ -555,9 +593,10 @@ body.list {
   margin: 36px 0 110px;
   padding: 44px;
   gap: 32px;
-  border: 2px dashed var(--border);
+  border: 2px solid var(--border);
   border-radius: 24px;
   background: var(--libera-paper);
+  box-shadow: 8px 10px 0 var(--libera-shadow);
 }
 
 .formats-panel__header {
@@ -690,7 +729,29 @@ body.list {
 }
 
 .format-table__abilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   color: var(--content);
+}
+
+.format-table__ability-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--tertiary);
+  border-radius: 999px;
+  background: var(--entry);
+  color: var(--content);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .format-table__ability-tag {
+  background: var(--code-bg);
+  border-color: var(--tertiary);
 }
 
 .format-table__codecs {
@@ -758,6 +819,25 @@ body.list {
   align-items: center;
   gap: 14px;
   border-radius: 15px;
+  color: var(--content);
+  text-decoration: none;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.os-card:hover {
+  transform: translate(-1px, -2px);
+  box-shadow: 6px 7px 0 var(--libera-shadow);
+  color: var(--content);
+}
+
+.os-card:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--libera-shadow);
+}
+
+.os-card:focus-visible {
+  outline: 3px solid var(--libera-blue);
+  outline-offset: 3px;
 }
 
 .os-card > span {
@@ -774,6 +854,20 @@ body.list {
   font-size: 21px;
 }
 
+.os-card__action {
+  margin-left: auto;
+  font-family: "Gaegu", cursive;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--secondary);
+  transition: transform 150ms ease, color 150ms ease;
+}
+
+.os-card:hover .os-card__action {
+  color: var(--libera-warm);
+  transform: translateY(2px);
+}
+
 .os-card small,
 .download-note {
   color: var(--secondary);
@@ -784,7 +878,6 @@ body.list {
 .security-note {
   display: flex;
   padding: 16px 18px;
-  grid-column: 1 / -1;
   align-items: flex-start;
   gap: 12px;
   border: 1.5px solid var(--border);
@@ -957,6 +1050,7 @@ body.list {
   }
 
   .value-grid > :last-child,
+  .feature-grid > :last-child,
   .workflow-grid > :last-child,
   .showcase > :last-child {
     grid-column: auto;
@@ -975,10 +1069,7 @@ body.list {
     padding: 30px 24px;
     gap: 34px;
     border-radius: 20px;
-  }
-
-  .download-panel {
-    margin-right: 5px;
+    box-shadow: 5px 6px 0 var(--libera-shadow);
   }
 
   .site-links {
@@ -988,11 +1079,23 @@ body.list {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .button {
+  .button,
+  .value-card,
+  .workflow-card,
+  .showcase-card,
+  .os-card,
+  .mascot-badge {
     transition: none;
   }
 
-  .button:hover {
+  .button:hover,
+  .button:active,
+  .value-card:hover,
+  .workflow-card:hover,
+  .showcase-card:hover,
+  .os-card:hover,
+  .os-card:active,
+  .mascot-badge:hover {
     transform: none;
   }
 }

@@ -35,6 +35,9 @@ languages:
         - name: How it works
           url: "#how-to"
           weight: 30
+        - name: Formats
+          url: "#formats"
+          weight: 35
         - name: Download
           url: "#download"
           weight: 40
@@ -55,6 +58,9 @@ languages:
         - name: 사용법
           url: "#how-to"
           weight: 30
+        - name: 지원 형식
+          url: "#formats"
+          weight: 35
         - name: 다운로드
           url: "#download"
           weight: 40

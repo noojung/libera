@@ -9,7 +9,12 @@
       </h1>
       <p class="hero__description">{{ .description }}</p>
       <div class="hero__actions">
-        <a class="button button--primary" href="{{ site.Params.releaseURL }}">{{ .primary_action }}</a>
+        <a class="button button--primary" href="{{ site.Params.releaseURL }}">
+          <svg class="button__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13 3a1 1 0 0 0-2 0v8.586L8.707 9.293a1 1 0 1 0-1.414 1.414l4 4a1 1 0 0 0 1.414 0l4-4a1 1 0 0 0-1.414-1.414L13 11.586V3zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z" />
+          </svg>
+          <span>{{ .primary_action }}</span>
+        </a>
         <a class="button button--secondary" href="{{ site.Params.repositoryURL }}">
           <svg class="button__icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.69-1.29-1.69-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.38.97.11-.75.41-1.27.74-1.56-2.57-.29-5.27-1.29-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.96 10.96 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.14v3.18c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z" />
@@ -110,7 +115,7 @@
   {{- end }}
 
   {{- with .Params.formats }}
-  <section class="formats-panel" aria-labelledby="formats-title">
+  <section id="formats" class="formats-panel" aria-labelledby="formats-title">
     <div class="formats-panel__header">
       <div class="formats-panel__title-group">
         <p class="section-kicker">{{ .kicker }}</p>
@@ -144,7 +149,11 @@
               <span class="format-table__tag">{{ . }}</span>
               {{- end }}
             </td>
-            <td class="format-table__abilities">{{ delimit $abilities " · " }}</td>
+            <td class="format-table__abilities">
+              {{- range $abilities }}
+              <span class="format-table__ability-tag">{{ . }}</span>
+              {{- end }}
+            </td>
             <td class="format-table__codecs">
               {{- $write := delimit .codecs.write ", " }}
               {{- $read := delimit .codecs.read ", " }}
@@ -175,14 +184,20 @@
       <p class="section-kicker">{{ .kicker }}</p>
       <h2 id="download-title">{{ .title }}</h2>
       <p>{{ .description }}</p>
-      <a class="button button--download" href="{{ site.Params.releaseURL }}">{{ .action }}</a>
+      <a class="button button--download" href="{{ site.Params.releaseURL }}">
+        <svg class="button__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M13 3a1 1 0 0 0-2 0v8.586L8.707 9.293a1 1 0 1 0-1.414 1.414l4 4a1 1 0 0 0 1.414 0l4-4a1 1 0 0 0-1.414-1.414L13 11.586V3zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z" />
+        </svg>
+        <span>{{ .action }}</span>
+      </a>
     </div>
     <div class="download-panel__options">
       {{- range .options }}
-      <div class="os-card">
+      <a class="os-card" href="{{ site.Params.releaseURL }}" target="_blank" rel="noopener">
         <span aria-hidden="true">{{ .icon }}</span>
         <div><strong>{{ .name }}</strong><small>{{ .detail }}</small></div>
-      </div>
+        <span class="os-card__action" aria-hidden="true">↓</span>
+      </a>
       {{- end }}
       <p class="download-note">{{ .note }}</p>
     </div>
@@ -200,4 +215,40 @@
   </nav>
   {{- end }}
 </div>
+<script>
+(() => {
+  const navLinks = document.querySelectorAll('.menu a[href*="#"]');
+  if (!navLinks.length) return;
+  const sectionIds = Array.from(navLinks).map(link => {
+    const parts = link.getAttribute('href').split('#');
+    return parts[1];
+  }).filter(Boolean);
+  const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
+
+  const updateActive = () => {
+    const scrollPos = window.scrollY + 140;
+    let currentId = '';
+    for (let i = sections.length - 1; i >= 0; i--) {
+      const section = sections[i];
+      if (section && section.offsetTop <= scrollPos) {
+        currentId = section.id;
+        break;
+      }
+    }
+    navLinks.forEach(link => {
+      const parts = link.getAttribute('href').split('#');
+      const hash = parts[1];
+      if (hash && hash === currentId) {
+        link.classList.add('active');
+      } else {
+        link.classList.remove('active');
+      }
+    });
+  };
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  window.addEventListener('resize', updateActive, { passive: true });
+  updateActive();
+})();
+</script>
 {{- end }}
