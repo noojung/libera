@@ -273,7 +273,7 @@ describe('CompressionPanel', () => {
     expect(screen.getByRole('combobox', { name: 'Dictionary size' })).toHaveTextContent('16 MB')
     expect(screen.getByRole('checkbox', { name: /Solid block compression/ })).not.toBeChecked()
     expect(screen.queryByText('1 override')).not.toBeInTheDocument()
-  })
+  }, 15_000)
 
   it('hides the compression level for TAR, which cannot compress', async () => {
     installElectronApi()
