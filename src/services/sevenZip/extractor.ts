@@ -20,7 +20,7 @@ import {
   restoresUnixMode,
   securityError,
   throwIfAborted,
-  topLevelSegment,
+  topLevelOutputName,
   type ExtractionResult,
   type FormatExtraction,
   type FormatExtractor,
@@ -142,7 +142,7 @@ async function extractWithJavaScript(
   )
 
   const selected = plan.entries.filter(entry => entry.shouldExtract)
-  const topLevelNames = new Set(selected.map(entry => topLevelSegment(entry.archivePath)))
+  const topLevelNames = new Set(selected.map(entry => topLevelOutputName(targetRoot, entry.outputPath)))
   for (const entry of selected) {
     if (entry.isDirectory) await ensureSafeDirectory(targetRoot, entry.outputPath, transaction)
     else await ensureSafeParentDirectories(targetRoot, entry.outputPath, transaction)
