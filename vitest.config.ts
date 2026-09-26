@@ -1,13 +1,12 @@
 import { defineConfig } from 'vitest/config'
-import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
   test: {
-    // Projects do not inherit the root config's plugins, so the alias
-    // resolver has to be declared in each one.
+    // Projects do not inherit the root config's resolve options, so the path
+    // aliases have to be switched on in each one.
     projects: [
       {
-        plugins: [tsconfigPaths()],
+        resolve: { tsconfigPaths: true },
         test: {
           name: 'node',
           environment: 'node',
@@ -33,7 +32,7 @@ export default defineConfig({
         }
       },
       {
-        plugins: [tsconfigPaths()],
+        resolve: { tsconfigPaths: true },
         test: {
           name: 'renderer',
           environment: 'jsdom',

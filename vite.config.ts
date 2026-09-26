@@ -2,7 +2,6 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron, { type ElectronOptions } from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import fs from 'fs'
 import path from 'path'
 import { createRequire } from 'module'
@@ -72,11 +71,13 @@ export default defineConfig({
         }
       },
     ]),
-    renderer(),
-    // `root` below points at src/renderer, so the plugin is told where the
-    // tsconfig that owns the path aliases actually lives.
-    tsconfigPaths({ root: __dirname })
+    renderer()
   ],
+  // Vite resolves each import through the tsconfig nearest the importing file,
+  // so the path aliases apply even though `root` below is src/renderer.
+  resolve: {
+    tsconfigPaths: true
+  },
   root: 'src/renderer',
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),
