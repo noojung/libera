@@ -36,12 +36,17 @@ export function createArchiveEntryFilter(patternText?: string): (entryPath: stri
     .map(pattern => pattern.trim())
     .filter(Boolean)
     .slice(0, 100)
-    .map(pattern => ({ exclude: pattern.startsWith('!'), pattern: pattern.replace(/^!/, '').slice(0, 256) }))
+    // Backslashes become slashes before anything reads the pattern, so
+    // `docs\*.md` is a path pattern exactly as `docs/*.md` is.
+    .map(pattern => ({
+      exclude: pattern.startsWith('!'),
+      pattern: pattern.replace(/^!/, '').slice(0, 256).replace(/\\/g, '/')
+    }))
     .filter(item => item.pattern.length > 0)
     .map(item => ({
       exclude: item.exclude,
       hasSlash: item.pattern.includes('/'),
-      expression: globExpression(item.pattern.replace(/\\/g, '/'))
+      expression: globExpression(item.pattern)
     }))
   const includes = tokens.filter(token => !token.exclude)
   const excludes = tokens.filter(token => token.exclude)
