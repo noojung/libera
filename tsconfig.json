@@ -15,12 +15,11 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": true,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/src/*"],
-      "@main/*": ["src/main/*"],
-      "@preload/*": ["src/preload/*"],
-      "@services/*": ["src/services/*"]
+      "@/*": ["./src/renderer/src/*"],
+      "@main/*": ["./src/main/*"],
+      "@preload/*": ["./src/preload/*"],
+      "@services/*": ["./src/services/*"]
     }
   },
   "include": ["src/**/*"]
