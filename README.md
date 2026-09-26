@@ -188,7 +188,11 @@ The following checks are applied before and during extraction:
 
 - Rejects absolute paths and paths that escape the destination directory (Zip Slip).
 - Restores a symbolic link only when its target resolves inside the destination, and rejects hard links outright. Symbolic links in the destination path are always rejected. On Windows, where creating a link needs a privilege the app cannot assume, link entries are rejected instead.
-- Never overwrites existing files.
+- Never overwrites existing files by default. Expert mode offers three rules for
+  a clash instead: overwrite (the replaced file is kept aside and restored if the
+  job fails), skip, or keep both, which writes the extracted file beside the
+  original under the first free numbered name (`report (1).txt`,
+  `backup (1).tar.gz`). Folders are merged under every rule.
 - Limits archives to 100,000 entries, 1 TiB total extracted size, and 1 TiB per file.
 - Verifies that extraction leaves at least 5% of the destination filesystem, or 1 GiB, free.
 - Streams extracted data and removes files created by a failed or cancelled extraction.

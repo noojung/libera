@@ -19,7 +19,8 @@ import {
   isSupportedArchivePath,
   MAX_ARCHIVE_ENTRIES,
   MAX_FILE_EXTRACTED_BYTES,
-  MAX_TOTAL_EXTRACTED_BYTES
+  MAX_TOTAL_EXTRACTED_BYTES,
+  numberedFileName
 } from './extractor'
 
 const execFileAsync = promisify(execFile)
@@ -679,6 +680,161 @@ describe('Windows extraction behaviour', () => {
 
     await expect(fs.access(path.join(targetDir, '._signed.wasm'))).resolves.toBeUndefined()
   })
+})
+
+describe('keep-both destination policy', () => {
+  it('numbers a clashing name the way file managers name a second copy', () => {
+    expect(numberedFileName('report.txt', 1)).toBe('report (1).txt')
+    expect(numberedFileName('backup.tar.gz', 2)).toBe('backup (2).tar.gz')
+    expect(numberedFileName('.env', 1)).toBe('.env (1)')
+    expect(numberedFileName('.tar.gz', 1)).toBe('.tar (1).gz')
+    expect(numberedFileName('Makefile', 3)).toBe('Makefile (3)')
+  })
+
+  it('writes clashing ZIP entries beside the originals under the first free number', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, {
+      'report.txt': 'archive report',
+      // Claimed by the archive itself, so the renamed entry has to step past it.
+      'report (2).txt': 'archive second report',
+      'notes/.env': 'archive env',
+      'backup.tar.gz': 'archive backup',
+      'fresh.txt': 'fresh'
+    })
+    await fs.mkdir(path.join(targetDir, 'notes'), { recursive: true })
+    await fs.writeFile(path.join(targetDir, 'report.txt'), 'original report')
+    await fs.writeFile(path.join(targetDir, 'report (1).txt'), 'original first copy')
+    await fs.writeFile(path.join(targetDir, 'notes', '.env'), 'original env')
+    await fs.writeFile(path.join(targetDir, 'backup.tar.gz'), 'original backup')
+
+    const result = await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    expect(result.extractedCount).toBe(5)
+    const read = (...parts: string[]) => fs.readFile(path.join(targetDir, ...parts), 'utf8')
+    await expect(read('report.txt')).resolves.toBe('original report')
+    await expect(read('report (1).txt')).resolves.toBe('original first copy')
+    await expect(read('report (2).txt')).resolves.toBe('archive second report')
+    await expect(read('report (3).txt')).resolves.toBe('archive report')
+    await expect(read('notes', '.env')).resolves.toBe('original env')
+    await expect(read('notes', '.env (1)')).resolves.toBe('archive env')
+    await expect(read('backup.tar.gz')).resolves.toBe('original backup')
+    await expect(read('backup (1).tar.gz')).resolves.toBe('archive backup')
+    await expect(read('fresh.txt')).resolves.toBe('fresh')
+  })
+
+  it('renames a file entry that clashes with an existing folder', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'archive.zip')
+    const targetDir = path.join(directory, 'output')
+    await createZip(archivePath, { data: 'archive data' })
+    await fs.mkdir(path.join(targetDir, 'data'), { recursive: true })
+
+    await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    expect((await fs.stat(path.join(targetDir, 'data'))).isDirectory()).toBe(true)
+    await expect(fs.readFile(path.join(targetDir, 'data (1)'), 'utf8')).resolves.toBe('archive data')
+  })
+
+  it('leaves nothing renamed behind when the extraction fails', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourcePath = path.join(directory, 'existing.txt')
+    const archivePath = path.join(directory, 'encrypted.zip')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(sourcePath, 'archive content')
+    await compressArchive({ inputPaths: [sourcePath], outputPath: archivePath, format: 'zip', password: 'correct-password' })
+    await fs.mkdir(targetDir)
+    await fs.writeFile(path.join(targetDir, 'existing.txt'), 'original content')
+
+    await expect(extractArchive({
+      archivePath,
+      targetDir,
+      overwritePolicy: 'rename',
+      password: 'wrong-password'
+    })).rejects.toBeTruthy()
+    expect(await fs.readdir(targetDir)).toEqual(['existing.txt'])
+    await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('original content')
+  })
+
+  it('renames clashing TAR entries, nested ones included', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    const archivePath = path.join(directory, 'archive.tar.gz')
+    const targetDir = path.join(directory, 'output')
+    await fs.mkdir(path.join(sourceDir, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'archive a')
+    await fs.writeFile(path.join(sourceDir, 'docs', 'b.md'), 'archive b')
+    await fs.writeFile(path.join(sourceDir, 'docs', 'c.md'), 'archive c')
+    await tar.c({ cwd: sourceDir, file: archivePath, gzip: true }, ['a.txt', 'docs'])
+    await fs.mkdir(path.join(targetDir, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(targetDir, 'a.txt'), 'original a')
+    await fs.writeFile(path.join(targetDir, 'docs', 'b.md'), 'original b')
+
+    const result = await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    expect(result.extractedCount).toBe(3)
+    const read = (...parts: string[]) => fs.readFile(path.join(targetDir, ...parts), 'utf8')
+    await expect(read('a.txt')).resolves.toBe('original a')
+    await expect(read('a (1).txt')).resolves.toBe('archive a')
+    await expect(read('docs', 'b.md')).resolves.toBe('original b')
+    await expect(read('docs', 'b (1).md')).resolves.toBe('archive b')
+    await expect(read('docs', 'c.md')).resolves.toBe('archive c')
+  })
+
+  it.skipIf(process.platform === 'win32')('renames a clashing TAR symbolic link and keeps its target', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'source')
+    const archivePath = path.join(directory, 'archive.tar')
+    const targetDir = path.join(directory, 'output')
+    await fs.mkdir(sourceDir)
+    await fs.writeFile(path.join(sourceDir, 'file.txt'), 'archive content')
+    await fs.symlink('file.txt', path.join(sourceDir, 'link.txt'))
+    await tar.c({ cwd: sourceDir, file: archivePath }, ['file.txt', 'link.txt'])
+    await fs.mkdir(targetDir)
+    await fs.writeFile(path.join(targetDir, 'link.txt'), 'original content')
+
+    await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    await expect(fs.readFile(path.join(targetDir, 'link.txt'), 'utf8')).resolves.toBe('original content')
+    await expect(fs.readlink(path.join(targetDir, 'link (1).txt'))).resolves.toBe('file.txt')
+    await expect(fs.readFile(path.join(targetDir, 'link (1).txt'), 'utf8')).resolves.toBe('archive content')
+  })
+
+  it('renames the lone file a GZ stream expands to', async () => {
+    const directory = await createTemporaryDirectory()
+    const archivePath = path.join(directory, 'existing.txt.gz')
+    const targetDir = path.join(directory, 'output')
+    await fs.writeFile(archivePath, zlib.gzipSync('archive content'))
+    await fs.mkdir(targetDir)
+    await fs.writeFile(path.join(targetDir, 'existing.txt'), 'original content')
+
+    const result = await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    expect(result.extractedCount).toBe(1)
+    await expect(fs.readFile(path.join(targetDir, 'existing.txt'), 'utf8')).resolves.toBe('original content')
+    await expect(fs.readFile(path.join(targetDir, 'existing (1).txt'), 'utf8')).resolves.toBe('archive content')
+  })
+
+  it('renames clashing 7Z entries', async () => {
+    const directory = await createTemporaryDirectory()
+    const sourceDir = path.join(directory, 'src')
+    const archivePath = path.join(directory, 'clash.7z')
+    const targetDir = path.join(directory, 'out')
+    await fs.mkdir(path.join(sourceDir, 'sub'), { recursive: true })
+    await fs.writeFile(path.join(sourceDir, 'a.txt'), 'alpha')
+    await fs.writeFile(path.join(sourceDir, 'sub', 'b.txt'), 'bravo')
+    await writeLibera7z({ inputPaths: [sourceDir], outputPath: archivePath, level: 1 })
+    await fs.mkdir(path.join(targetDir, 'src', 'sub'), { recursive: true })
+    await fs.writeFile(path.join(targetDir, 'src', 'a.txt'), 'original')
+
+    await extractArchive({ archivePath, targetDir, overwritePolicy: 'rename' })
+
+    const read = (...parts: string[]) => fs.readFile(path.join(targetDir, 'src', ...parts), 'utf8')
+    await expect(read('a.txt')).resolves.toBe('original')
+    await expect(read('a (1).txt')).resolves.toBe('alpha')
+    await expect(read('sub', 'b.txt')).resolves.toBe('bravo')
+  }, 60_000)
 })
 
 describe('7z extraction', () => {

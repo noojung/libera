@@ -617,12 +617,80 @@ export async function validateSelectedDestinations(targetRoot: string, entries: 
   }
 }
 
+export type DestinationPolicy = 'reject' | 'overwrite' | 'skip' | 'rename'
+
+// Past this many numbered names the folder is not one a person is tidying by
+// hand, and the conflict is reported instead of probed any further.
+export const MAX_RENAME_ATTEMPTS = 10_000
+
+// Compound suffixes stay whole, so a clash on `backup.tar.gz` becomes
+// `backup (1).tar.gz` rather than `backup.tar (1).gz`.
+const COMPOUND_EXTENSION = /\.tar\.[^.]+$/i
+
+/**
+ * `report.txt` → `report (1).txt`, the way Finder and Explorer name the second
+ * copy. A dotfile such as `.env` has no extension to keep apart, so it becomes
+ * `.env (1)`.
+ */
+export function numberedFileName(fileName: string, number: number): string {
+  const compound = COMPOUND_EXTENSION.exec(fileName)
+  const extension = compound && compound.index > 0 ? compound[0] : path.extname(fileName)
+  const stem = fileName.slice(0, fileName.length - extension.length)
+  return `${stem} (${number})${extension}`
+}
+
+// Always folded: a name that differs from a claimed one only by case is
+// skipped as well, which costs one number and spares a case-insensitive
+// volume (the default on macOS and Windows) from writing two entries to one file.
+const claimKey = (outputPath: string): string => outputPath.toLowerCase()
+
+/**
+ * Every path the plan will write, and every folder those paths sit in, so a
+ * renamed entry never lands on a name another entry or its parent folder
+ * is about to take.
+ */
+function claimedOutputPaths(targetRoot: string, entries: PlannedEntry[]): Set<string> {
+  const claimed = new Set<string>()
+  for (const entry of entries) {
+    let current = entry.outputPath
+    while (current !== targetRoot && current.startsWith(targetRoot)) {
+      const key = claimKey(current)
+      if (claimed.has(key)) break
+      claimed.add(key)
+      current = path.dirname(current)
+    }
+  }
+  return claimed
+}
+
+async function renameToFreeName(
+  targetRoot: string,
+  entry: PlannedEntry,
+  claimed: Set<string>
+): Promise<void> {
+  const directory = path.dirname(entry.outputPath)
+  const fileName = path.basename(entry.outputPath)
+  for (let number = 1; number <= MAX_RENAME_ATTEMPTS; number++) {
+    const candidate = path.join(directory, numberedFileName(fileName, number))
+    if (claimed.has(claimKey(candidate))) continue
+    if (await lstatIfExists(candidate)) continue
+    // The candidate sits beside the original, so every parent check already
+    // passed; this only guards the name itself.
+    await assertSafeDestination(targetRoot, candidate, entry.isDirectory)
+    claimed.add(claimKey(candidate))
+    entry.outputPath = candidate
+    return
+  }
+  throw securityError(`no free name is left beside an existing file: ${entry.outputPath}`, 'DESTINATION_EXISTS')
+}
+
 export async function prepareSelectedDestinations(
   targetRoot: string,
   entries: PlannedEntry[],
-  policy: 'reject' | 'overwrite' | 'skip',
+  policy: DestinationPolicy,
   transaction: ExtractionTransaction
 ): Promise<void> {
+  let claimed: Set<string> | null = null
   for (const entry of entries) {
     if (!entry.shouldExtract) continue
     try {
@@ -635,6 +703,13 @@ export async function prepareSelectedDestinations(
       }
       if (policy === 'overwrite' && !entry.isDirectory) {
         await transaction.backupExisting(entry.outputPath, targetRoot)
+        continue
+      }
+      // Folders are merged rather than renamed, as they are under every other
+      // policy; renaming one would have to carry everything below it along.
+      if (policy === 'rename' && !entry.isDirectory) {
+        claimed ??= claimedOutputPaths(targetRoot, entries)
+        await renameToFreeName(targetRoot, entry, claimed)
         continue
       }
       throw error
@@ -666,6 +741,14 @@ export function topLevelSegment(entryPath: string): string {
   const normalizedPath = entryPath.replace(/\\/g, '/')
   const separatorIndex = normalizedPath.indexOf('/')
   return separatorIndex === -1 ? normalizedPath : normalizedPath.slice(0, separatorIndex)
+}
+
+/**
+ * The top level name an entry is written under. Read from where it lands
+ * rather than from its archive path, which a renamed entry no longer matches.
+ */
+export function topLevelOutputName(targetRoot: string, outputPath: string): string {
+  return topLevelSegment(path.relative(targetRoot, outputPath))
 }
 
 export async function propagateQuarantine(

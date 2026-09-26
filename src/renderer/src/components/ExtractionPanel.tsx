@@ -186,7 +186,8 @@ export const ExtractionPanel: React.FC<ExtractionPanelProps> = ({ items, onStart
               onChange={setOverwritePolicy}
               options={[
                 { value: 'overwrite', label: t('extraction.overwriteAlways') },
-                { value: 'skip', label: t('extraction.overwriteSkip') }
+                { value: 'skip', label: t('extraction.overwriteSkip') },
+                { value: 'rename', label: t('extraction.overwriteRename') }
               ]}
             />
           </div>

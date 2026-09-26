@@ -63,4 +63,17 @@ describe('ExtractionPanel', () => {
     }))
   })
 
+  it('offers keeping both files as an overwrite rule', async () => {
+    localStorage.setItem('libera_expert_mode', 'true')
+    installElectronApi({ platform: 'macos', getDefaultOutputDir: vi.fn().mockResolvedValue('C:\\output') })
+    const onStart = vi.fn()
+    const { user } = renderWithI18n(<ExtractionPanel items={[archive]} onStartBatchExtract={onStart} />)
+    await waitFor(() => expect(screen.getByPlaceholderText('Choose an extraction path')).toHaveValue('C:\\output'))
+
+    await user.click(screen.getByRole('combobox', { name: 'File overwrite rule' }))
+    await user.click(screen.getByRole('option', { name: 'Keep both (rename the extracted file)' }))
+    await user.click(screen.getByRole('button', { name: /Start extraction/ }))
+
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ overwritePolicy: 'rename' }))
+  })
 })

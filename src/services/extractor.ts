@@ -50,15 +50,16 @@ import {
   prepareSelectedDestinations,
   prepareTargetRoot,
   propagateQuarantine,
-  resolveOutputPath,
   restoresSymbolicLinks,
   canCreateSymbolicLinks,
   restoresUnixMode,
   securityError,
   throwIfAborted,
-  topLevelSegment,
+  topLevelOutputName,
   WRONG_ZIP_PASSWORD_ERROR_CODE,
   type ArchivePlanEntry,
+  type DestinationPolicy,
+  type PlannedEntry,
   type ExtractionContext,
   type ExtractionPolicy,
   type ExtractionResult,
@@ -70,7 +71,7 @@ import {
 export * from './extractionSafety'
 
 export type FilenameEncoding = 'auto' | 'utf-8' | 'cp949' | 'shift_jis' | 'gbk' | 'big5' | 'cp437' | 'windows-1252'
-export type OverwritePolicy = 'overwrite' | 'skip'
+export type OverwritePolicy = 'overwrite' | 'skip' | 'rename'
 
 export interface ExtractionOptions {
   archivePath: string
@@ -109,7 +110,7 @@ function selectedPathSet(
     .map(entry => entry.path))
 }
 
-function destinationPolicy(options: ExtractionOptions): 'reject' | 'overwrite' | 'skip' {
+function destinationPolicy(options: ExtractionOptions): DestinationPolicy {
   return options.overwritePolicy ?? 'reject'
 }
 
@@ -320,7 +321,7 @@ const extractZipArchive: FormatExtractor = async ({
 
     meter.complete()
     const topLevelNames = new Set(
-      plan.entries.filter(entry => entry.shouldExtract).map(entry => topLevelSegment(entry.archivePath))
+      plan.entries.filter(entry => entry.shouldExtract).map(entry => topLevelOutputName(targetRoot, entry.outputPath))
     )
     await propagateQuarantine(archivePath, targetRoot, topLevelNames)
     return { targetDir: targetRoot, extractedCount, durationMs: Date.now() - startTime, symbolicLinksExcluded }
@@ -408,6 +409,10 @@ const extractTarArchive: FormatExtractor = async ({
   }
 
   const plannedEntries = new Map(plan.entries.map(entry => [entry.archivePath, entry]))
+  // tar writes wherever an entry's own path points, so a renamed entry has its
+  // path rewritten on the way in; everything after that finds its plan here
+  // instead of by a path that no longer matches the archive.
+  const plannedByTarEntry = new WeakMap<object, PlannedEntry>()
   const meter = new ExtractionMeter(policy, diskBudget, plan.selectedTotalBytes, onProgress)
   const limitController = new AbortController()
   const operationSignal = signal ? AbortSignal.any([signal, limitController.signal]) : limitController.signal
@@ -425,10 +430,13 @@ const extractTarArchive: FormatExtractor = async ({
     onentry: (tarEntry: any) => {
       const plannedEntry = plannedEntries.get(tarEntry.path)
       if (!plannedEntry?.shouldExtract || plannedEntry.isDirectory) return
+      plannedByTarEntry.set(tarEntry, plannedEntry)
+      const outputEntryPath = path.relative(targetRoot, plannedEntry.outputPath).split(path.sep).join('/')
+      if (outputEntryPath !== normalizeEntryPath(tarEntry.path)) tarEntry.path = outputEntryPath
       transaction.recordFile(plannedEntry.outputPath)
     },
     transform: (tarEntry: any) => {
-      const plannedEntry = plannedEntries.get(tarEntry.path)
+      const plannedEntry = plannedByTarEntry.get(tarEntry)
       if (!plannedEntry?.shouldExtract || plannedEntry.isDirectory) return undefined
 
       let fileBytes = 0
@@ -458,7 +466,7 @@ const extractTarArchive: FormatExtractor = async ({
   }
 
   meter.complete()
-  const topLevelNames = new Set(selectedPlan.map(entry => topLevelSegment(entry.archivePath)))
+  const topLevelNames = new Set(selectedPlan.map(entry => topLevelOutputName(targetRoot, entry.outputPath)))
   await propagateQuarantine(archivePath, targetRoot, topLevelNames)
   return {
     targetDir: targetRoot,
@@ -489,7 +497,6 @@ const extractCodecStreamArchive: FormatExtractor = async ({
   const codec = streamCodecFor(archivePath)
   if (!codec) throw new Error(`Unsupported archive format for extraction: ${path.extname(archivePath).toLowerCase()}`)
   const outputName = normalizeEntryPath(streamEntryName(archivePath))
-  const outputPath = resolveOutputPath(targetRoot, outputName)
   const options = extractionOptions ?? { archivePath, targetDir: targetRoot }
   if (!createArchiveEntryFilter(options.filterPattern)(outputName) ||
       (options.excludeMacMetadata && isMacMetadataPath(outputName))) {
@@ -502,6 +509,8 @@ const extractCodecStreamArchive: FormatExtractor = async ({
   if (!plan.entries[0].shouldExtract) {
     return { targetDir: targetRoot, extractedCount: 0, durationMs: Date.now() - startTime, symbolicLinksExcluded: 0 }
   }
+  // Read back after the destination policy, which may have renamed it.
+  const { outputPath } = plan.entries[0]
   await ensureSafeParentDirectories(targetRoot, outputPath, transaction)
 
   const meter = new ExtractionMeter(policy, diskBudget, null, onProgress)
@@ -538,7 +547,7 @@ const extractCodecStreamArchive: FormatExtractor = async ({
   }
 
   meter.complete(outputName)
-  await propagateQuarantine(archivePath, targetRoot, [outputName])
+  await propagateQuarantine(archivePath, targetRoot, [topLevelOutputName(targetRoot, outputPath)])
   return { targetDir: targetRoot, extractedCount: 1, durationMs: Date.now() - startTime, symbolicLinksExcluded: 0 }
 }
 
