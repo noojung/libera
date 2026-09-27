@@ -111,7 +111,7 @@
     "fflate": "^0.8.2",
     "i18next": "^26.4.0",
     "libera7z": "*",
-    "lucide-react": "^0.475.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.12",
