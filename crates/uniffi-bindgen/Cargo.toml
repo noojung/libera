@@ -1,0 +1,11 @@
+[package]
+name = "uniffi-bindgen"
+description = "The UniFFI binding generator, pinned to the workspace's UniFFI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+uniffi = { workspace = true, features = ["cli"] }
