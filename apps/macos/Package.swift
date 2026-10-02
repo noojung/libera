@@ -10,6 +10,7 @@ let package = Package(
         .target(name: "LiberaCore", dependencies: ["LiberaCoreFFI"]),
         .executableTarget(name: "LiberaUI", dependencies: ["LiberaCore"], resources: [.copy("Resources")]),
         .testTarget(name: "LiberaCoreTests", dependencies: ["LiberaCore"]),
+        .testTarget(name: "LiberaUITests", dependencies: ["LiberaUI", "LiberaCore"]),
     ],
     swiftLanguageModes: [.v5]
 )

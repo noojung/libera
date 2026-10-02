@@ -22,6 +22,25 @@ public enum Libera {
         }
     }
 
+    /// Lists an archive's entries without writing anything out.
+    public static func inspect(_ archivePath: String, password: String? = nil) async throws -> ArchiveInspection {
+        try await run { _, token in
+            try inspectArchive(archivePath: archivePath, password: password, cancel: token)
+        }
+    }
+
+    /// Reads one entry far enough to show it as text or a picture.
+    public static func preview(
+        _ archivePath: String, entryIndex: UInt64, password: String? = nil, includeRawBytes: Bool = false
+    ) async throws -> ArchivePreview {
+        try await run { _, token in
+            try previewArchiveEntry(
+                archivePath: archivePath, entryIndex: entryIndex, password: password,
+                includeRawBytes: includeRawBytes, cancel: token
+            )
+        }
+    }
+
     /// The levels `format`'s writer distinguishes, in slider order. The core
     /// hands them over as bytes, which UniFFI turns into `Data`.
     public static func levels(for format: ArchiveFormat) -> [UInt8] {
@@ -29,7 +48,7 @@ public enum Libera {
     }
 
     private static func run<Output: Sendable>(
-        _ onProgress: @escaping @Sendable (ProgressData) -> Void,
+        _ onProgress: @escaping @Sendable (ProgressData) -> Void = { _ in },
         _ job: @escaping @Sendable (ProgressListener, CancelToken) throws -> Output
     ) async throws -> Output {
         let token = CancelToken()

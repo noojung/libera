@@ -13,6 +13,7 @@ private struct IconNode: Decodable {
 }
 struct VectorIcon: View {
     let name: String
+    var lineWidth: CGFloat = 2
     private static let catalog = try! JSONDecoder().decode([String: [IconNode]].self,
         from: Data(contentsOf: Bundle.module.url(forResource: "icons", withExtension: "json", subdirectory: "Resources")!))
     var body: some View {
@@ -40,7 +41,7 @@ struct VectorIcon: View {
                     if node.kind=="polygon" { path.closeSubpath() }
                 default: break
                 }
-                context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
             }
         }.accessibilityHidden(true)
     }
