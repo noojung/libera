@@ -28,6 +28,7 @@ enum Sheet: String, Identifiable {
 @MainActor final class AppModel: ObservableObject {
     let settings: AppSettings
     let queue: JobQueue
+    let inspector = InspectorModel()
 
     @Published var screen: Screen = .compress
     /// Open dialogs, the last on top. A detail view opened from another -
@@ -41,6 +42,7 @@ enum Sheet: String, Identifiable {
     init(settings: AppSettings, queue: JobQueue? = nil) {
         self.settings = settings
         self.queue = queue ?? JobQueue()
+        inspector.onUnsupported = { [weak self] in self?.present(.unsupportedFormat) }
     }
 
     var sheet: Sheet? { sheets.last }

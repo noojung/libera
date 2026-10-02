@@ -8,6 +8,7 @@ import SwiftUI
 ///     --screen compress|extract|inspect|queue   --lang en|ko   --theme system|light|dark
 ///     --expert   --size 1050x720   --sheet about|licenses|supportedFormats|unsupportedFormat
 ///     --input PATH (repeatable)   --compress-now   --archive PATH (repeatable)   --extract-now
+///     --inspect PATH   --preview ENTRY-INDEX
 ///     --snapshot OUT.png
 ///
 /// Any of the first three makes the run leave the saved settings alone.
@@ -64,6 +65,7 @@ private struct LaunchOptions {
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName(options.scripted ? "" : "LiberaMainWindow")
         let root = LiberaView().environmentObject(model).environmentObject(settings).environmentObject(model.queue)
+            .environmentObject(model.inspector)
         let hosting = NSHostingView(rootView: root)
         hosting.sizingOptions = []
         window.contentView = hosting
@@ -77,6 +79,17 @@ private struct LaunchOptions {
             Task {
                 await model.addCompressInputs(inputs)
                 if options.flag("--compress-now") { compressNow() }
+            }
+        }
+        if let archive = options.value("--inspect") {
+            model.screen = .inspect
+            model.inspector.open(archive)
+            if let index = options.value("--preview").flatMap(UInt64.init) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    if let entry = self.model.inspector.inspection?.entries.first(where: { $0.index == index }) {
+                        self.model.inspector.preview(entry, rawBytes: self.settings.expert)
+                    }
+                }
             }
         }
         let archives = options.values("--archive")
