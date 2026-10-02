@@ -1,6 +1,6 @@
 mod sevenz;
 mod stream;
-mod tar;
+pub(crate) mod tar;
 mod zip;
 
 use std::fs;

@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use tar::{Archive, EntryType};
@@ -7,7 +8,7 @@ use tar::{Archive, EntryType};
 use super::{Counts, Job};
 use crate::LiberaError;
 use crate::codec::{StreamCodec, decoder};
-use crate::progress::Cancellable;
+use crate::progress::{CancelToken, Cancellable};
 use crate::safety::plan::{ArchiveEntry, check_entry_count};
 use crate::safety::target::{ensure_safe_directory, ensure_safe_parent_directories};
 use crate::safety::write::{
@@ -17,8 +18,8 @@ use crate::safety::write::{
 /// Opens the tarball inside whatever codec its leading bytes name. Trusting
 /// the bytes over the suffix reads a plain tar saved as `.tgz` too, as the
 /// Electron engine's reader does.
-fn open<'a>(job: &Job<'a>) -> Result<Archive<Box<dyn Read + 'a>>, LiberaError> {
-    let mut reader = BufReader::new(Cancellable::new(File::open(job.archive_path)?, job.cancel));
+pub(crate) fn open_tar<'a>(path: &Path, cancel: &'a CancelToken) -> Result<Archive<Box<dyn Read + 'a>>, LiberaError> {
+    let mut reader = BufReader::new(Cancellable::new(File::open(path)?, cancel));
     let codec = StreamCodec::sniff(reader.fill_buf()?);
     let reader: Box<dyn Read + 'a> = match codec {
         Some(codec) => decoder(codec, reader)?,
@@ -29,7 +30,7 @@ fn open<'a>(job: &Job<'a>) -> Result<Archive<Box<dyn Read + 'a>>, LiberaError> {
 
 /// A pax global header carries defaults for the entries after it - `git
 /// archive` writes one with the commit id - and is not an entry of its own.
-fn is_entry(entry_type: EntryType) -> bool {
+pub(crate) fn is_entry(entry_type: EntryType) -> bool {
     entry_type != EntryType::XGlobalHeader
 }
 
@@ -38,7 +39,7 @@ fn is_entry(entry_type: EntryType) -> bool {
 fn list(job: &Job) -> Result<Vec<ArchiveEntry<usize>>, LiberaError> {
     let restore_symlinks = job.restore_symlinks();
     let restore_permissions = job.restore_permissions();
-    let mut archive = open(job)?;
+    let mut archive = open_tar(job.archive_path, job.cancel)?;
     let mut entries = Vec::new();
     for entry in archive.entries()? {
         let entry = entry?;
@@ -95,7 +96,7 @@ pub(super) fn extract(job: &mut Job) -> Result<Counts, LiberaError> {
 
     let meter = job.meter(Some(plan.selected_total_bytes));
     let mut extracted = 0;
-    let mut archive = open(job)?;
+    let mut archive = open_tar(job.archive_path, job.cancel)?;
     let mut position = 0;
     for entry in archive.entries()? {
         if job.cancel.is_cancelled() {

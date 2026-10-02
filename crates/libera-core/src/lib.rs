@@ -13,7 +13,9 @@ mod error;
 mod extract;
 mod formats;
 mod inputs;
+mod inspect;
 mod patterns;
+mod preview;
 mod progress;
 mod resolve;
 mod safety;
@@ -33,6 +35,11 @@ pub use formats::{
     supports_header_encryption, supports_level, supports_password, supports_split,
 };
 pub use inputs::{FileItem, item_stats, list_input_children};
+pub use inspect::{ArchiveHeaderInfo, ArchiveInspection, InspectedEntry, SolidBlockInfo, inspect_archive};
+pub use preview::{
+    ArchivePreview, ImageType, MAX_IMAGE_PREVIEW_BYTES, MAX_IMAGE_PREVIEW_DIMENSION, MAX_IMAGE_PREVIEW_PIXELS,
+    MAX_TEXT_PREVIEW_BYTES, TextEncoding, preview_archive_entry,
+};
 pub use progress::{CancelToken, ProgressData, ProgressListener, ProgressPhase};
 pub use resolve::{ArchiveVolume, ResolvedArchive, canonical_archive, resolve_extraction_input};
 pub use safety::ExtractionPolicy;

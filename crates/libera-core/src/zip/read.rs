@@ -36,6 +36,7 @@ pub(crate) struct ZipEntry {
     /// The Unix mode in the high half of the external attributes, if any.
     pub unix_mode: u32,
     pub encryption: Encryption,
+    pub version_needed: u16,
     /// Where the local header starts, in the joined address space.
     pub header_offset: u64,
     /// Where the stored bytes start, past the local header.
@@ -63,6 +64,10 @@ pub(crate) struct ZipArchive {
     pub entries: Vec<ZipEntry>,
     pub volume_paths: Vec<PathBuf>,
     pub volume_sizes: Vec<u64>,
+    /// The central directory's place as the end record gives it, relative to
+    /// the volume it starts on.
+    pub directory_offset: u64,
+    pub directory_size: u64,
 }
 
 fn corrupt(message: impl Into<String>) -> LiberaError {
@@ -208,7 +213,14 @@ impl ZipArchive {
         let mut entries = parse_central_directory(&directory, end.total_entries, &source, options.encoding)?;
         check_layout(&mut source, &mut entries, directory_start)?;
 
-        Ok(Self { volume_sizes: source.volume_sizes(), source, entries, volume_paths })
+        Ok(Self {
+            volume_sizes: source.volume_sizes(),
+            source,
+            entries,
+            volume_paths,
+            directory_offset: end.directory_offset,
+            directory_size: end.directory_size,
+        })
     }
 
     /// A reader over entry `index`'s contents: decrypted with `password`,
@@ -271,7 +283,7 @@ fn parse_central_directory(
             return Err(corrupt("The central directory holds fewer records than the archive says."));
         }
         let version_made_by = cursor.u16().ok_or_else(truncated)?;
-        let _version_needed = cursor.u16().ok_or_else(truncated)?;
+        let version_needed = cursor.u16().ok_or_else(truncated)?;
         let flags = cursor.u16().ok_or_else(truncated)?;
         let stored_method = cursor.u16().ok_or_else(truncated)?;
         let dos_time = cursor.u16().ok_or_else(truncated)?;
@@ -335,6 +347,7 @@ fn parse_central_directory(
             modified: extra.modified.or_else(|| dos_to_system_time(dos_date, dos_time)),
             unix_mode,
             encryption,
+            version_needed,
             header_offset,
             data_offset: 0,
         });
