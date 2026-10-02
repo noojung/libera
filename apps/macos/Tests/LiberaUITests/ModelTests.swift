@@ -1,3 +1,4 @@
+import CoreText
 import LiberaCore
 import XCTest
 
@@ -209,5 +210,40 @@ final class LicenseTests: XCTestCase {
         let uniffi = try XCTUnwrap(LicenseEntry.all.first { $0.name == "uniffi" })
         XCTAssertTrue(uniffi.text.contains("Mozilla Public License Version 2.0"))
         XCTAssertFalse(names.contains { $0.hasPrefix("libera") })
+    }
+}
+
+final class FontTests: XCTestCase {
+    /// The characters a font is missing, of those asked about.
+    private func missing(_ font: String, _ characters: Set<Unicode.Scalar>) throws -> [Unicode.Scalar] {
+        let url = try XCTUnwrap(AppResources.url(font, "ttf", in: "Fonts"))
+        let descriptor = try XCTUnwrap((CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])?.first)
+        let ctFont = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+        return characters.filter { scalar in
+            let units = Array(String(scalar).utf16)
+            var glyphs = [CGGlyph](repeating: 0, count: units.count)
+            return !CTFontGetGlyphsForCharacters(ctFont, units, &glyphs, units.count)
+        }.sorted { $0.value < $1.value }
+    }
+
+    /// Hangul, jamo and ASCII in the translations: what the subsets must keep.
+    private var interfaceCharacters: Set<Unicode.Scalar> {
+        let url = AppResources.url("strings", "json")!
+        let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        return Set(text.unicodeScalars.filter {
+            (0xAC00...0xD7A3).contains($0.value) || (0x3131...0x318E).contains($0.value) || (0x20...0x7E).contains($0.value)
+        })
+    }
+
+    func testTheHeadingFontCoversEveryInterfaceString() throws {
+        // Run scripts/subset-fonts.py after changing the translations.
+        XCTAssertEqual(try missing("Gaegu-Bold", interfaceCharacters), [])
+    }
+
+    func testTheBodyFontCoversTheCommonHangulSyllables() throws {
+        let eucKR = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.EUC_KR.rawValue)))
+        let common = Set((0xAC00...0xD7A3).compactMap(Unicode.Scalar.init).filter { String($0).data(using: eucKR)?.count == 2 })
+        XCTAssertEqual(common.count, 2350)
+        XCTAssertEqual(try missing("GowunDodum-Regular", common.union(interfaceCharacters)), [])
     }
 }
