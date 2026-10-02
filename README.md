@@ -85,6 +85,46 @@ Build macOS installers on macOS and Windows installers on Windows. The GitHub
 Actions release workflow builds each installer on its matching operating
 system.
 
+## Native macOS App
+
+Libera is being rewritten as a native macOS app. Its archive engine is the Rust
+crate `crates/libera-core`, which `crates/libera-ffi` exposes to Swift through
+[UniFFI](https://github.com/mozilla/uniffi-rs), and its interface is the SwiftUI
+app in `apps/macos`. The Electron app is maintained alongside it until the
+native app reaches parity, and releases still ship the Electron build.
+
+Building the native app requires:
+
+- macOS 13 or later with Xcode 16 or later (the full Xcode, not only the Command Line Tools)
+- [rustup](https://rustup.rs/), which installs the toolchain and both Mac targets pinned in `rust-toolchain.toml`
+- Node.js and `npm ci`, as above, for the resource scripts
+
+Build the engine for SwiftPM, then run or test the app:
+
+```bash
+apps/macos/scripts/build-core.sh
+swift run --package-path apps/macos LiberaMacUI
+swift test --package-path apps/macos
+cargo test --workspace
+```
+
+| Script | Description |
+| --- | --- |
+| `apps/macos/scripts/build-core.sh` | Build `libera-core` for both architectures and generate its Swift bindings. Run it again after changing `crates/` or the version |
+| `apps/macos/scripts/build-app.sh` | Build a universal `Libera.app` and `Libera-<version>-mac-universal.dmg` in `apps/macos/dist` |
+| `apps/macos/scripts/sync-resources.mjs` | Copy the renderer's translations and icons into the app. Run it after changing either |
+| `apps/macos/scripts/generate-licenses.mjs` | Regenerate the Licenses dialog's list after changing a Rust dependency |
+
+`build-app.sh` signs ad hoc, so Gatekeeper treats the app as the Installation
+Notes above describe. To sign with a Developer ID and the hardened runtime, set
+`LIBERA_SIGN_IDENTITY` to the identity's name; to also notarize and staple the
+disk image, set `LIBERA_NOTARY_PROFILE` to a profile saved with
+`xcrun notarytool store-credentials`.
+
+The `native-macos.yml` GitHub Actions workflow checks Rust formatting and lints,
+runs both test suites, fails if the generated resources are out of date, and
+uploads the disk image as a build artifact.
+
 ## Site Development
 
 The project website lives in `site/` and is built with [Hugo](https://gohugo.io/) using the [PaperMod](https://github.com/adityatelange/hugo-PaperMod) theme. Building the site locally requires:
