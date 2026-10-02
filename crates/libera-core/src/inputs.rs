@@ -84,16 +84,48 @@ pub(crate) fn is_hidden_name(name: &str) -> bool {
     name.starts_with('.') && name != "." && name != ".."
 }
 
+/// What the input walk leaves out wherever it meets it: the archive being
+/// written, since one saved inside a folder it compresses would otherwise
+/// take itself in, and its read would never reach the end.
+pub(crate) struct OwnOutput {
+    directory: PathBuf,
+    /// The archive's own name, or for a split set, every volume name's stem.
+    name: String,
+    split: bool,
+}
+
+impl OwnOutput {
+    pub(crate) fn file(output: &Path) -> io::Result<Self> {
+        Self::new(output, false)
+    }
+
+    /// Every volume of the split set `output` closes.
+    pub(crate) fn split_set(output: &Path) -> io::Result<Self> {
+        Self::new(&crate::zip::volumes::split_volume_base(output), true)
+    }
+
+    fn new(output: &Path, split: bool) -> io::Result<Self> {
+        let resolved = without_final_link(output)?;
+        let name = resolved.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        Ok(Self { directory: resolved.parent().unwrap_or(Path::new("/")).to_path_buf(), name, split })
+    }
+
+    fn contains(&self, path: &Path) -> bool {
+        if path.parent() != Some(self.directory.as_path()) {
+            return false;
+        }
+        let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default();
+        if self.split { crate::zip::volumes::is_split_volume_name(&self.name, &name) } else { name == self.name }
+    }
+}
+
 /// Every entry under `input_paths` the filters let through, parents before
-/// children and siblings in name order. `output` is left out wherever the
-/// walk meets it, since an archive saved inside a folder it compresses would
-/// otherwise take itself in, and its read would never reach the end.
+/// children and siblings in name order, with the archive's own output left out.
 pub(crate) fn collect_inputs(
     input_paths: &[String],
-    output: &Path,
+    output: &OwnOutput,
     filters: &InputFilters,
 ) -> Result<Vec<InputEntry>, LiberaError> {
-    let output = without_final_link(output)?;
     let mut root_name = unique_root_namer();
     let mut entries = Vec::new();
     for input in input_paths {
@@ -109,7 +141,7 @@ pub(crate) fn collect_inputs(
             .ok_or_else(|| LiberaError::invalid_input(format!("{input} has no name to store it under.")))?
             .to_string_lossy()
             .into_owned();
-        if path == output || !filters.allows_name(&name) {
+        if output.contains(&path) || !filters.allows_name(&name) {
             continue;
         }
         let Some(metadata) = lstat_unless_gone(&path)? else { continue };
@@ -120,7 +152,7 @@ pub(crate) fn collect_inputs(
         // Claimed only once the root is known to be going in, so a filtered out
         // root does not push the next one onto a suffix.
         let stored = root_name(&name);
-        walk(path, stored, kind, metadata.len(), &output, filters, &mut entries)?;
+        walk(path, stored, kind, metadata.len(), output, filters, &mut entries)?;
     }
     Ok(entries)
 }
@@ -138,7 +170,7 @@ fn walk(
     stored_path: String,
     kind: InputKind,
     length: u64,
-    output: &Path,
+    output: &OwnOutput,
     filters: &InputFilters,
     entries: &mut Vec<InputEntry>,
 ) -> io::Result<()> {
@@ -154,7 +186,7 @@ fn walk(
     for name in children {
         let child = path.join(&name);
         let name = name.to_string_lossy();
-        if child == output || !filters.allows_name(&name) {
+        if output.contains(&child) || !filters.allows_name(&name) {
             continue;
         }
         // Anything that disappears between the listing and here is skipped.

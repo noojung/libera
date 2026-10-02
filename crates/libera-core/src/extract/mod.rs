@@ -1,5 +1,6 @@
 mod stream;
 mod tar;
+mod zip;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use crate::safety::plan::{ArchiveEntry, Plan, Selection, build_plan, top_level_n
 use crate::safety::target::{OverwritePolicy, prepare_selected_destinations, prepare_target_root};
 use crate::safety::transaction::Transaction;
 use crate::safety::write::{RESTORES_SYMBOLIC_LINKS, RESTORES_UNIX_MODE, propagate_quarantine};
+use crate::zip::FilenameEncoding;
 
 /// One extraction job. The expert options are optional; each format applies
 /// the Electron engine's default for the ones left unset.
@@ -30,6 +32,15 @@ pub struct ExtractionOptions {
     /// Archive paths to extract, folders standing for everything below them.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub selected_entries: Option<Vec<String>>,
+    /// Decrypts a ZIP's encrypted entries.
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
+    pub password: Option<String>,
+    /// The encoding a ZIP's entry names are read in, when its flag says nothing.
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
+    pub encoding: Option<FilenameEncoding>,
+    /// Checks each ZIP entry's CRC; on unless turned off.
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
+    pub strict_crc: Option<bool>,
     /// What to do with an entry that lands on an existing file; unset refuses.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub overwrite_policy: Option<OverwritePolicy>,
@@ -54,6 +65,9 @@ impl ExtractionOptions {
             target_dir,
             reject_existing_target: false,
             selected_entries: None,
+            password: None,
+            encoding: None,
+            strict_crc: None,
             overwrite_policy: None,
             restore_timestamps: None,
             restore_permissions: None,
@@ -109,7 +123,9 @@ pub fn extract_archive_with(
     if cancel.is_cancelled() {
         return Err(LiberaError::ExtractionCancelled);
     }
-    let archive_path = Path::new(&options.archive_path);
+    // Any volume of a split set stands for the set, read from the volume that
+    // holds its central directory.
+    let archive_path = &crate::resolve::canonical_archive_path(Path::new(&options.archive_path));
     let format = check_archive(archive_path)?;
 
     let mut transaction = Transaction::default();
@@ -137,6 +153,7 @@ pub fn extract_archive_with(
                 cancel: &cancel,
             };
             let counts = match format {
+                ReadFormat::Zip => zip::extract(&mut job)?,
                 ReadFormat::Tar(_) => tar::extract(&mut job)?,
                 ReadFormat::Stream(codec) => stream::extract(&mut job, codec)?,
             };

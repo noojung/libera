@@ -90,6 +90,34 @@ final class LiberaCoreTests: XCTestCase {
         XCTAssertTrue(isSupportedArchivePath(path: "photos.TAR.XZ"))
     }
 
+    func testAsksForThePasswordAnEncryptedZipNeeds() async throws {
+        let input = try file("secret.txt", "classified")
+        let archive = work.appendingPathComponent("secret.zip")
+        _ = try await Libera.compress(
+            CompressionOptions(
+                inputPaths: [input.path], outputPath: archive.path, format: .zip,
+                password: "hunter2", encryptionMethod: .aes256
+            )
+        )
+        let target = work.appendingPathComponent("unpacked")
+
+        do {
+            _ = try await Libera.extract(ExtractionOptions(archivePath: archive.path, targetDir: target.path))
+            XCTFail("Extracted an encrypted archive without a password")
+        } catch LiberaError.PasswordRequired {}
+        do {
+            _ = try await Libera.extract(
+                ExtractionOptions(archivePath: archive.path, targetDir: target.path, password: "wrong")
+            )
+            XCTFail("Extracted with the wrong password")
+        } catch LiberaError.WrongPassword {}
+
+        _ = try await Libera.extract(
+            ExtractionOptions(archivePath: archive.path, targetDir: target.path, password: "hunter2")
+        )
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("secret.txt"), encoding: .utf8), "classified")
+    }
+
     func testSurfacesTheCoreErrorAsItsOwnCase() async throws {
         let input = try file("a.txt", "a")
         let archive = work.appendingPathComponent("a.tgz")

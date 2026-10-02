@@ -27,6 +27,23 @@ pub enum LiberaError {
     DestinationExists { message: String },
     #[error("Unsafe archive: {message}")]
     UnsafeArchive { message: String },
+    /// An encrypted entry was reached without a password.
+    #[error("A password is required")]
+    PasswordRequired,
+    #[error("Wrong password")]
+    WrongPassword,
+    #[error("{message}")]
+    SplitSizeTooSmall { message: String },
+    #[error("{message}")]
+    SplitNotSupportedForFormat { message: String },
+    #[error("{message}")]
+    SplitTooManyVolumes { message: String },
+    #[error("{message}")]
+    SplitVolumeMissing { message: String },
+    #[error("{message}")]
+    SplitVolumeMismatch { message: String },
+    #[error("{message}")]
+    SplitVolumeUnreadable { message: String },
     /// The archive path names no format this engine reads.
     #[error("{message}")]
     UnsupportedArchive { message: String },
