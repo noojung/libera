@@ -21,6 +21,7 @@ build/
 /target/
 /apps/macos/Frameworks/
 /apps/macos/Sources/LiberaCore/Generated/
+/apps/macos/Sources/LiberaUI/Resources/appInfo.json
 /apps/macos/.swiftpm/
 release/
 coverage/

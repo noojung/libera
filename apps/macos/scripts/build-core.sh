@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # Builds libera-core for both Mac architectures and lays it out for SwiftPM:
-# the XCFramework the app links, and the Swift bindings UniFFI generates for
-# it. Run it again whenever crates/ changes.
+# the XCFramework the app links, the Swift bindings UniFFI generates for it,
+# and the app info the About dialog reads. Run it again whenever crates/ or
+# the version changes.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
 app="$root/apps/macos"
 work="$root/target/libera-core-swift"
 export PATH="$HOME/.cargo/bin:$PATH"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+# CI runners point xcode-select at their Xcode; a machine left on the Command
+# Line Tools needs the full Xcode for xcodebuild.
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  DEVELOPER_DIR="$(xcode-select -p)"
+  [[ "$DEVELOPER_DIR" == *CommandLineTools* ]] && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+export DEVELOPER_DIR
 # Matches the platform in Package.swift, so the linker has nothing to warn about.
 export MACOSX_DEPLOYMENT_TARGET=13.0
 
@@ -38,4 +45,6 @@ xcodebuild -create-xcframework \
 
 mkdir -p "$app/Sources/LiberaCore/Generated"
 cp "$work/bindings/libera_core.swift" "$app/Sources/LiberaCore/Generated/"
+# The release workflow bumps the version in the renderer's copy alone.
+cp "$root/src/renderer/src/generated/appInfo.json" "$app/Sources/LiberaUI/Resources/appInfo.json"
 echo "libera-core is ready for SwiftPM"

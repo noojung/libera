@@ -251,12 +251,10 @@ struct AboutDialog: View {
         let copyrightHolder: String
     }
 
-    private static let info: AppInfo? = Bundle.module.url(forResource: "appInfo", withExtension: "json", subdirectory: "Resources")
-        .flatMap { try? Data(contentsOf: $0) }
+    private static let info: AppInfo? = AppResources.data("appInfo", "json")
         .flatMap { try? JSONDecoder().decode(AppInfo.self, from: $0) }
 
-    private static let logo = Bundle.module.url(forResource: "logo", withExtension: "png", subdirectory: "Resources")
-        .flatMap(NSImage.init(contentsOf:))
+    private static let logo = AppResources.url("logo", "png").flatMap(NSImage.init(contentsOf:))
 
     var body: some View {
         Dialog(width: 400, onClose: model.dismissSheet) {

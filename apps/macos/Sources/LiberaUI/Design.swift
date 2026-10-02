@@ -65,7 +65,7 @@ enum Typography {
 
     static func register() {
         for name in ["Gaegu-Bold", "GowunDodum-Regular", "JetBrainsMono"] {
-            guard let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: "Resources/Fonts") else { continue }
+            guard let url = AppResources.url(name, "ttf", in: "Fonts") else { continue }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }
