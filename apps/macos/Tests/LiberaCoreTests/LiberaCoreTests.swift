@@ -63,6 +63,33 @@ final class LiberaCoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: archive.path))
     }
 
+    func testCarriesExpertOptionsAcrossTheBoundary() async throws {
+        _ = try file("docs/keep.md", "# keep")
+        _ = try file("docs/skip.tmp", "skip")
+        let archive = work.appendingPathComponent("docs.tar.zst")
+        _ = try await Libera.compress(
+            CompressionOptions(
+                inputPaths: [work.appendingPathComponent("docs").path],
+                outputPath: archive.path, format: .tzst, level: 9,
+                filterPattern: "!*.tmp", zstdStrategy: .btultra2, zstdWindowSize: 1 << 20
+            )
+        )
+        let target = work.appendingPathComponent("unpacked")
+        _ = try file("unpacked/docs/keep.md", "original")
+
+        let extracted = try await Libera.extract(
+            ExtractionOptions(archivePath: archive.path, targetDir: target.path, overwritePolicy: .rename)
+        )
+
+        XCTAssertEqual(extracted.extractedCount, 1)
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("docs/keep.md"), encoding: .utf8), "original")
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("docs/keep (1).md"), encoding: .utf8), "# keep")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent("docs/skip.tmp").path))
+        XCTAssertEqual(Libera.levels(for: .tar), [])
+        XCTAssertEqual(Libera.levels(for: .tgz), Array(0...9))
+        XCTAssertTrue(isSupportedArchivePath(path: "photos.TAR.XZ"))
+    }
+
     func testSurfacesTheCoreErrorAsItsOwnCase() async throws {
         let input = try file("a.txt", "a")
         let archive = work.appendingPathComponent("a.tgz")
