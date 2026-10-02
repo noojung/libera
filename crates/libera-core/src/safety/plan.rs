@@ -47,44 +47,43 @@ impl<S> Plan<S> {
 }
 
 /// What a user's choices say about which entries to write: the paths they
-/// picked, the pattern, and the two exclusions. `None` writes everything.
+/// picked, the pattern, and the two exclusions.
 pub(crate) struct Selection<'a> {
-    pub selected_entries: Option<&'a [String]>,
-    pub filter: &'a EntryFilter,
-    pub exclude_mac_metadata: bool,
-    pub restore_symlinks: bool,
+    requested: Option<HashSet<String>>,
+    filter: &'a EntryFilter,
+    exclude_mac_metadata: bool,
+    restore_symlinks: bool,
 }
 
-impl Selection<'_> {
-    fn requested(&self) -> Option<HashSet<String>> {
-        self.selected_entries.map(|entries| entries.iter().cloned().collect())
+impl<'a> Selection<'a> {
+    pub(crate) fn new(
+        selected_entries: Option<&[String]>,
+        filter: &'a EntryFilter,
+        exclude_mac_metadata: bool,
+        restore_symlinks: bool,
+    ) -> Self {
+        Self {
+            requested: selected_entries.map(|entries| entries.iter().cloned().collect()),
+            filter,
+            exclude_mac_metadata,
+            restore_symlinks,
+        }
     }
 
-    /// Whether an entry survives everything but the link rule.
-    fn admits(&self, path: &str, requested: Option<&HashSet<String>>) -> bool {
-        matches_selected_entry(path, requested)
-            && self.filter.allows(path)
+    /// Whether an entry survives everything but the link rule. A picked
+    /// folder stands for everything below it, but the filters judge every
+    /// entry on its own, so a folder entry never carries a filtered-out file
+    /// along. The pattern decides files, not folders, as when compressing.
+    fn admits<S>(&self, entry: &ArchiveEntry<S>) -> bool {
+        let path = &entry.archive_path;
+        matches_selected_entry(path, self.requested.as_ref())
+            && (entry.is_directory || self.filter.allows(path))
             && !(self.exclude_mac_metadata && is_mac_metadata_path(path))
     }
 
-    /// The set of archive paths to write, or `None` when nothing narrows it.
-    pub(crate) fn paths<S>(&self, entries: &[ArchiveEntry<S>]) -> Option<HashSet<String>> {
-        let narrows = self.selected_entries.is_some()
-            || !self.filter.is_empty()
-            || self.exclude_mac_metadata
-            || !self.restore_symlinks;
-        if !narrows {
-            return None;
-        }
-        let requested = self.requested();
-        Some(
-            entries
-                .iter()
-                .filter(|entry| self.admits(&entry.archive_path, requested.as_ref()))
-                .filter(|entry| self.restore_symlinks || !entry.is_link)
-                .map(|entry| entry.archive_path.clone())
-                .collect(),
-        )
+    /// Whether an entry is to be written.
+    pub(crate) fn selects<S>(&self, entry: &ArchiveEntry<S>) -> bool {
+        self.admits(entry) && (self.restore_symlinks || !entry.is_link)
     }
 
     /// How many links were left out only because links are not being
@@ -93,9 +92,7 @@ impl Selection<'_> {
         if self.restore_symlinks {
             return 0;
         }
-        let requested = self.requested();
-        entries.iter().filter(|entry| entry.is_link && self.admits(&entry.archive_path, requested.as_ref())).count()
-            as u64
+        entries.iter().filter(|entry| entry.is_link && self.admits(entry)).count() as u64
     }
 }
 
@@ -117,7 +114,7 @@ pub(crate) fn check_entry_count(count: usize, policy: &ExtractionPolicy) -> Resu
 pub(crate) fn build_plan<S>(
     entries: Vec<ArchiveEntry<S>>,
     target_root: &Path,
-    selected: Option<&HashSet<String>>,
+    selects: impl Fn(&ArchiveEntry<S>) -> bool,
     policy: &ExtractionPolicy,
 ) -> Result<Plan<S>, LiberaError> {
     check_entry_count(entries.len(), policy)?;
@@ -126,7 +123,7 @@ pub(crate) fn build_plan<S>(
     let mut output_keys: HashSet<String> = HashSet::with_capacity(entries.len());
     let mut planned = Vec::with_capacity(entries.len());
     for entry in entries {
-        let should_extract = matches_selected_entry(&entry.archive_path, selected);
+        let should_extract = selects(&entry);
         // Unselected link entries are never read or written, so only entries
         // actually slated for extraction need a resolved, validated target.
         if entry.is_link && should_extract && entry.link_target.is_none() {
@@ -216,6 +213,20 @@ pub(crate) fn top_level_names<S>(plan: &Plan<S>, target_root: &Path) -> Vec<Path
 mod tests {
     use super::*;
 
+    #[test]
+    fn judges_every_entry_by_the_filters_even_below_a_folder_entry() {
+        let filter = EntryFilter::new(Some("*.txt"));
+        let selection = Selection::new(None, &filter, true, false);
+        let mut link = entry("docs/link", 0);
+        link.is_link = true;
+        assert!(selection.selects(&entry("docs/", 0)));
+        assert!(selection.selects(&entry("docs/a.txt", 1)));
+        assert!(!selection.selects(&entry("docs/b.md", 1)));
+        assert!(!selection.selects(&entry("docs/.DS_Store", 1)));
+        assert!(!selection.selects(&link));
+        assert_eq!(selection.links_excluded(&[link]), 0);
+    }
+
     fn entry(path: &str, size: u64) -> ArchiveEntry<()> {
         ArchiveEntry {
             archive_path: path.into(),
@@ -235,11 +246,10 @@ mod tests {
 
     #[test]
     fn counts_only_selected_entries_toward_extraction_size_limits() {
-        let selected: HashSet<String> = ["small.txt".to_owned()].into();
         let plan = build_plan(
             vec![entry("small.txt", 10), entry("huge.bin", 1000)],
             Path::new("/dest"),
-            Some(&selected),
+            |entry| entry.archive_path == "small.txt",
             &policy(100, 100),
         )
         .unwrap();
@@ -250,18 +260,18 @@ mod tests {
     #[test]
     fn accepts_exact_boundaries_and_rejects_values_above_them() {
         let root = Path::new("/dest");
-        assert!(build_plan(vec![entry("a", 100)], root, None, &policy(100, 100)).is_ok());
+        assert!(build_plan(vec![entry("a", 100)], root, |_| true, &policy(100, 100)).is_ok());
         assert!(matches!(
-            build_plan(vec![entry("a", 101)], root, None, &policy(100, 1000)),
+            build_plan(vec![entry("a", 101)], root, |_| true, &policy(100, 1000)),
             Err(LiberaError::FileTooLarge { .. })
         ));
         assert!(matches!(
-            build_plan(vec![entry("a", 60), entry("b", 41)], root, None, &policy(100, 100)),
+            build_plan(vec![entry("a", 60), entry("b", 41)], root, |_| true, &policy(100, 100)),
             Err(LiberaError::ArchiveTooLarge { .. })
         ));
         let entries = (0..3).map(|index| entry(&index.to_string(), 0)).collect();
         assert!(matches!(
-            build_plan(entries, root, None, &ExtractionPolicy { max_entries: 2, ..ExtractionPolicy::default() }),
+            build_plan(entries, root, |_| true, &ExtractionPolicy { max_entries: 2, ..ExtractionPolicy::default() }),
             Err(LiberaError::TooManyEntries { .. })
         ));
     }
@@ -270,10 +280,15 @@ mod tests {
     fn rejects_duplicate_outputs_and_files_standing_in_for_folders() {
         let root = Path::new("/dest");
         assert!(
-            build_plan(vec![entry("a/b", 1), entry("./a//b", 1)], root, None, &ExtractionPolicy::default()).is_err()
+            build_plan(vec![entry("a/b", 1), entry("./a//b", 1)], root, |_| true, &ExtractionPolicy::default())
+                .is_err()
         );
-        assert!(build_plan(vec![entry("a", 1), entry("a/b", 1)], root, None, &ExtractionPolicy::default()).is_err());
-        assert!(build_plan(vec![entry("a/", 0), entry("a/b", 1)], root, None, &ExtractionPolicy::default()).is_ok());
+        assert!(
+            build_plan(vec![entry("a", 1), entry("a/b", 1)], root, |_| true, &ExtractionPolicy::default()).is_err()
+        );
+        assert!(
+            build_plan(vec![entry("a/", 0), entry("a/b", 1)], root, |_| true, &ExtractionPolicy::default()).is_ok()
+        );
     }
 
     #[test]
@@ -281,7 +296,7 @@ mod tests {
         let plan = build_plan(
             vec![entry("./", 0), entry("./a.txt", 1)],
             Path::new("/dest"),
-            None,
+            |_| true,
             &ExtractionPolicy::default(),
         )
         .unwrap();
@@ -293,8 +308,7 @@ mod tests {
     fn refuses_a_selected_link_it_cannot_restore_but_not_an_unselected_one() {
         let mut link = entry("link", 0);
         link.is_link = true;
-        let selected: HashSet<String> = ["other".to_owned()].into();
-        assert!(build_plan(vec![link.clone()], Path::new("/dest"), None, &ExtractionPolicy::default()).is_err());
-        assert!(build_plan(vec![link], Path::new("/dest"), Some(&selected), &ExtractionPolicy::default()).is_ok());
+        assert!(build_plan(vec![link.clone()], Path::new("/dest"), |_| true, &ExtractionPolicy::default()).is_err());
+        assert!(build_plan(vec![link], Path::new("/dest"), |_| false, &ExtractionPolicy::default()).is_ok());
     }
 }

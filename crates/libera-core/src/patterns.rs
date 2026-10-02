@@ -106,10 +106,6 @@ impl EntryFilter {
         filter
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.includes.is_empty() && self.excludes.is_empty()
-    }
-
     pub(crate) fn allows(&self, entry_path: &str) -> bool {
         let normalized = entry_path.replace('\\', "/");
         let normalized = normalized.strip_prefix("./").unwrap_or(&normalized).trim_end_matches('/');

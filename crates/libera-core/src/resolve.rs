@@ -7,13 +7,15 @@ use std::path::{Path, PathBuf};
 use crate::LiberaError;
 use crate::formats::{ReadFormat, read_format};
 use crate::safety::ExtractionPolicy;
+use crate::sevenz::volumes::{discover_seven_zip_volumes, first_volume_path, is_seven_zip_volume_path};
 use crate::zip::read::{OpenOptions, ZipArchive};
 use crate::zip::volumes::terminal_volume_path;
 
 /// The one volume of a set that can actually be opened, whichever volume was
-/// picked: a ZIP set is read from its terminal `.zip`.
+/// picked. The two formats disagree about which end that is: a ZIP set is
+/// read from its terminal `.zip`, a 7z set from `.7z.001`.
 pub(crate) fn canonical_archive_path(path: &Path) -> PathBuf {
-    terminal_volume_path(path)
+    if is_seven_zip_volume_path(path) { first_volume_path(path) } else { terminal_volume_path(path) }
 }
 
 /// The path every volume of one set shares, so a UI can list the set once
@@ -78,6 +80,9 @@ pub fn resolve_extraction_input(path: String) -> Result<ResolvedArchive, LiberaE
                     size: *size,
                 })
                 .collect()
+        }
+        Some(ReadFormat::SevenZip) if is_seven_zip_volume_path(&archive_path) => {
+            discover_seven_zip_volumes(&archive_path)?.iter().map(|path| volume(path)).collect::<Result<_, _>>()?
         }
         _ => vec![volume(&archive_path)?],
     };

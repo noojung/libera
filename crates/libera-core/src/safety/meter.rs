@@ -63,9 +63,9 @@ impl Meter {
 
     /// Copies one entry's contents into `output`, metering every chunk and
     /// stopping at the first read after the job is cancelled.
-    pub(crate) fn copy(
+    pub(crate) fn copy<R: Read + ?Sized>(
         &self,
-        input: &mut impl Read,
+        input: &mut R,
         output: &mut impl Write,
         current_file: &str,
         cancel: &CancelToken,
