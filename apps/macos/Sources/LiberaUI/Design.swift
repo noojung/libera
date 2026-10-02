@@ -257,12 +257,15 @@ struct CozySelect<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
     /// The per-file dialog owns the setting, so the trigger shows no value.
     var cleared = false
+    /// Options shown but not offered, such as a folder's "mixed".
+    var disabled: Set<Value> = []
     @State private var frame = CGRect.zero
 
     var body: some View {
         Button {
             PopUpMenu.show(
-                options.map(\.label), selected: cleared ? nil : options.firstIndex { $0.value == value }, below: frame
+                options.map(\.label), selected: cleared ? nil : options.firstIndex { $0.value == value }, below: frame,
+                disabled: Set(options.indices.filter { disabled.contains(options[$0].value) })
             ) { index in value = options[index].value }
         } label: {
             HStack(spacing: 8) {
@@ -286,10 +289,13 @@ struct CozySelect<Value: Hashable>: View {
 @MainActor enum PopUpMenu {
     /// `frame` is in SwiftUI's global space, whose origin is the window
     /// content's top left.
-    static func show(_ titles: [String], selected: Int?, below frame: CGRect, choose: @escaping (Int) -> Void) {
+    static func show(
+        _ titles: [String], selected: Int?, below frame: CGRect, disabled: Set<Int> = [], choose: @escaping (Int) -> Void
+    ) {
         guard let content = NSApp.keyWindow?.contentView else { return }
         let target = Target(choose)
         let menu = NSMenu()
+        menu.autoenablesItems = false
         menu.font = NSFont(name: "GowunDodum-Regular", size: 13)
         menu.minimumWidth = frame.width
         for (index, title) in titles.enumerated() {
@@ -297,6 +303,7 @@ struct CozySelect<Value: Hashable>: View {
             item.target = target
             item.tag = index
             item.state = index == selected ? .on : .off
+            item.isEnabled = !disabled.contains(index)
             menu.addItem(item)
         }
         let y = content.isFlipped ? frame.maxY + 4 : content.bounds.height - frame.maxY - 4
