@@ -510,3 +510,32 @@ private struct SolidBlocksPreview: View {
         return parts.joined(separator: " · ")
     }
 }
+
+#if DEBUG
+#Preview("ZIP 파일별 설정") {
+    PreviewHost(language: .en, expert: true, setUp: { model in
+        model.compressItems = PreviewSamples.compressItems
+        model.compressionForm.setPerFile(true)
+        model.compressionForm.overridesOpen = true
+    }) { OverridesPreview() }
+    .previewWindow()
+}
+
+#Preview("7Z 파일별 설정") {
+    PreviewHost(expert: true, setUp: { model in
+        model.compressItems = PreviewSamples.compressItems
+        model.compressionForm.select(.sevenZip)
+        model.compressionForm.setPerFile(true)
+        model.compressionForm.overridesOpen = true
+    }) { OverridesPreview() }
+    .previewWindow()
+}
+
+private struct OverridesPreview: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        CompressionDialogs(form: model.compressionForm, items: model.compressItems)
+    }
+}
+#endif

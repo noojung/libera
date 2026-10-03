@@ -120,3 +120,17 @@ struct ExtractionPanel: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("기본") {
+    PreviewHost(setUp: { $0.extractItems = PreviewSamples.extractItems }) {
+        ExtractionPanel().padding(20).frame(width: 480, height: 720)
+    }
+}
+
+#Preview("전문가") {
+    PreviewHost(language: .en, expert: true, setUp: { $0.extractItems = PreviewSamples.extractItems }) {
+        ExtractionPanel().padding(20).frame(width: 480, height: 720)
+    }
+}
+#endif

@@ -108,6 +108,19 @@ swift test --package-path apps/macos
 cargo test --workspace
 ```
 
+For day-to-day work there are two ways to see changes as they are made:
+
+- **Xcode previews.** Open `apps/macos/Package.swift` in Xcode, choose the
+  `LiberaUI` scheme, and open any view file: the canvas redraws its `#Preview`
+  as you type, with sample files, jobs and archives from `PreviewSupport.swift`.
+  The code itself can be edited in any editor.
+- **Rebuild and relaunch on save.** `npm run dev:macos` (or
+  `node apps/macos/scripts/dev.mjs`) runs the app and restarts it whenever a
+  file under `apps/macos/Sources` changes, rebuilding `libera-core` first when
+  `crates/` does. Arguments go to the app, so a restart can open where you are
+  working, for example `npm run dev:macos -- --screen inspect --expert`.
+  Swift has no hot reload, so each change takes a few seconds and a fresh launch.
+
 | Script | Description |
 | --- | --- |
 | `apps/macos/scripts/build-core.sh` | Build `libera-core` for both architectures and generate its Swift bindings. Run it again after changing `crates/` or the version |

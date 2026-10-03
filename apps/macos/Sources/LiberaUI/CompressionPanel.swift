@@ -405,3 +405,26 @@ struct FlowLayout: Layout {
         return rows
     }
 }
+
+#if DEBUG
+#Preview("기본") {
+    PreviewHost(setUp: { $0.compressItems = PreviewSamples.compressItems }) { CompressionPanelPreview() }
+}
+
+#Preview("전문가 · 7Z") {
+    PreviewHost(language: .en, expert: true, setUp: { model in
+        model.compressItems = PreviewSamples.compressItems
+        model.compressionForm.select(.sevenZip)
+        model.compressionForm.solid = true
+    }) { CompressionPanelPreview() }
+}
+
+/// The panel at the width the window gives it, bound to the host's form.
+private struct CompressionPanelPreview: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        CompressionPanel(form: model.compressionForm).padding(20).frame(width: 480, height: 720)
+    }
+}
+#endif

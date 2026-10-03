@@ -357,3 +357,28 @@ struct LicensesDialog: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("비밀번호") {
+    PreviewHost {
+        PasswordPromptView(archiveName: "secret.zip", incorrect: true, onConfirm: { _ in }, onCancel: {})
+    }
+    .previewWindow()
+}
+
+#Preview("앱 정보") {
+    PreviewHost { AboutDialog() }.previewWindow()
+}
+
+#Preview("지원 포맷") {
+    PreviewHost(language: .en) { SupportedFormatsDialog() }.previewWindow()
+}
+
+#Preview("라이선스") {
+    PreviewHost(language: .en) { LicensesDialog() }.previewWindow()
+}
+
+#Preview("지원하지 않는 포맷") {
+    PreviewHost { UnsupportedFormatDialog() }.previewWindow()
+}
+#endif

@@ -33,6 +33,7 @@
     "generate:metadata": "node scripts/generateThirdPartyLicenses.cjs && node scripts/generateAppInfo.cjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generateFormatTables.cjs",
     "predev": "npm run generate:metadata && npm run build:lib",
     "dev": "vite",
+    "dev:macos": "node apps/macos/scripts/dev.mjs",
     "prebuild": "npm run generate:metadata && npm run build:lib",
     "build": "tsc --noEmit && vite build",
     "pretest": "npm run generate:metadata && npm run build:lib",

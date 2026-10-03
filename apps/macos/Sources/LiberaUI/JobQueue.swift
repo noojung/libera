@@ -273,3 +273,12 @@ struct PasswordPrompt: Identifiable, Equatable {
         change(&jobs[index])
     }
 }
+
+#if DEBUG
+extension JobQueue {
+    /// Shows `jobs` without running any of them, for previews.
+    func showForPreview(_ jobs: [Job]) {
+        self.jobs = jobs
+    }
+}
+#endif
