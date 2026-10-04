@@ -106,16 +106,16 @@
     }
   },
   "dependencies": {
-    "@zip.js/zip.js": "^2.8.61",
+    "@zip.js/zip.js": "^2.22.0",
     "archiver": "7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
     "fflate": "^0.8.2",
-    "i18next": "^26.4.0",
+    "i18next": "^26.4.2",
     "libera7z": "*",
     "lucide-react": "^0.475.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-i18next": "^17.0.12",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.15",
     "tar": "^7.4.3"
   },
   "devDependencies": {
@@ -127,8 +127,8 @@
     "@testing-library/user-event": "^14.6.7",
     "@types/archiver": "^6.0.4",
     "@types/node": "^26.6.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "4.1.11",
     "electron": "43.4.0",
