@@ -36,6 +36,15 @@ export default tseslint.config(
     }
   },
   {
+    // Node scripts, such as the native macOS app's in apps/macos/scripts.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node
+      }
+    }
+  },
+  {
     files: ['src/renderer/src/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
