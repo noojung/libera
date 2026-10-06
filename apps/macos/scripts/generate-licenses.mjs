@@ -43,35 +43,25 @@ function licenseFiles(directory) {
       .map(name => path.join(directory, entry.name, name)))
 }
 
-// Each license file is kept once - most crates carry the same Apache text -
-// and a package lists the files it ships by name and index.
-const texts = []
-const textIndex = text => {
-  const index = texts.indexOf(text)
-  return index >= 0 ? index : texts.push(text) - 1
-}
-
-const packages = metadata.packages
+const entries = metadata.packages
   .filter(pkg => shipped.has(`${pkg.name} ${pkg.version}`))
   .map(pkg => {
     const directory = path.dirname(pkg.manifest_path)
-    const found = licenseFiles(directory).filter(file => fs.statSync(file).isFile()).sort()
+    const files = licenseFiles(directory).filter(file => fs.statSync(file).isFile()).sort()
     const standard = path.join(standardTexts, `${pkg.license}.txt`)
-    let files
-    if (found.length > 0) {
-      files = found.map(file => [path.relative(directory, file), textIndex(fs.readFileSync(file, 'utf8').trim())])
-    } else if (fs.existsSync(standard)) {
-      // The crate ships no file of its own, so the standard text stands in.
-      files = [[`${pkg.license}.txt`, textIndex(fs.readFileSync(standard, 'utf8').trim())]]
-    } else {
-      throw new Error(`No license text for ${pkg.name}; add its standard text to ${path.relative(root, standardTexts)}`)
-    }
-    return { name: pkg.name, version: pkg.version, license: pkg.license ?? pkg.license_file ?? 'unknown', files }
+    const text = files.length > 0
+      ? files.map(file => (files.length > 1 ? `--- ${path.relative(directory, file)} ---\n\n` : '') + fs.readFileSync(file, 'utf8').trim()).join('\n\n')
+      : fs.existsSync(standard)
+        ? `${pkg.name} ships no license file of its own; it is distributed under ${pkg.license}, whose text follows.\n\n${fs.readFileSync(standard, 'utf8').trim()}`
+        : `${pkg.name} is distributed under ${pkg.license}. The crate ships no license file; its terms are at ${pkg.repository ?? `https://crates.io/crates/${pkg.name}`}.`
+    return { name: pkg.name, version: pkg.version, license: pkg.license ?? pkg.license_file ?? 'unknown', text }
   })
   .sort((a, b) => a.name.localeCompare(b.name))
 
-const missing = [...shipped].filter(id => !packages.some(entry => `${entry.name} ${entry.version}` === id))
+const missing = [...shipped].filter(id => !entries.some(entry => `${entry.name} ${entry.version}` === id))
 if (missing.length > 0) throw new Error(`No metadata for ${missing.join(', ')}`)
 
-fs.writeFileSync(output, `${JSON.stringify({ texts, packages })}\n`)
-console.log(`Wrote ${packages.length} crate licenses (${texts.length} distinct files) to ${path.relative(root, output)}`)
+fs.writeFileSync(output, `${JSON.stringify(entries, null, 2)}\n`)
+const bare = entries.filter(entry => entry.text.includes('The crate ships no license file')).map(entry => entry.name)
+if (bare.length > 0) throw new Error(`No license text for ${bare.join(', ')}; add its standard text to ${path.relative(root, standardTexts)}`)
+console.log(`Wrote ${entries.length} crate licenses to ${path.relative(root, output)}`)

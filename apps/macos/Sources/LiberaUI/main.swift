@@ -117,7 +117,7 @@ private struct LaunchOptions {
 
     /// Starts the inputs as a ZIP in a temporary folder, to show the queue.
     private func compressNow() {
-        let form = model.compressionForm
+        let form = CompressionForm()
         if let options = form.options(inputs: model.compressItems.map(\.path), defaultDirectory: temporaryDirectory().path) {
             model.startCompress(options)
         }

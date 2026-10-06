@@ -111,7 +111,7 @@ cargo test --workspace
 | Script | Description |
 | --- | --- |
 | `apps/macos/scripts/build-core.sh` | Build `libera-core` for both architectures and generate its Swift bindings. Run it again after changing `crates/` or the version |
-| `apps/macos/scripts/build-app.sh [arm64] [x64]` | Build `Libera.app` and `Libera-<version>-mac-<arch>.dmg` in `apps/macos/dist` for each architecture named, or both |
+| `apps/macos/scripts/build-app.sh` | Build a universal `Libera.app` and `Libera-<version>-mac-universal.dmg` in `apps/macos/dist` |
 | `apps/macos/scripts/sync-resources.mjs` | Copy the renderer's translations and icons into the app. Run it after changing either |
 | `apps/macos/scripts/generate-licenses.mjs` | Regenerate the Licenses dialog's list after changing a Rust dependency |
 

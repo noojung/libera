@@ -31,9 +31,7 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 uniffi = "0.32.2"
 xattr = "1.6.1"
-# Without the defaults, which add pre-1.0 frame decoders and the dictionary
-# builder; neither is ever asked for.
-zstd = { version = "0.14.0", default-features = false, features = ["zstdmt"] }
+zstd = { version = "0.14.0", features = ["zstdmt"] }
 
 [profile.release]
 lto = true

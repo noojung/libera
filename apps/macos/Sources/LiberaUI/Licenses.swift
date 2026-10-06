@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One notice for something that ships inside the app.
-struct LicenseEntry: Identifiable {
+struct LicenseEntry: Identifiable, Decodable {
     let name: String
     let version: String
     let license: String
@@ -16,41 +16,8 @@ struct LicenseEntry: Identifiable {
         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
 
-    private static let crates: [LicenseEntry] = {
-        // Each license file is stored once; a package lists its files as
-        // [name, index] pairs.
-        struct Listing: Decodable {
-            struct Package: Decodable {
-                let name: String
-                let version: String
-                let license: String
-                let files: [[Text]]
-            }
-            enum Text: Decodable {
-                case name(String), index(Int)
-
-                init(from decoder: Decoder) throws {
-                    let value = try decoder.singleValueContainer()
-                    if let index = try? value.decode(Int.self) { self = .index(index) } else { self = .name(try value.decode(String.self)) }
-                }
-            }
-            let texts: [String]
-            let packages: [Package]
-        }
-        guard let data = AppResources.data("licenses", "json"),
-              let listing = try? JSONDecoder().decode(Listing.self, from: data) else { return [] }
-        return listing.packages.map { package in
-            let files = package.files.compactMap { pair -> (name: String, text: String)? in
-                guard pair.count == 2, case let .name(name) = pair[0], case let .index(index) = pair[1],
-                      listing.texts.indices.contains(index) else { return nil }
-                return (name, listing.texts[index])
-            }
-            let text = files.count == 1
-                ? files[0].text
-                : files.map { "--- \($0.name) ---\n\n\($0.text)" }.joined(separator: "\n\n")
-            return LicenseEntry(name: package.name, version: package.version, license: package.license, text: text)
-        }
-    }()
+    private static let crates: [LicenseEntry] = AppResources.data("licenses", "json")
+        .flatMap { try? JSONDecoder().decode([LicenseEntry].self, from: $0) } ?? []
 
     private static let bundled: [LicenseEntry] = [
         ("Gaegu", "OFL-1.1", "Fonts", "Gaegu-OFL"),
