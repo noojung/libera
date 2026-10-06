@@ -15,7 +15,7 @@ struct VectorIcon: View {
     let name: String
     var lineWidth: CGFloat = 2
     private static let catalog = try! JSONDecoder().decode([String: [IconNode]].self,
-        from: AppResources.data("icons", "json") ?? Data("{}".utf8))
+        from: Data(contentsOf: Bundle.module.url(forResource: "icons", withExtension: "json", subdirectory: "Resources")!))
     var body: some View {
         Canvas { context, size in
             let scale = min(size.width, size.height) / 24

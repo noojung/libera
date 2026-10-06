@@ -11,7 +11,8 @@ struct Header: View {
     @Environment(\.localizer) private var t
     let compact: Bool
 
-    private static let logo = AppResources.url("logo", "png").flatMap(NSImage.init(contentsOf:))
+    private static let logo = Bundle.module.url(forResource: "logo", withExtension: "png", subdirectory: "Resources")
+        .flatMap(NSImage.init(contentsOf:))
 
     var body: some View {
         ZStack {

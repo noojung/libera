@@ -16,17 +16,19 @@ struct LicenseEntry: Identifiable, Decodable {
         $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
 
-    private static let crates: [LicenseEntry] = AppResources.data("licenses", "json")
+    private static let crates: [LicenseEntry] = Bundle.module
+        .url(forResource: "licenses", withExtension: "json", subdirectory: "Resources")
+        .flatMap { try? Data(contentsOf: $0) }
         .flatMap { try? JSONDecoder().decode([LicenseEntry].self, from: $0) } ?? []
 
     private static let bundled: [LicenseEntry] = [
-        ("Gaegu", "OFL-1.1", "Fonts", "Gaegu-OFL"),
-        ("Gowun Dodum", "OFL-1.1", "Fonts", "GowunDodum-OFL"),
-        ("JetBrains Mono", "OFL-1.1", "Fonts", "JetBrainsMono-OFL"),
-        ("Lucide", "ISC", nil, "Lucide-LICENSE"),
-    ].compactMap { (name: String, license: String, directory: String?, file: String) in
-        guard let data = AppResources.data(file, "txt", in: directory) else { return nil }
-        let text = String(decoding: data, as: UTF8.self)
+        ("Gaegu", "OFL-1.1", "Resources/Fonts", "Gaegu-OFL"),
+        ("Gowun Dodum", "OFL-1.1", "Resources/Fonts", "GowunDodum-OFL"),
+        ("JetBrains Mono", "OFL-1.1", "Resources/Fonts", "JetBrainsMono-OFL"),
+        ("Lucide", "ISC", "Resources", "Lucide-LICENSE"),
+    ].compactMap { name, license, directory, file in
+        guard let url = Bundle.module.url(forResource: file, withExtension: "txt", subdirectory: directory),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return LicenseEntry(name: name, version: "", license: license, text: text)
     }
 }

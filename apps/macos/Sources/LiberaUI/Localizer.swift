@@ -59,7 +59,8 @@ struct Localizer {
 
     /// Each language's translations flattened to dotted keys.
     private static let tables: [AppLanguage: [String: String]] = {
-        guard let data = AppResources.data("strings", "json"),
+        guard let url = Bundle.module.url(forResource: "strings", withExtension: "json", subdirectory: "Resources"),
+              let data = try? Data(contentsOf: url),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         func flatten(_ object: [String: Any], prefix: String, into table: inout [String: String]) {
             for (key, value) in object {

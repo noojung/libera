@@ -3,6 +3,7 @@
 // icons, so the two UIs read the same text and draw the same glyphs:
 //
 //   Resources/strings.json  <- src/renderer/src/i18n/resources.ts
+//   Resources/appInfo.json  <- src/renderer/src/generated/appInfo.json
 //   Resources/icons.json    <- every lucide-react icon the renderer imports
 //
 // Run from anywhere: node apps/macos/scripts/sync-resources.mjs
@@ -17,6 +18,7 @@ const lucide = path.join(root, 'node_modules/lucide-react/dist/esm')
 
 const { resources: translations } = await import(path.join(renderer, 'i18n/resources.ts'))
 fs.writeFileSync(path.join(resources, 'strings.json'), `${JSON.stringify(translations, null, 2)}\n`)
+fs.copyFileSync(path.join(renderer, 'generated/appInfo.json'), path.join(resources, 'appInfo.json'))
 
 // lucide-react's index re-exports each icon file under its name and aliases
 // (`Home` is `house.js`), so it is what turns an import into a file.
@@ -56,4 +58,4 @@ for (const file of [...used].sort()) {
   icons[file] = Function(`return ${nodes[1]}`)().map(([kind, { key, ...attrs }]) => [kind, attrs])
 }
 fs.writeFileSync(path.join(resources, 'icons.json'), `${JSON.stringify(icons)}\n`)
-console.log(`strings.json and ${Object.keys(icons).length} icons written to ${path.relative(root, resources)}`)
+console.log(`strings.json, appInfo.json and ${Object.keys(icons).length} icons written to ${path.relative(root, resources)}`)
