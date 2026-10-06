@@ -199,15 +199,3 @@ final class ExtractionRequestTests: XCTestCase {
         XCTAssertEqual(request.options(for: item, password: nil).targetDir, "/out")
     }
 }
-
-final class LicenseTests: XCTestCase {
-    func testListsTheLinkedCratesBesideTheBundledFontsAndIcons() throws {
-        let names = LicenseEntry.all.map(\.name)
-        XCTAssertTrue(names.contains("Gaegu"))
-        XCTAssertTrue(names.contains("Lucide"))
-        XCTAssertTrue(names.contains("zstd-sys"))
-        let uniffi = try XCTUnwrap(LicenseEntry.all.first { $0.name == "uniffi" })
-        XCTAssertTrue(uniffi.text.contains("Mozilla Public License Version 2.0"))
-        XCTAssertFalse(names.contains { $0.hasPrefix("libera") })
-    }
-}

@@ -9,19 +9,8 @@ struct LicenseEntry: Identifiable, Decodable {
 
     var id: String { name }
 
-    /// Everything that ships inside the app, by name: the crates linked into
-    /// the core (Resources/licenses.json, from scripts/generate-licenses.mjs)
-    /// and the fonts and icons bundled with the UI.
-    static let all: [LicenseEntry] = (crates + bundled).sorted {
-        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-    }
-
-    private static let crates: [LicenseEntry] = Bundle.module
-        .url(forResource: "licenses", withExtension: "json", subdirectory: "Resources")
-        .flatMap { try? Data(contentsOf: $0) }
-        .flatMap { try? JSONDecoder().decode([LicenseEntry].self, from: $0) } ?? []
-
-    private static let bundled: [LicenseEntry] = [
+    /// The fonts and icons bundled with the UI.
+    static let bundled: [LicenseEntry] = [
         ("Gaegu", "OFL-1.1", "Resources/Fonts", "Gaegu-OFL"),
         ("Gowun Dodum", "OFL-1.1", "Resources/Fonts", "GowunDodum-OFL"),
         ("JetBrains Mono", "OFL-1.1", "Resources/Fonts", "JetBrainsMono-OFL"),
@@ -37,7 +26,7 @@ struct LicenseEntry: Identifiable, Decodable {
 struct LicenseBrowser: View {
     @Environment(\.palette) private var p
     @Environment(\.localizer) private var t
-    var entries = LicenseEntry.all
+    var entries = LicenseEntry.bundled
     @State private var selected: String?
 
     var body: some View {
