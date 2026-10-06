@@ -18,10 +18,6 @@ dist/
 out/
 build/
 .build/
-/target/
-/apps/macos/Frameworks/
-/apps/macos/Sources/LiberaCore/Generated/
-/apps/macos/.swiftpm/
 release/
 coverage/
 /site/public/
