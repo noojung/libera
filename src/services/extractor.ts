@@ -4,8 +4,9 @@ import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import {
   ERR_ENCRYPTED,
+  ERR_INVALID_AUTHENTICATION_CODE,
+  ERR_INVALID_CRC32,
   ERR_INVALID_PASSWORD,
-  ERR_INVALID_SIGNATURE,
   TextWriter,
   Uint8ArrayWriter,
   type Entry,
@@ -142,9 +143,8 @@ export function isWrongZipPasswordError(error: unknown): boolean {
  * password in 256 gets past it and the entry decodes to noise. What surfaces
  * then is the CRC failing, which the archive holds nothing to tell apart from
  * real damage - but the entry was encrypted and a password was handed in, so
- * the password is the answer worth giving. zip.js reports a failed CRC, a
- * failed AES authentication code and a bad signature under one value, which is
- * exactly the family this covers.
+ * the password is the answer worth giving. AES checks two bytes, so the same
+ * slip surfaces there as a failed authentication code.
  */
 export async function readZipEntry<T>(
   entry: Entry,
@@ -155,7 +155,8 @@ export async function readZipEntry<T>(
     return await read()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    if (password !== undefined && entry.encrypted && message === ERR_INVALID_SIGNATURE) {
+    const failedCheck = message === ERR_INVALID_CRC32 || message === ERR_INVALID_AUTHENTICATION_CODE
+    if (password !== undefined && entry.encrypted && failedCheck) {
       throw extractionError(WRONG_ZIP_PASSWORD_ERROR_CODE, 'Wrong ZIP password')
     }
     throw error
