@@ -144,30 +144,6 @@ final class LiberaCoreTests: XCTestCase {
         )
     }
 
-    func testInspectsAnArchiveAndPreviewsAnEntry() async throws {
-        _ = try file("docs/readme.md", "# Libera\n")
-        let archive = work.appendingPathComponent("docs.zip")
-        _ = try await Libera.compress(
-            CompressionOptions(inputPaths: [work.appendingPathComponent("docs").path], outputPath: archive.path, format: .zip)
-        )
-
-        let inspection = try inspectArchive(archivePath: archive.path, password: nil, cancel: CancelToken())
-        XCTAssertEqual(inspection.format, "ZIP")
-        let readme = try XCTUnwrap(inspection.entries.first { $0.path == "docs/readme.md" })
-        XCTAssertNotNil(readme.modified)
-
-        let preview = try previewArchiveEntry(
-            archivePath: archive.path, entryIndex: readme.index, password: nil, includeRawBytes: true, cancel: CancelToken()
-        )
-        guard case let .text(text, encoding, truncated, _, _, rawBytes) = preview else {
-            return XCTFail("Expected text, got \(preview)")
-        }
-        XCTAssertEqual(text, "# Libera\n")
-        XCTAssertEqual(encoding, .utf8)
-        XCTAssertFalse(truncated)
-        XCTAssertEqual(rawBytes, Data("# Libera\n".utf8))
-    }
-
     func testSurfacesTheCoreErrorAsItsOwnCase() async throws {
         let input = try file("a.txt", "a")
         let archive = work.appendingPathComponent("a.tgz")

@@ -2,7 +2,7 @@
 //! LZMA, LZMA2, PPMd, BZip2, Deflate, the BCJ family, BCJ2, Delta - and
 //! 7-Zip's AES. What it hands back is mapped onto this engine's errors here.
 
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -49,26 +49,11 @@ pub(crate) struct SevenZipEntry {
     pub size: u64,
     pub is_directory: bool,
     pub is_symlink: bool,
-    /// The Unix half of the attributes, file type included, if any.
-    pub unix_mode: Option<u32>,
-    /// Permission bits from it.
+    /// Permission bits from the Unix half of the attributes, if any.
     pub mode: Option<u32>,
     pub modified: Option<SystemTime>,
-    pub crc: Option<u32>,
     /// The block holding the entry's data, if it has any.
     pub block: Option<usize>,
-}
-
-/// What the inspector says about one block.
-#[derive(Debug, Clone)]
-pub(crate) struct BlockInfo {
-    /// The coders, AES left out, as `LZMA2` or `BCJ + LZMA`.
-    pub codec: String,
-    pub dictionary_size: Option<u32>,
-    pub encrypted: bool,
-    pub packed_size: u64,
-    pub unpacked_size: u64,
-    pub file_count: usize,
 }
 
 pub(crate) struct SevenZipArchive {
@@ -77,13 +62,6 @@ pub(crate) struct SevenZipArchive {
     password: Password,
     has_password: bool,
     pub entries: Vec<SevenZipEntry>,
-    pub blocks: Vec<BlockInfo>,
-    pub volume_paths: Vec<std::path::PathBuf>,
-    pub volume_sizes: Vec<u64>,
-    /// The format version the signature header gives, as `0.4`.
-    pub version: String,
-    pub next_header_offset: u64,
-    pub next_header_size: u64,
 }
 
 impl SevenZipArchive {
@@ -96,11 +74,6 @@ impl SevenZipArchive {
             vec![path.to_path_buf()]
         };
         let mut source = VolumeSet::open(&volume_paths)?;
-        let mut signature = [0u8; 32];
-        source
-            .read_exact(&mut signature)
-            .map_err(|_| LiberaError::CorruptArchive { message: "The file is too short to be a 7z archive.".into() })?;
-        source.seek(SeekFrom::Start(0))?;
         let password = password.filter(|password| !password.is_empty());
         let has_password = password.is_some();
         let password = password.map_or_else(Password::empty, Password::new);
@@ -130,28 +103,13 @@ impl SevenZipArchive {
                     size: if is_directory { 0 } else { file.size },
                     is_directory,
                     is_symlink: !is_directory && unix_mode.is_some_and(|mode| mode & 0o170_000 == 0o120_000),
-                    unix_mode,
                     mode: unix_mode.map(|mode| mode & 0o7777).filter(|mode| *mode != 0),
                     modified: file.has_last_modified_date.then(|| SystemTime::from(file.last_modified_date)),
-                    crc: (file.has_crc && file.has_stream).then_some(file.crc as u32),
                     block: archive.stream_map.file_block_index[index],
                 }
             })
-            .collect::<Vec<_>>();
-        let blocks = block_infos(&archive, &entries);
-        Ok(Self {
-            volume_sizes: source.volume_sizes(),
-            source,
-            archive,
-            password,
-            has_password,
-            entries,
-            blocks,
-            volume_paths,
-            version: format!("{}.{}", signature[6], signature[7]),
-            next_header_offset: u64::from_le_bytes(signature[12..20].try_into().unwrap()),
-            next_header_size: u64::from_le_bytes(signature[20..28].try_into().unwrap()),
-        })
+            .collect();
+        Ok(Self { source, archive, password, has_password, entries })
     }
 
     fn block_is_encrypted(&self, block: usize) -> bool {
@@ -168,16 +126,6 @@ impl SevenZipArchive {
         block: usize,
         mut each: impl FnMut(usize, &mut dyn Read) -> Result<(), LiberaError>,
     ) -> Result<(), LiberaError> {
-        self.until_in_block(block, |index, reader| each(index, reader).map(|()| true))
-    }
-
-    /// Like [`Self::for_each_in_block`], stopping at the first entry `each`
-    /// returns `false` for; the entries after it go undecoded.
-    pub(crate) fn until_in_block(
-        &mut self,
-        block: usize,
-        mut each: impl FnMut(usize, &mut dyn Read) -> Result<bool, LiberaError>,
-    ) -> Result<(), LiberaError> {
         let first = self.archive.stream_map.block_first_file_index[block];
         let wrong_password = self.has_password && self.block_is_encrypted(block);
         let mut index = first;
@@ -188,7 +136,7 @@ impl SevenZipArchive {
             let outcome = each(index, &mut classified);
             index += 1;
             match outcome {
-                Ok(go_on) => Ok(go_on),
+                Ok(()) => Ok(true),
                 Err(error) => {
                     failure = Some(error);
                     Ok(false)
@@ -203,79 +151,6 @@ impl SevenZipArchive {
             other => other,
         })
     }
-}
-
-fn coder_name(id: &[u8]) -> String {
-    match id {
-        [0x00] => "Copy".into(),
-        [0x03] => "DELTA".into(),
-        [0x0a] => "ARM64".into(),
-        [0x0b] => "RISCV".into(),
-        [0x21] => "LZMA2".into(),
-        [0x02, 0x03, 0x02] => "SWAP2".into(),
-        [0x02, 0x03, 0x04] => "SWAP4".into(),
-        [0x03, 0x01, 0x01] => "LZMA".into(),
-        [0x03, 0x04, 0x01] => "PPMd".into(),
-        [0x04, 0x01, 0x08] => "Deflate".into(),
-        [0x04, 0x01, 0x09] => "Deflate64".into(),
-        [0x04, 0x02, 0x02] => "BZip2".into(),
-        [0x03, 0x03, 0x01, 0x03] => "BCJ".into(),
-        [0x03, 0x03, 0x01, 0x1b] => "BCJ2".into(),
-        [0x03, 0x03, 0x02, 0x05] => "PPC".into(),
-        [0x03, 0x03, 0x04, 0x01] => "IA64".into(),
-        [0x03, 0x03, 0x05, 0x01] => "ARM".into(),
-        [0x03, 0x03, 0x07, 0x01] => "ARMT".into(),
-        [0x03, 0x03, 0x08, 0x05] => "SPARC".into(),
-        other => format!("0x{}", other.iter().map(|byte| format!("{byte:02X}")).collect::<String>()),
-    }
-}
-
-/// The dictionary the block's main coder declares - PPMd's model memory
-/// counts as one - for the inspector's codec column.
-fn dictionary_size(coder: &sevenz_rust2::Coder) -> Option<u32> {
-    let properties = coder.properties();
-    let little_endian =
-        |at: usize| properties.get(at..at + 4).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()));
-    match coder.encoder_method_id() {
-        [0x21] => properties.first().map(|&property| super::plan::dictionary_size_from_property(property)),
-        [0x03, 0x01, 0x01] | [0x03, 0x04, 0x01] => little_endian(1),
-        _ => None,
-    }
-}
-
-fn block_infos(archive: &Archive, entries: &[SevenZipEntry]) -> Vec<BlockInfo> {
-    let offsets = archive.stream_map.pack_stream_offsets();
-    let first_streams = archive.stream_map.block_first_pack_stream_index();
-    archive
-        .blocks
-        .iter()
-        .enumerate()
-        .map(|(index, block)| {
-            let mut names: Vec<String> = Vec::new();
-            for coder in block.coders.iter().filter(|coder| coder.encoder_method_id() != AES_METHOD) {
-                let name = coder_name(coder.encoder_method_id());
-                if !names.contains(&name) {
-                    names.push(name);
-                }
-            }
-            // The first file of a block carries its first packed stream's size;
-            // any further streams are measured from where the next one starts.
-            let first_file = archive.stream_map.block_first_file_index[index];
-            let first_stream = first_streams[index];
-            let last_stream = first_streams.get(index + 1).copied().unwrap_or(offsets.len());
-            let more: u64 = (first_stream + 1..last_stream)
-                .filter_map(|stream| Some(offsets.get(stream + 1)? - offsets[stream]))
-                .sum();
-            BlockInfo {
-                codec: names.join(" + "),
-                dictionary_size: block.coders.iter().find_map(dictionary_size),
-                encrypted: block.coders.iter().any(|coder| coder.encoder_method_id() == AES_METHOD),
-                packed_size: archive.files.get(first_file).map_or(0, |file| file.compressed_size) + more,
-                unpacked_size: block.get_unpack_size(),
-                file_count: entries.iter().filter(|entry| entry.block == Some(index)).count(),
-            }
-        })
-        .collect()
 }
 
 /// The archive with its entries reordered so each block's files sit next to

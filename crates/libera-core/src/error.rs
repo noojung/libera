@@ -32,26 +32,6 @@ pub enum LiberaError {
     PasswordRequired,
     #[error("Wrong password")]
     WrongPassword,
-    /// The entry a preview asked for is not in the archive.
-    #[error("Archive entry was not found")]
-    EntryNotFound,
-    /// A folder, a link, or an entry the archive cannot hand over safely.
-    #[error("{message}")]
-    EntryNotPreviewable { message: String },
-    #[error("Archive entry is not text")]
-    NotText,
-    /// An image in a format the preview does not render, such as TIFF or HEIC.
-    #[error("This image format is not supported for preview")]
-    UnsupportedImage,
-    #[error("{message}")]
-    InvalidImage { message: String },
-    #[error("Image exceeds the 10 MiB preview limit")]
-    ImageTooLarge,
-    #[error("Image dimensions exceed the safe preview limit")]
-    ImageDimensionsTooLarge,
-    /// A preview or a listing was cancelled.
-    #[error("Archive preview was cancelled")]
-    PreviewCancelled,
     #[error("{message}")]
     SplitSizeTooSmall { message: String },
     #[error("{message}")]
