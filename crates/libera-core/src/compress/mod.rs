@@ -1,9 +1,6 @@
-mod sevenz;
 mod stream;
 mod tar;
 mod zip;
-
-pub use sevenz::{PlannedFile, SevenZipSolidBlock, plan_seven_zip_solid_blocks};
 
 use std::fs;
 use std::path::Path;
@@ -13,11 +10,10 @@ use std::time::Instant;
 use crate::LiberaError;
 use crate::codec::{ZstdStrategy, ZstdTuning};
 use crate::deflate::DeflateStrategy;
-use crate::formats::{ArchiveFormat, supports_header_encryption, supports_password, supports_split};
+use crate::formats::{ArchiveFormat, supports_password, supports_split};
 use crate::inputs::InputFilters;
 use crate::patterns::EntryFilter;
 use crate::progress::{CancelToken, ProgressListener};
-use crate::sevenz::{SevenZipMethod, SevenZipMethodOverride};
 use crate::zip::{MIN_SPLIT_SIZE, ZipEncryptionMethod, ZipMethod, ZipMethodOverride};
 
 /// One compression job. Every expert option is optional, and one that does
@@ -31,13 +27,10 @@ pub struct CompressionOptions {
     /// 0 (fastest) to 9 (smallest), and 6 when unset, as in the Electron engine.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub level: Option<u8>,
-    /// Encrypts every entry with data. ZIP and 7Z.
+    /// Encrypts every entry with data. ZIP only.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub password: Option<String>,
-    /// Encrypts the 7Z header too, so the file names need the password as well.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub encrypt_file_names: Option<bool>,
-    /// The largest a volume may grow, in bytes, to write a split set. ZIP and 7Z.
+    /// The largest a volume may grow, in bytes, to write a split set. ZIP only.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub split_size: Option<u64>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
@@ -46,22 +39,6 @@ pub struct CompressionOptions {
     pub zip_method: Option<ZipMethod>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub zip_method_overrides: Option<Vec<ZipMethodOverride>>,
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub seven_zip_method: Option<SevenZipMethod>,
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub seven_zip_method_overrides: Option<Vec<SevenZipMethodOverride>>,
-    /// The 7Z LZMA2 dictionary, 64 KiB to 128 MiB; sized to the data when unset.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub dictionary_size: Option<u32>,
-    /// The longest match the 7Z encoder looks for: 32, 64, 128 or 273.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub match_finder_word_size: Option<u32>,
-    /// How many candidate matches the 7Z encoder tries, 1-1024.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub search_cycles: Option<u32>,
-    /// Packs adjacent 7Z files that share settings into one stream.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub solid_archive: Option<bool>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub exclude_symlinks: Option<bool>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
@@ -96,17 +73,10 @@ impl CompressionOptions {
             format,
             level: None,
             password: None,
-            encrypt_file_names: None,
             split_size: None,
             encryption_method: None,
             zip_method: None,
             zip_method_overrides: None,
-            seven_zip_method: None,
-            seven_zip_method_overrides: None,
-            dictionary_size: None,
-            match_finder_word_size: None,
-            search_cycles: None,
-            solid_archive: None,
             exclude_symlinks: None,
             exclude_mac_metadata: None,
             exclude_hidden_files: None,
@@ -145,15 +115,6 @@ impl CompressionOptions {
         }
     }
 
-    fn seven_zip_requested(&self) -> bool {
-        self.seven_zip_method.is_some()
-            || self.seven_zip_method_overrides.is_some()
-            || self.dictionary_size.is_some()
-            || self.match_finder_word_size.is_some()
-            || self.search_cycles.is_some()
-            || self.solid_archive.is_some()
-    }
-
     fn zstd_requested(&self) -> bool {
         self.zstd_strategy.is_some()
             || self.zstd_window_size.is_some()
@@ -184,24 +145,7 @@ fn validate(options: &CompressionOptions) -> Result<u8, LiberaError> {
         return Err(LiberaError::invalid_input(format!("Compression level {level} is outside 0-9.")));
     }
     if options.password.is_some() && !supports_password(format) {
-        return Err(LiberaError::invalid_input(
-            "Password protection is currently available for ZIP and 7Z archives only.",
-        ));
-    }
-    if options.encrypt_file_names == Some(true) {
-        if !supports_header_encryption(format) {
-            return Err(LiberaError::invalid_input(
-                "Encrypting file names is currently available for 7Z archives only.",
-            ));
-        }
-        if options.password.as_deref().is_none_or(str::is_empty) {
-            return Err(LiberaError::invalid_input("Encrypting the 7Z header needs a password."));
-        }
-    }
-    if format == ArchiveFormat::SevenZip {
-        sevenz::validate(options)?;
-    } else if options.seven_zip_requested() {
-        return Err(LiberaError::invalid_input("7Z codec options can only be used with 7Z archives."));
+        return Err(LiberaError::invalid_input("Password protection is currently available for ZIP archives only."));
     }
     let is_zip = format == ArchiveFormat::Zip;
     if options.encryption_method.is_some() && !is_zip {
@@ -242,7 +186,7 @@ fn validate(options: &CompressionOptions) -> Result<u8, LiberaError> {
     if let Some(split_size) = options.split_size {
         if !supports_split(format) {
             return Err(LiberaError::SplitNotSupportedForFormat {
-                message: "Split archives are currently available for ZIP and 7Z archives only.".into(),
+                message: "Split archives are currently available for ZIP archives only.".into(),
             });
         }
         if split_size < MIN_SPLIT_SIZE {
@@ -275,19 +219,14 @@ pub fn compress_archive(
     let job = Job { options: &options, level, listener, cancel: &cancel };
     let written = match options.format {
         ArchiveFormat::Zip => zip::write(&job),
-        ArchiveFormat::SevenZip => sevenz::write(&job),
         format if format.is_single_file() => stream::write(&job).map(Written::single),
         _ => tar::write(&job).map(Written::single),
     };
     let written = match written {
         Ok(written) => written,
         Err(error) => {
-            // A failed split job removes its own volumes, and a split 7Z run
-            // leaves whatever was at the output path alone; a single archive
-            // is removed here.
-            if !(options.format == ArchiveFormat::SevenZip && options.split_size.is_some()) {
-                let _ = fs::remove_file(output_path);
-            }
+            // A failed split job removes its own volumes; a single archive goes here.
+            let _ = fs::remove_file(output_path);
             return Err(if cancel.is_cancelled() { LiberaError::CompressionCancelled } else { error });
         }
     };
@@ -296,11 +235,8 @@ pub fn compress_archive(
         Some(volumes) => {
             let total =
                 volumes.iter().map(|volume| fs::metadata(volume).map(|metadata| metadata.len()).unwrap_or(0)).sum();
-            // A set is named by the volume it opens from: a ZIP set's terminal
-            // `.zip`, a 7z set's `.001`.
-            let opening = if options.format == ArchiveFormat::SevenZip { volumes.first() } else { volumes.last() };
-            let opening = opening.map(|volume| volume.to_string_lossy().into_owned()).unwrap_or_default();
-            (opening, total, Some(volumes.iter().map(|volume| volume.to_string_lossy().into_owned()).collect()))
+            let terminal = volumes.last().map(|volume| volume.to_string_lossy().into_owned()).unwrap_or_default();
+            (terminal, total, Some(volumes.iter().map(|volume| volume.to_string_lossy().into_owned()).collect()))
         }
         None => (options.output_path.clone(), fs::metadata(output_path)?.len(), None),
     };

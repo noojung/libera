@@ -118,32 +118,6 @@ final class LiberaCoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("secret.txt"), encoding: .utf8), "classified")
     }
 
-    func testWritesASolidSevenZipWhoseNamesNeedThePassword() async throws {
-        _ = try file("notes/a.txt", String(repeating: "alpha ", count: 1000))
-        _ = try file("notes/b.txt", String(repeating: "bravo ", count: 1000))
-        let options = CompressionOptions(
-            inputPaths: [work.appendingPathComponent("notes").path],
-            outputPath: work.appendingPathComponent("notes.7z").path, format: .sevenZip,
-            password: "hunter2", encryptFileNames: true, solidArchive: true
-        )
-
-        XCTAssertEqual(try planSevenZipSolidBlocks(options: options).map(\.entries.count), [2])
-        _ = try await Libera.compress(options)
-
-        let target = work.appendingPathComponent("unpacked")
-        do {
-            _ = try await Libera.extract(ExtractionOptions(archivePath: options.outputPath, targetDir: target.path))
-            XCTFail("Read hidden names without the password")
-        } catch LiberaError.PasswordRequired {}
-        _ = try await Libera.extract(
-            ExtractionOptions(archivePath: options.outputPath, targetDir: target.path, password: "hunter2")
-        )
-        XCTAssertEqual(
-            try String(contentsOf: target.appendingPathComponent("notes/b.txt"), encoding: .utf8),
-            String(repeating: "bravo ", count: 1000)
-        )
-    }
-
     func testSurfacesTheCoreErrorAsItsOwnCase() async throws {
         let input = try file("a.txt", "a")
         let archive = work.appendingPathComponent("a.tgz")

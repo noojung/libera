@@ -682,34 +682,3 @@ fn carries_the_archive_quarantine_flag_onto_the_top_level_items() {
     }
     assert_eq!(xattr::get(target.join("App/run"), "com.apple.quarantine").unwrap(), None);
 }
-
-/// A folder entry stands for what is below it only as far as the user's own
-/// pick goes; the filters still judge each entry, so a link or a `.DS_Store`
-/// below a listed folder stays out when the options say so.
-#[test]
-fn applies_the_filters_below_a_folder_entry_too() {
-    let work = TempDir::new().unwrap();
-    let archive = work.path().join("folders.tar");
-    write_tar(
-        &archive,
-        &[
-            TarEntry::Folder("app/"),
-            TarEntry::File("app/readme.txt", b"read me"),
-            TarEntry::File("app/notes.md", b"notes"),
-            TarEntry::File("app/.DS_Store", b"finder"),
-            TarEntry::Symlink("app/link", "readme.txt"),
-        ],
-    );
-    let target = work.path().join("output");
-
-    let result = extract(libera_core::ExtractionOptions {
-        restore_symlinks: Some(false),
-        exclude_mac_metadata: Some(true),
-        filter_pattern: Some("!*.md".into()),
-        ..extraction(&archive, &target)
-    })
-    .unwrap();
-
-    assert_eq!((result.extracted_count, result.symbolic_links_excluded), (1, 1));
-    assert_eq!(tree(&target), ["app/", "app/readme.txt"]);
-}

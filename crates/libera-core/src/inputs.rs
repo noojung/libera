@@ -91,37 +91,23 @@ pub(crate) struct OwnOutput {
     directory: PathBuf,
     /// The archive's own name, or for a split set, every volume name's stem.
     name: String,
-    shape: OutputShape,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum OutputShape {
-    File,
-    ZipSet,
-    /// `name.7z` and every `name.7z.NNN` beside it, partial ones included,
-    /// since a split run leaves the old set in place while it writes.
-    SevenZipSet,
+    split: bool,
 }
 
 impl OwnOutput {
     pub(crate) fn file(output: &Path) -> io::Result<Self> {
-        Self::new(output, OutputShape::File)
+        Self::new(output, false)
     }
 
-    /// Every volume of the split ZIP set `output` closes.
+    /// Every volume of the split set `output` closes.
     pub(crate) fn split_set(output: &Path) -> io::Result<Self> {
-        Self::new(&crate::zip::volumes::split_volume_base(output), OutputShape::ZipSet)
+        Self::new(&crate::zip::volumes::split_volume_base(output), true)
     }
 
-    /// A 7z archive at `output`, whole or split.
-    pub(crate) fn seven_zip(output: &Path) -> io::Result<Self> {
-        Self::new(output, OutputShape::SevenZipSet)
-    }
-
-    fn new(output: &Path, shape: OutputShape) -> io::Result<Self> {
+    fn new(output: &Path, split: bool) -> io::Result<Self> {
         let resolved = without_final_link(output)?;
         let name = resolved.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        Ok(Self { directory: resolved.parent().unwrap_or(Path::new("/")).to_path_buf(), name, shape })
+        Ok(Self { directory: resolved.parent().unwrap_or(Path::new("/")).to_path_buf(), name, split })
     }
 
     fn contains(&self, path: &Path) -> bool {
@@ -129,11 +115,7 @@ impl OwnOutput {
             return false;
         }
         let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default();
-        match self.shape {
-            OutputShape::File => name == self.name,
-            OutputShape::ZipSet => crate::zip::volumes::is_split_volume_name(&self.name, &name),
-            OutputShape::SevenZipSet => name == self.name || crate::sevenz::volumes::is_volume_of(&self.name, &name),
-        }
+        if self.split { crate::zip::volumes::is_split_volume_name(&self.name, &name) } else { name == self.name }
     }
 }
 

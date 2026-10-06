@@ -1,4 +1,3 @@
-mod sevenz;
 mod stream;
 mod tar;
 mod zip;
@@ -155,7 +154,6 @@ pub fn extract_archive_with(
             };
             let counts = match format {
                 ReadFormat::Zip => zip::extract(&mut job)?,
-                ReadFormat::SevenZip => sevenz::extract(&mut job)?,
                 ReadFormat::Tar(_) => tar::extract(&mut job)?,
                 ReadFormat::Stream(codec) => stream::extract(&mut job, codec)?,
             };
@@ -229,23 +227,19 @@ impl Job<'_> {
         Meter::new(self.listener.clone(), self.policy, self.disk_budget, total)
     }
 
-    /// What the user's choices say about which entries to write.
-    fn selection(&self) -> Selection<'_> {
-        Selection::new(
-            self.options.selected_entries.as_deref(),
-            &self.filter,
-            self.exclude_mac_metadata(),
-            self.restore_symlinks(),
-        )
-    }
-
     /// Turns a format's listing into a plan: narrows it to what the user's
     /// choices select, checks it against the limits and the free space, and
     /// settles every clash with what is already in the destination.
     fn plan<S>(&mut self, entries: Vec<ArchiveEntry<S>>) -> Result<(Plan<S>, u64), LiberaError> {
-        let selection = self.selection();
+        let selection = Selection {
+            selected_entries: self.options.selected_entries.as_deref(),
+            filter: &self.filter,
+            exclude_mac_metadata: self.exclude_mac_metadata(),
+            restore_symlinks: self.restore_symlinks(),
+        };
+        let selected = selection.paths(&entries);
         let links_excluded = selection.links_excluded(&entries);
-        let mut plan = build_plan(entries, &self.target_root, |entry| selection.selects(entry), &self.policy)?;
+        let mut plan = build_plan(entries, &self.target_root, selected.as_ref(), &self.policy)?;
         if plan.selected_total_bytes > self.disk_budget {
             return Err(LiberaError::InsufficientDiskSpace {
                 message: "Not enough disk space for extraction and the configured reserve".into(),
