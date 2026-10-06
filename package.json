@@ -105,6 +105,9 @@
     }
   },
   "dependencies": {
+    "@fontsource/gaegu": "^5.3.0",
+    "@fontsource/gowun-dodum": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@zip.js/zip.js": "^2.23.0",
     "archiver": "7.0.1",
     "archiver-zip-encrypted": "^2.0.0",
