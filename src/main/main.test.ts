@@ -17,13 +17,19 @@ const electron = vi.hoisted(() => {
     maximized = false
     closed = false
     readonly sent: unknown[] = []
+    url = 'file:///app/dist/renderer/index.html'
+    windowOpenHandler?: (details: { url: string }) => { action: string }
     readonly webContents = {
       on: (event: string, listener: (...args: never[]) => void) => { this.listeners.set(`wc:${event}`, listener) },
       send: (channel: string, payload: unknown) => { this.sent.push({ channel, payload }) },
-      isDestroyed: () => this.closed
+      isDestroyed: () => this.closed,
+      getURL: () => this.url,
+      setWindowOpenHandler: (handler: (details: { url: string }) => { action: string }) => {
+        this.windowOpenHandler = handler
+      }
     }
 
-    constructor() { windows.push(this) }
+    constructor(readonly options: { webPreferences?: Record<string, unknown> }) { windows.push(this) }
     loadURL(): void {}
     loadFile(): void {}
     on(event: string, listener: (...args: never[]) => void): void { this.listeners.set(event, listener) }
@@ -416,6 +422,40 @@ describe('the window controls', () => {
 
     await invoke('window:maximize')
     expect(window.isMaximized()).toBe(false)
+  })
+})
+
+describe('keeping the window on the app', () => {
+  const navigate = (url: string) => {
+    const event = { preventDefault: vi.fn() }
+    const listener = electron.windows[0].listeners.get('wc:will-navigate') as unknown as
+      (event: { preventDefault(): void }, url: string) => void
+    listener(event, url)
+    return event.preventDefault
+  }
+
+  it('runs the page sandboxed and isolated from Node', () => {
+    expect(electron.windows[0].options.webPreferences).toMatchObject({
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    })
+  })
+
+  it.each([
+    'file:///Users/someone/Downloads/dropped.zip',
+    'https://example.com',
+    'file:///app/dist/renderer/other.html'
+  ])('refuses to navigate to %s', url => {
+    expect(navigate(url)).toHaveBeenCalled()
+  })
+
+  it('lets the page reload itself', () => {
+    expect(navigate(electron.windows[0].url)).not.toHaveBeenCalled()
+  })
+
+  it('opens no windows for the page', () => {
+    expect(electron.windows[0].windowOpenHandler?.({ url: 'https://example.com' })).toEqual({ action: 'deny' })
   })
 })
 

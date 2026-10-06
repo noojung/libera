@@ -21,18 +21,45 @@ function copyLibera7zWorker(): Plugin {
   }
 }
 
+// The page loads only its own bundle, the Google Fonts stylesheet and the font
+// files it points at, and the blob: URLs image previews are drawn from.
+// Anything else - an injected script, a stray request - is refused. Only the
+// build carries it: the dev server's hot reload runs inline scripts.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' https://fonts.googleapis.com",
+  'font-src https://fonts.gstatic.com',
+  "img-src 'self' blob:",
+  "base-uri 'none'",
+  "form-action 'none'"
+].join('; ')
+
+function contentSecurityPolicy(): Plugin {
+  return {
+    name: 'content-security-policy',
+    apply: 'build',
+    transformIndexHtml: () => [{
+      tag: 'meta',
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: CONTENT_SECURITY_POLICY },
+      injectTo: 'head-prepend'
+    }]
+  }
+}
+
 type ElectronStartup = Parameters<NonNullable<ElectronOptions['onstart']>>[0]['startup']
 
 // vite-plugin-electron spawns Electron with the cwd set to Vite's `root`,
 // which here is src/renderer - a directory with no package.json, so Electron
 // comes up with nothing loaded. The app is started from the project root.
 function launchElectron(startup: ElectronStartup): Promise<boolean> {
-  return startup(['.', '--no-sandbox'], { cwd: __dirname })
+  return startup(['.'], { cwd: __dirname })
 }
 
 export default defineConfig({
   plugins: [
     react(),
+    contentSecurityPolicy(),
     electron([
       // The preload script is built first because vite-plugin-electron only
       // starts Electron once every entry's first build has finished, and it
