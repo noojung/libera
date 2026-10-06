@@ -70,7 +70,7 @@ pub enum ZstdStrategy {
 }
 
 impl ZstdStrategy {
-    pub(crate) fn codec_value(self) -> zstd::zstd_safe::Strategy {
+    fn codec_value(self) -> zstd::zstd_safe::Strategy {
         use zstd::zstd_safe::Strategy;
         match self {
             Self::Fast => Strategy::ZSTD_fast,
@@ -133,31 +133,6 @@ pub(crate) fn zstd_level(level: u8) -> i32 {
     rounded.clamp(1, 19)
 }
 
-/// A Zstandard encoder at `level` on the archive scale, with expert mode's
-/// tuning. The level goes in first and the rest after, because each one set
-/// here replaces what the level implied.
-pub(crate) fn zstd_encoder<W: Write>(
-    inner: W,
-    level: u8,
-    tuning: ZstdTuning,
-) -> io::Result<zstd::stream::write::Encoder<'static, W>> {
-    use zstd::stream::raw::CParameter;
-    let mut encoder = zstd::stream::write::Encoder::new(inner, zstd_level(level))?;
-    if let Some(strategy) = tuning.strategy {
-        encoder.set_parameter(CParameter::Strategy(strategy.codec_value()))?;
-    }
-    if let Some(window_size) = tuning.window_size {
-        encoder.set_parameter(CParameter::WindowLog(window_size.trailing_zeros()))?;
-    }
-    if tuning.long_distance_matching {
-        encoder.set_parameter(CParameter::EnableLongDistanceMatching(true))?;
-    }
-    if tuning.workers > 0 {
-        encoder.multithread(u32::from(tuning.workers))?;
-    }
-    Ok(encoder)
-}
-
 /// A writer for one of the codecs this engine encodes, finished explicitly so
 /// the trailer is written and any error in writing it is seen.
 pub(crate) enum Encoder<W: Write> {
@@ -177,7 +152,23 @@ impl<W: Write> Encoder<W> {
     }
 
     pub(crate) fn zstd(inner: W, level: u8, tuning: ZstdTuning) -> io::Result<Self> {
-        Ok(Self::Zstd(zstd_encoder(inner, level, tuning)?))
+        use zstd::stream::raw::CParameter;
+        // The level goes in first and the rest after, because each one set
+        // here replaces what the level implied.
+        let mut encoder = zstd::stream::write::Encoder::new(inner, zstd_level(level))?;
+        if let Some(strategy) = tuning.strategy {
+            encoder.set_parameter(CParameter::Strategy(strategy.codec_value()))?;
+        }
+        if let Some(window_size) = tuning.window_size {
+            encoder.set_parameter(CParameter::WindowLog(window_size.trailing_zeros()))?;
+        }
+        if tuning.long_distance_matching {
+            encoder.set_parameter(CParameter::EnableLongDistanceMatching(true))?;
+        }
+        if tuning.workers > 0 {
+            encoder.multithread(u32::from(tuning.workers))?;
+        }
+        Ok(Self::Zstd(encoder))
     }
 
     pub(crate) fn finish(self) -> io::Result<W> {

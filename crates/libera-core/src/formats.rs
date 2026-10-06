@@ -5,14 +5,12 @@
 use std::path::Path;
 
 use crate::codec::StreamCodec;
-use crate::zip::volumes::is_numbered_volume_path;
 
 /// The formats this engine writes, named after the Electron engine's
-/// `ArchiveFormat` values. 7Z joins once its writer is ported.
+/// `ArchiveFormat` values. ZIP and 7Z join as their writers are ported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum ArchiveFormat {
-    Zip,
     Tar,
     Gz,
     Tgz,
@@ -28,7 +26,6 @@ impl ArchiveFormat {
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Zip => "ZIP",
             Self::Tar => "TAR",
             Self::Gz => "GZ",
             Self::Tgz => "TAR.GZ",
@@ -37,16 +34,12 @@ impl ArchiveFormat {
         }
     }
 
-    /// The formats Deflate tuning applies to. ZIP carries Deflate as one of
-    /// its methods.
     pub(crate) fn uses_deflate(self) -> bool {
-        matches!(self, Self::Zip | Self::Gz | Self::Tgz)
+        matches!(self, Self::Gz | Self::Tgz)
     }
 
-    /// The formats Zstandard tuning applies to, ZIP among them for the same
-    /// reason.
     pub(crate) fn uses_zstd(self) -> bool {
-        matches!(self, Self::Zip | Self::Zst | Self::Tzst)
+        matches!(self, Self::Zst | Self::Tzst)
     }
 }
 
@@ -59,26 +52,13 @@ const DEFLATE_LEVELS: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 pub fn compression_levels(format: ArchiveFormat) -> Vec<u8> {
     match format {
         ArchiveFormat::Tar => Vec::new(),
-        ArchiveFormat::Zip | ArchiveFormat::Gz | ArchiveFormat::Tgz | ArchiveFormat::Zst | ArchiveFormat::Tzst => {
-            DEFLATE_LEVELS.to_vec()
-        }
+        ArchiveFormat::Gz | ArchiveFormat::Tgz | ArchiveFormat::Zst | ArchiveFormat::Tzst => DEFLATE_LEVELS.to_vec(),
     }
 }
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn supports_level(format: ArchiveFormat) -> bool {
     !compression_levels(format).is_empty()
-}
-
-/// ZIP is the format here whose container defines an encryption scheme.
-#[cfg_attr(feature = "uniffi", uniffi::export)]
-pub fn supports_password(format: ArchiveFormat) -> bool {
-    format == ArchiveFormat::Zip
-}
-
-#[cfg_attr(feature = "uniffi", uniffi::export)]
-pub fn supports_split(format: ArchiveFormat) -> bool {
-    format == ArchiveFormat::Zip
 }
 
 /// The nearest level a format supports, so switching formats keeps the intent.
@@ -90,8 +70,6 @@ pub fn nearest_level(level: u8, format: ArchiveFormat) -> u8 {
 /// How a path is read, decided by its suffix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadFormat {
-    /// A ZIP, JAR or WAR, or any volume of a split ZIP set.
-    Zip,
     /// A tarball, bare or wrapped in the codec its suffix names.
     Tar(Option<StreamCodec>),
     /// One file inside a codec stream.
@@ -124,9 +102,6 @@ fn lowercase_name(path: &Path) -> String {
 /// stream, so the tar suffixes are tried first.
 pub(crate) fn read_format(path: &Path) -> Option<ReadFormat> {
     let name = lowercase_name(path);
-    if [".zip", ".jar", ".war"].iter().any(|suffix| name.ends_with(suffix)) || is_numbered_volume_path(path) {
-        return Some(ReadFormat::Zip);
-    }
     if let Some((_, codec)) =
         TAR_WRAPPERS.iter().find(|(suffixes, _)| suffixes.iter().any(|suffix| name.ends_with(suffix)))
     {
@@ -193,10 +168,7 @@ mod tests {
         ] {
             assert_eq!(read_format(Path::new(name)), Some(expected), "{name}");
         }
-        for name in ["a.zip", "a.JAR", "a.war", "a.z01", "a.Z123"] {
-            assert_eq!(read_format(Path::new(name)), Some(ReadFormat::Zip), "{name}");
-        }
-        for name in ["a.zipx", "a.txt", "a", "a.tar.lz", "a.z1"] {
+        for name in ["a.zipx", "a.txt", "a", "a.tar.lz"] {
             assert_eq!(read_format(Path::new(name)), None, "{name}");
         }
     }

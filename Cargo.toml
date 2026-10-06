@@ -10,20 +10,11 @@ rust-version = "1.98"
 publish = false
 
 [workspace.dependencies]
-aes = "0.9.3"
 bzip2 = "0.6.1"
-crc32fast = "1.5.2"
-deflate64 = "0.1.12"
-encoding_rs = "0.8.42"
 flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
 fs4 = "1.1.0"
-getrandom = "0.4.3"
-hmac = "0.13.0"
-libc = "0.2.189"
 libz-rs-sys = "0.6.8"
 lzma-rust2 = "0.21.0"
-pbkdf2 = { version = "0.13.0", default-features = false, features = ["hmac"] }
-sha1 = "0.11.0"
 tar = "0.4.46"
 tempfile = "3.27.0"
 thiserror = "2.0.21"

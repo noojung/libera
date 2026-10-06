@@ -1,6 +1,5 @@
 mod stream;
 mod tar;
-mod zip;
 
 use std::fs;
 use std::path::Path;
@@ -10,11 +9,10 @@ use std::time::Instant;
 use crate::LiberaError;
 use crate::codec::{ZstdStrategy, ZstdTuning};
 use crate::deflate::DeflateStrategy;
-use crate::formats::{ArchiveFormat, supports_password, supports_split};
+use crate::formats::ArchiveFormat;
 use crate::inputs::InputFilters;
 use crate::patterns::EntryFilter;
 use crate::progress::{CancelToken, ProgressListener};
-use crate::zip::{MIN_SPLIT_SIZE, ZipEncryptionMethod, ZipMethod, ZipMethodOverride};
 
 /// One compression job. Every expert option is optional, and one that does
 /// not apply to `format` fails the job instead of being silently ignored.
@@ -27,18 +25,6 @@ pub struct CompressionOptions {
     /// 0 (fastest) to 9 (smallest), and 6 when unset, as in the Electron engine.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub level: Option<u8>,
-    /// Encrypts every entry with data. ZIP only.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub password: Option<String>,
-    /// The largest a volume may grow, in bytes, to write a split set. ZIP only.
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub split_size: Option<u64>,
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub encryption_method: Option<ZipEncryptionMethod>,
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub zip_method: Option<ZipMethod>,
-    #[cfg_attr(feature = "uniffi", uniffi(default))]
-    pub zip_method_overrides: Option<Vec<ZipMethodOverride>>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub exclude_symlinks: Option<bool>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
@@ -48,12 +34,12 @@ pub struct CompressionOptions {
     /// The glob list that decides which files are worth archiving at all.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub filter_pattern: Option<String>,
-    /// Deflate tuning, for ZIP, GZ and TAR.GZ.
+    /// Deflate tuning, for GZ and TAR.GZ.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub deflate_strategy: Option<DeflateStrategy>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub mem_level: Option<u8>,
-    /// Zstandard tuning, for ZST, TAR.ZST, and ZIP entries written with it.
+    /// Zstandard tuning, for ZST and TAR.ZST.
     #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub zstd_strategy: Option<ZstdStrategy>,
     #[cfg_attr(feature = "uniffi", uniffi(default))]
@@ -72,11 +58,6 @@ impl CompressionOptions {
             output_path,
             format,
             level: None,
-            password: None,
-            split_size: None,
-            encryption_method: None,
-            zip_method: None,
-            zip_method_overrides: None,
             exclude_symlinks: None,
             exclude_mac_metadata: None,
             exclude_hidden_files: None,
@@ -144,22 +125,6 @@ fn validate(options: &CompressionOptions) -> Result<u8, LiberaError> {
     if level > 9 {
         return Err(LiberaError::invalid_input(format!("Compression level {level} is outside 0-9.")));
     }
-    if options.password.is_some() && !supports_password(format) {
-        return Err(LiberaError::invalid_input("Password protection is currently available for ZIP archives only."));
-    }
-    let is_zip = format == ArchiveFormat::Zip;
-    if options.encryption_method.is_some() && !is_zip {
-        return Err(LiberaError::invalid_input("ZIP encryption method can only be used with ZIP archives."));
-    }
-    if options.zip_method.is_some() && !is_zip {
-        return Err(LiberaError::invalid_input("ZIP compression method can only be used with ZIP archives."));
-    }
-    if let Some(overrides) = &options.zip_method_overrides {
-        if !is_zip {
-            return Err(LiberaError::invalid_input("ZIP method overrides can only be used with ZIP archives."));
-        }
-        crate::zip::methods::validate_overrides(overrides, &options.input_paths)?;
-    }
     if format.is_single_file() && options.has_source_filters() {
         return Err(LiberaError::invalid_input(
             "Source filters cannot be used with a format that wraps a single file.",
@@ -167,33 +132,15 @@ fn validate(options: &CompressionOptions) -> Result<u8, LiberaError> {
     }
     if options.zstd_requested() && !format.uses_zstd() {
         return Err(LiberaError::invalid_input(
-            "Zstandard codec options can only be used with ZST, TAR.ZST, or ZIP archives.",
+            "Zstandard codec options can only be used with ZST or TAR.ZST archives.",
         ));
     }
     options.zstd().validate()?;
-    let deflate_tuned = options.deflate_strategy.is_some() || options.mem_level.is_some();
-    if deflate_tuned && !format.uses_deflate() {
-        return Err(LiberaError::invalid_input(
-            "Deflate tuning options can only be used with ZIP, GZ, or TAR.GZ archives.",
-        ));
-    }
-    if deflate_tuned && is_zip && options.zip_method.is_some_and(|method| method != ZipMethod::Deflate) {
-        return Err(LiberaError::invalid_input("Deflate tuning options can only be used with the Deflate method."));
+    if (options.deflate_strategy.is_some() || options.mem_level.is_some()) && !format.uses_deflate() {
+        return Err(LiberaError::invalid_input("Deflate tuning options can only be used with GZ or TAR.GZ archives."));
     }
     if options.mem_level.is_some_and(|mem_level| !(1..=9).contains(&mem_level)) {
         return Err(LiberaError::invalid_input("Deflate memory level must be between 1 and 9."));
-    }
-    if let Some(split_size) = options.split_size {
-        if !supports_split(format) {
-            return Err(LiberaError::SplitNotSupportedForFormat {
-                message: "Split archives are currently available for ZIP archives only.".into(),
-            });
-        }
-        if split_size < MIN_SPLIT_SIZE {
-            return Err(LiberaError::SplitSizeTooSmall {
-                message: "The split size is below the supported minimum.".into(),
-            });
-        }
     }
     Ok(level)
 }
@@ -217,52 +164,26 @@ pub fn compress_archive(
         fs::create_dir_all(parent)?;
     }
     let job = Job { options: &options, level, listener, cancel: &cancel };
-    let written = match options.format {
-        ArchiveFormat::Zip => zip::write(&job),
-        format if format.is_single_file() => stream::write(&job).map(Written::single),
-        _ => tar::write(&job).map(Written::single),
-    };
-    let written = match written {
-        Ok(written) => written,
+    let written = if options.format.is_single_file() { stream::write(&job) } else { tar::write(&job) };
+    let original_size = match written {
+        Ok(original_size) => original_size,
         Err(error) => {
-            // A failed split job removes its own volumes; a single archive goes here.
             let _ = fs::remove_file(output_path);
             return Err(if cancel.is_cancelled() { LiberaError::CompressionCancelled } else { error });
         }
     };
 
-    let (output_path, compressed_size, volume_paths) = match written.volumes {
-        Some(volumes) => {
-            let total =
-                volumes.iter().map(|volume| fs::metadata(volume).map(|metadata| metadata.len()).unwrap_or(0)).sum();
-            let terminal = volumes.last().map(|volume| volume.to_string_lossy().into_owned()).unwrap_or_default();
-            (terminal, total, Some(volumes.iter().map(|volume| volume.to_string_lossy().into_owned()).collect()))
-        }
-        None => (options.output_path.clone(), fs::metadata(output_path)?.len(), None),
-    };
     Ok(CompressionResult {
-        output_path,
-        original_size: written.original_size,
-        compressed_size,
+        compressed_size: fs::metadata(output_path)?.len(),
+        output_path: options.output_path,
+        original_size,
         duration_ms: started.elapsed().as_millis() as u64,
-        volume_paths,
+        volume_paths: None,
     })
 }
 
-/// What a format writer reports back: the bytes it read from the inputs, and
-/// for a split set, every volume it wrote.
-struct Written {
-    original_size: u64,
-    volumes: Option<Vec<std::path::PathBuf>>,
-}
-
-impl Written {
-    fn single(original_size: u64) -> Self {
-        Self { original_size, volumes: None }
-    }
-}
-
-/// What a format writer needs from the job.
+/// What a format writer needs from the job. Each one returns the bytes it
+/// read from the inputs, which the result reports as the original size.
 struct Job<'a> {
     options: &'a CompressionOptions,
     level: u8,

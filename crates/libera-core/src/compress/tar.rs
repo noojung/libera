@@ -8,7 +8,7 @@ use super::Job;
 use crate::LiberaError;
 use crate::codec::Encoder;
 use crate::formats::ArchiveFormat;
-use crate::inputs::{InputEntry, InputKind, OwnOutput, collect_inputs};
+use crate::inputs::{InputEntry, InputKind, collect_inputs};
 use crate::progress::{Reporter, Tracked};
 
 /// Writes a TAR, TAR.GZ or TAR.ZST: a tarball, inside the codec the format
@@ -19,7 +19,7 @@ pub(super) fn write(job: &Job) -> Result<u64, LiberaError> {
         return Err(LiberaError::invalid_input("No input files specified."));
     }
     let output_path = Path::new(&options.output_path);
-    let entries = collect_inputs(&options.input_paths, &OwnOutput::file(output_path)?, &options.filters())?;
+    let entries = collect_inputs(&options.input_paths, output_path, &options.filters())?;
     let original_size = entries.iter().map(|entry| entry.size).sum();
     if job.cancel.is_cancelled() {
         return Err(LiberaError::CompressionCancelled);

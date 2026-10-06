@@ -37,8 +37,6 @@ impl DeflateStrategy {
 /// The frame around the Deflate data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeflateFrame {
-    /// Bare Deflate, as a ZIP entry stores it.
-    Raw,
     /// A gzip member, header and trailer included.
     Gzip,
 }
@@ -70,7 +68,6 @@ pub(crate) struct DeflateWriter<W: Write> {
 impl<W: Write> DeflateWriter<W> {
     pub(crate) fn new(inner: W, frame: DeflateFrame, tuning: DeflateTuning) -> io::Result<Self> {
         let window_bits = match frame {
-            DeflateFrame::Raw => -15,
             DeflateFrame::Gzip => 31,
         };
         let mut stream: Box<MaybeUninit<z_stream>> = Box::new(MaybeUninit::zeroed());
