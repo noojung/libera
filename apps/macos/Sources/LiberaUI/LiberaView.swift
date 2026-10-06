@@ -45,22 +45,16 @@ struct LiberaView: View {
         }
     }
 
-    /// The inspector's preview under the app's dialogs, and a job's password
-    /// prompt over everything, since it interrupts whatever is open.
-    private var dialogs: some View {
-        ZStack {
-            InspectorDialogs()
-            if let sheet = model.sheet {
-                // Each dialog is its own view, so a return to one starts it afresh.
-                switch sheet {
-                case .about: AboutDialog()
-                case .licenses: LicensesDialog()
-                case .supportedFormats: SupportedFormatsDialog()
-                case .unsupportedFormat: UnsupportedFormatDialog()
-                }
-            }
-            if let prompt = queue.passwordPrompt {
-                PasswordPromptDialog(prompt: prompt).id(prompt.id)
+    @ViewBuilder private var dialogs: some View {
+        if let prompt = queue.passwordPrompt {
+            PasswordPromptDialog(prompt: prompt).id(prompt.id)
+        } else if let sheet = model.sheet {
+            // Each dialog is its own view, so a return to one starts it afresh.
+            switch sheet {
+            case .about: AboutDialog()
+            case .licenses: LicensesDialog()
+            case .supportedFormats: SupportedFormatsDialog()
+            case .unsupportedFormat: UnsupportedFormatDialog()
             }
         }
     }
