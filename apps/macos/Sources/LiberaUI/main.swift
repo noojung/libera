@@ -77,15 +77,9 @@ private struct LaunchOptions {
         hosting.sizingOptions = []
         window.contentView = hosting
         if options.scripted || !window.setFrameUsingName("LiberaMainWindow") { window.center() }
+        window.makeKeyAndOrderFront(nil)
         NSApp.mainMenu = mainMenu()
-        // scripts/dev.mjs relaunches the app on every save, and leaves the
-        // focus with the editor the save came from.
-        if ProcessInfo.processInfo.environment["LIBERA_DEV_RELAUNCH"] == nil {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            window.orderFrontRegardless()
-        }
+        NSApp.activate(ignoringOtherApps: true)
 
         let inputs = options.values("--input")
         if !inputs.isEmpty {
@@ -197,14 +191,10 @@ private struct LaunchOptions {
     }
 }
 
-/// Starts the app. The executable is nothing but a call to this, so the
-/// interface stays a library Xcode can preview.
-public enum LiberaApplication {
-    @MainActor public static func run() {
-        let app = NSApplication.shared
-        let delegate = ApplicationDelegate()
-        app.delegate = delegate
-        app.setActivationPolicy(.regular)
-        app.run()
-    }
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = ApplicationDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.regular)
+    app.run()
 }

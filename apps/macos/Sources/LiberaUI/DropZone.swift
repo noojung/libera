@@ -204,16 +204,3 @@ struct RemoveButton: View {
         .buttonStyle(.plain).onHover { hovering = $0 }.help(label).accessibilityLabel(label)
     }
 }
-
-#if DEBUG
-#Preview("비어 있음") {
-    PreviewHost { DropZone(mode: .compress).padding(20) }.frame(width: 560, height: 680)
-}
-
-#Preview("선택한 항목") {
-    PreviewHost(setUp: { $0.extractItems = PreviewSamples.extractItems }) {
-        DropZone(mode: .extract).padding(20)
-    }
-    .frame(width: 560, height: 680)
-}
-#endif

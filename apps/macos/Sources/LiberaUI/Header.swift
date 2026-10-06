@@ -149,11 +149,3 @@ struct Header: View {
         .accessibilityElement(children: .contain).accessibilityLabel(t("language.selector"))
     }
 }
-
-#if DEBUG
-#Preview("제목 표시줄") {
-    PreviewHost(expert: true, setUp: { $0.queue.showForPreview(PreviewSamples.jobs) }) {
-        Header(compact: false).frame(width: 1050, height: 52)
-    }
-}
-#endif

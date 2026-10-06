@@ -516,16 +516,3 @@ extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
-
-#if DEBUG
-#Preview("아카이브 · 전문가") {
-    PreviewHost(expert: true, setUp: { $0.inspector.showForPreview(PreviewSamples.inspection) }) {
-        InspectorScreen().padding(20)
-    }
-    .previewWindow()
-}
-
-#Preview("비어 있음") {
-    PreviewHost { InspectorScreen().padding(20) }.previewWindow()
-}
-#endif

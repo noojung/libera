@@ -274,14 +274,3 @@ struct PreviewState {
         return relative.components(separatedBy: "/").joined(separator: " > ")
     }
 }
-
-#if DEBUG
-extension InspectorModel {
-    /// Shows an inspection without reading any archive, for previews.
-    func showForPreview(_ inspection: ArchiveInspection) {
-        generation += 1
-        self.inspection = inspection
-        archivePath = inspection.archivePath
-    }
-}
-#endif

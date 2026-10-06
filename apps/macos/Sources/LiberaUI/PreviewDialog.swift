@@ -334,12 +334,3 @@ private struct Checkerboard: View {
         }
     }
 }
-
-#if DEBUG
-#Preview("텍스트 미리보기") {
-    PreviewHost(expert: true) {
-        PreviewDialog(state: PreviewSamples.textPreview, expert: true) {}
-    }
-    .previewWindow()
-}
-#endif

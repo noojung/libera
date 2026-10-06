@@ -8,15 +8,14 @@ let optimizeForSize: [SwiftSetting] = [.unsafeFlags(["-Osize"], .when(configurat
 let package = Package(
     name: "LiberaMacUI",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "LiberaMacUI", targets: ["LiberaMacUI"])],
+    products: [.executable(name: "LiberaMacUI", targets: ["LiberaUI"])],
     targets: [
         // Both built from crates/ by scripts/build-core.sh.
         .binaryTarget(name: "LiberaCoreFFI", path: "Frameworks/LiberaCoreFFI.xcframework"),
         .target(name: "LiberaCore", dependencies: ["LiberaCoreFFI"], swiftSettings: optimizeForSize),
-        // The interface is a library so Xcode can preview it; the executable
-        // only starts it.
-        .target(name: "LiberaUI", dependencies: ["LiberaCore"], resources: [.copy("Resources")], swiftSettings: optimizeForSize),
-        .executableTarget(name: "LiberaMacUI", dependencies: ["LiberaUI"], swiftSettings: optimizeForSize),
+        .executableTarget(
+            name: "LiberaUI", dependencies: ["LiberaCore"], resources: [.copy("Resources")], swiftSettings: optimizeForSize
+        ),
         .testTarget(name: "LiberaCoreTests", dependencies: ["LiberaCore"]),
         .testTarget(name: "LiberaUITests", dependencies: ["LiberaUI", "LiberaCore"]),
     ],

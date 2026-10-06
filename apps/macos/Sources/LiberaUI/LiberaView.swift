@@ -66,23 +66,3 @@ struct LiberaView: View {
         }
     }
 }
-
-#if DEBUG
-#Preview("압축") {
-    PreviewHost(setUp: { $0.compressItems = PreviewSamples.compressItems }) { LiberaView() }.previewWindow()
-}
-
-#Preview("압축 해제 · 전문가") {
-    PreviewHost(expert: true, setUp: { model in
-        model.screen = .extract
-        model.extractItems = PreviewSamples.extractItems
-    }) { LiberaView() }.previewWindow()
-}
-
-#Preview("작업 대기열 · 다크") {
-    PreviewHost(language: .en, dark: true, setUp: { model in
-        model.screen = .queue
-        model.queue.showForPreview(PreviewSamples.jobs)
-    }) { LiberaView() }.previewWindow()
-}
-#endif

@@ -2,9 +2,7 @@
 # Builds libera-core for both Mac architectures and lays it out for SwiftPM:
 # the XCFramework the app links, the Swift bindings UniFFI generates for it,
 # and the app info the About dialog reads. Run it again whenever crates/ or
-# the version changes. LIBERA_CORE_TARGETS narrows the build to some of the
-# targets - one Mac's own, for development - which the app then links for that
-# Mac alone.
+# the version changes.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -22,19 +20,19 @@ export DEVELOPER_DIR
 export MACOSX_DEPLOYMENT_TARGET=13.0
 
 cd "$root"
-read -r -a targets <<< "${LIBERA_CORE_TARGETS:-aarch64-apple-darwin x86_64-apple-darwin}"
-libraries=()
-for target in "${targets[@]}"; do
+for target in aarch64-apple-darwin x86_64-apple-darwin; do
   cargo build --release -p libera-ffi --target "$target"
-  libraries+=("target/$target/release/liblibera_ffi.a")
 done
 
 rm -rf "$work"
 mkdir -p "$work/headers"
-lipo -create "${libraries[@]}" -output "$work/liblibera_ffi.a"
+lipo -create \
+  target/aarch64-apple-darwin/release/liblibera_ffi.a \
+  target/x86_64-apple-darwin/release/liblibera_ffi.a \
+  -output "$work/liblibera_ffi.a"
 
 cargo run -q -p uniffi-bindgen -- generate \
-  --library "${libraries[0]}" \
+  --library target/aarch64-apple-darwin/release/liblibera_ffi.a \
   --language swift --out-dir "$work/bindings"
 
 cp "$work/bindings/LiberaCoreFFI.h" "$work/headers/"
