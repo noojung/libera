@@ -87,8 +87,6 @@ import LiberaCore
 
     @Published var zipEncryption = ZipEncryptionMethod.zipCrypto
     @Published var zipMethod = ZipMethod.deflate
-    /// The per-file dialog is open.
-    @Published var overridesOpen = false
     @Published private(set) var zipPerFile = false
     @Published var zipOverrides: [ZipMethodOverride] = []
     @Published var sevenZipMethod = SevenZipMethod.lzma2
@@ -127,7 +125,6 @@ import LiberaCore
         zipMethod = .deflate
         zipPerFile = false
         zipOverrides = []
-        overridesOpen = false
         sevenZipMethod = .lzma2
         sevenZipPerFile = false
         sevenZipOverrides = []
@@ -148,7 +145,6 @@ import LiberaCore
     func setPerFile(_ enabled: Bool) {
         if format == .zip { zipPerFile = enabled }
         if format == .sevenZip { sevenZipPerFile = enabled }
-        if !enabled { overridesOpen = false }
         level = format.defaultLevel
         if format == .zip {
             zipMethod = .deflate

@@ -8,7 +8,7 @@ import SwiftUI
 ///     --screen compress|extract|inspect|queue   --lang en|ko   --theme system|light|dark
 ///     --expert   --size 1050x720   --sheet about|licenses|supportedFormats|unsupportedFormat
 ///     --input PATH (repeatable)   --compress-now   --archive PATH (repeatable)   --extract-now
-///     --inspect PATH   --preview ENTRY-INDEX   --format zip|tar|gz|tgz|zst|tzst|7z   --solid   --per-file
+///     --inspect PATH   --preview ENTRY-INDEX
 ///     --snapshot OUT.png
 ///
 /// Any of the first three makes the run leave the saved settings alone.
@@ -50,13 +50,6 @@ private struct LaunchOptions {
         model = AppModel(settings: settings)
         if let screen = options.value("--screen").flatMap(Screen.init) { model.screen = screen }
         if let sheet = options.value("--sheet").flatMap(Sheet.init) { model.present(sheet) }
-        let form = model.compressionForm
-        if let format = ArchiveFormat.allCases.first(where: { $0.id == options.value("--format") }) { form.select(format) }
-        if options.flag("--solid") { form.solid = true }
-        if options.flag("--per-file") {
-            form.setPerFile(true)
-            form.overridesOpen = true
-        }
 
         settings.$theme.sink { NSApp.appearance = $0.appearance }.store(in: &observers)
 

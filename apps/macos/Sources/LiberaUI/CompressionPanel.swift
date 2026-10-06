@@ -1,13 +1,15 @@
 import LiberaCore
 import SwiftUI
 
-/// The compression settings beside the drop zone.
+/// The compression settings beside the drop zone. Its form lives as long as
+/// the panel does, so leaving the screen starts the next visit afresh, as the
+/// Electron panel does.
 struct CompressionPanel: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.palette) private var p
     @Environment(\.localizer) private var t
-    @ObservedObject var form: CompressionForm
+    @StateObject private var form = CompressionForm()
 
     var body: some View {
         ScrollView {
@@ -27,6 +29,9 @@ struct CompressionPanel: View {
         }
         .card()
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .onAppear { form.expert = settings.expert }
+        .onChange(of: settings.expert) { form.expert = $0 }
+        .onChange(of: model.compressItems) { form.pruneOverrides(to: $0) }
     }
 
     private var header: some View {
@@ -104,44 +109,8 @@ struct CompressionPanel: View {
                         CozyField(hint: t("compression.filterPatternPlaceholder"), value: $form.filterPattern, height: 38, fontSize: 13)
                     }
                 }
-                if form.format == .zip || form.format == .sevenZip { perFileRow }
             }
         }
-    }
-
-    /// Switching per-file mode on hands every setting above to its dialog, so
-    /// they clear rather than disappear.
-    private var perFileRow: some View {
-        let zip = form.format == .zip
-        let enabled = zip ? form.zipPerFile : form.sevenZipPerFile
-        let count = zip ? form.zipOverrides.count : form.sevenZipOverrides.count
-        return HStack(spacing: 0) {
-            Button { form.overridesOpen = true } label: {
-                HStack(spacing: 10) {
-                    VectorIcon(name: "files").frame(width: 16, height: 16).foregroundStyle(p.peach)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(t(zip ? "compression.zipOverridesButton" : "compression.sevenZipOverridesButton"))
-                            .font(Typography.cute(14)).foregroundStyle(p.text)
-                        Text(t(zip ? "compression.zipOverridesButtonHint" : "compression.sevenZipOverridesButtonHint"))
-                            .font(Typography.sans(10)).foregroundStyle(p.muted).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 4)
-                    if count > 0 {
-                        Text(t("compression.zipOverridesCount", ["count": count])).font(Typography.sans(10)).fontWeight(.bold)
-                            .foregroundStyle(p.peach).padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Capsule().fill(p.pill))
-                    }
-                }
-                .padding(.leading, 12).padding(.trailing, 8).padding(.vertical, 10).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.72)
-            .accessibilityLabel(t(zip ? "compression.zipOverridesButton" : "compression.sevenZipOverridesButton"))
-            CozySwitch(label: t("compression.zipOverridesEnable"), on: Binding(get: { enabled }, set: { form.setPerFile($0) }))
-                .padding(.leading, 6).padding(.trailing, 12)
-        }
-        .background(RoundedRectangle(cornerRadius: 10).fill(form.perFileActive ? p.pill : p.card))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(form.perFileActive ? p.peach : p.border, lineWidth: 1.5))
-        .padding(.top, 4)
     }
 
     @ViewBuilder private var sevenZipRows: some View {

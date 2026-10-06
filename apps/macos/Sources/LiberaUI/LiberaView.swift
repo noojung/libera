@@ -31,7 +31,7 @@ struct LiberaView: View {
         case .compress:
             HStack(spacing: 20) {
                 DropZone(mode: .compress)
-                CompressionPanel(form: model.compressionForm).frame(width: panelWidth)
+                CompressionPanel().frame(width: panelWidth)
             }
         case .extract:
             HStack(spacing: 20) {
@@ -50,7 +50,6 @@ struct LiberaView: View {
     private var dialogs: some View {
         ZStack {
             InspectorDialogs()
-            CompressionDialogs(form: model.compressionForm, items: model.compressItems)
             if let sheet = model.sheet {
                 // Each dialog is its own view, so a return to one starts it afresh.
                 switch sheet {

@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import LiberaCore
 
@@ -35,12 +34,7 @@ enum Sheet: String, Identifiable {
     /// Open dialogs, the last on top. A detail view opened from another -
     /// licenses from About, say - returns to it when closed.
     @Published private(set) var sheets: [Sheet] = []
-    @Published var compressItems: [SelectedItem] = [] {
-        didSet { compressionForm.pruneOverrides(to: compressItems) }
-    }
-    /// The compression panel's settings. They outlive a visit to another
-    /// screen and start afresh once a job takes them.
-    @Published private(set) var compressionForm = CompressionForm()
+    @Published var compressItems: [SelectedItem] = []
     @Published var extractItems: [SelectedItem] = []
     /// Why some of the last archives offered for extraction were left out.
     @Published var extractInputErrorKey: String?
@@ -49,10 +43,7 @@ enum Sheet: String, Identifiable {
         self.settings = settings
         self.queue = queue ?? JobQueue()
         inspector.onUnsupported = { [weak self] in self?.present(.unsupportedFormat) }
-        settings.$expert.sink { [weak self] expert in self?.compressionForm.expert = expert }.store(in: &observers)
     }
-
-    private var observers: Set<AnyCancellable> = []
 
     var sheet: Sheet? { sheets.last }
 
@@ -110,8 +101,6 @@ enum Sheet: String, Identifiable {
         guard !compressItems.isEmpty else { return }
         queue.compress(compressItems, options: options)
         compressItems = []
-        compressionForm = CompressionForm()
-        compressionForm.expert = settings.expert
         screen = .queue
     }
 
