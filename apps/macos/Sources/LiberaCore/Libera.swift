@@ -22,12 +22,6 @@ public enum Libera {
         }
     }
 
-    /// The levels `format`'s writer distinguishes, in slider order. The core
-    /// hands them over as bytes, which UniFFI turns into `Data`.
-    public static func levels(for format: ArchiveFormat) -> [UInt8] {
-        Array(compressionLevels(format: format))
-    }
-
     private static func run<Output: Sendable>(
         _ onProgress: @escaping @Sendable (ProgressData) -> Void,
         _ job: @escaping @Sendable (ProgressListener, CancelToken) throws -> Output
