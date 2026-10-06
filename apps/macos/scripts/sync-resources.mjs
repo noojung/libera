@@ -53,10 +53,7 @@ for (const file of [...used].sort()) {
   const nodes = text.match(/const __iconNode = ([\s\S]*?);\nconst /)
   if (!nodes) throw new Error(`Could not read the nodes of ${file}`)
   // The node list is a JS literal of string-valued objects; drop React's keys.
-  icons[file] = Function(`return ${nodes[1]}`)().map(([kind, attrs]) => [
-    kind,
-    Object.fromEntries(Object.entries(attrs).filter(([name]) => name !== 'key'))
-  ])
+  icons[file] = Function(`return ${nodes[1]}`)().map(([kind, { key, ...attrs }]) => [kind, attrs])
 }
 fs.writeFileSync(path.join(resources, 'icons.json'), `${JSON.stringify(icons)}\n`)
 console.log(`strings.json and ${Object.keys(icons).length} icons written to ${path.relative(root, resources)}`)
