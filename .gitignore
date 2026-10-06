@@ -17,7 +17,6 @@ jspm_packages/
 dist/
 out/
 build/
-.build/
 release/
 coverage/
 /site/public/
