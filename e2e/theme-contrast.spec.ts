@@ -8,12 +8,16 @@ import { expect, test, type Page } from './fixtures'
  * never switched, or one whose text stopped being legible in one theme.
  */
 const PIXELS = async (b64: string) => {
+  // A blob: URL, since the app's content security policy refuses data: images.
+  const bytes = Uint8Array.from(atob(b64), character => character.charCodeAt(0))
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
   const image = new Image()
   await new Promise((resolve, reject) => {
     image.onload = resolve
     image.onerror = reject
-    image.src = `data:image/png;base64,${b64}`
+    image.src = url
   })
+  URL.revokeObjectURL(url)
   const canvas = document.createElement('canvas')
   canvas.width = image.width
   canvas.height = image.height
@@ -71,11 +75,14 @@ async function measure(page: Page, selector: string) {
 /**
  * Surfaces transition their colours over 0.2s, so a screenshot taken the moment
  * `data-theme` flips catches a blend of the two palettes. Measurements need the
- * settled colour, not the animation.
+ * settled colour, not the animation. The rule goes in as a constructed sheet,
+ * since the app's content security policy refuses an inline style tag.
  */
 async function freezeTransitions(page: Page) {
-  await page.addStyleTag({
-    content: '*, *::before, *::after { transition: none !important; animation: none !important; }'
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet()
+    sheet.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }')
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
   })
 }
 

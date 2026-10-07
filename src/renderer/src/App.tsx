@@ -24,6 +24,7 @@ import {
   archiveBaseName,
   formatFromArchiveName
 } from './utils/archivePaths'
+import './styles/fonts'
 import './styles/theme.css'
 import './App.css'
 import { useTranslation } from 'react-i18next'

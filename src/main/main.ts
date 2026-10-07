@@ -234,7 +234,7 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: true
     }
   })
 
@@ -243,6 +243,16 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // The window only ever shows the app's own page. A file dropped outside a
+  // drop zone would otherwise open in its place, so every navigation away is
+  // refused - a reload keeps the same URL and still goes through - and no
+  // page can open windows of its own.
+  const { webContents } = mainWindow
+  webContents.on('will-navigate', (event, url) => {
+    if (url !== webContents.getURL()) event.preventDefault()
+  })
+  webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     logFatal('render-process-gone', `${details.reason} (exitCode ${details.exitCode})`)

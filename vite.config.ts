@@ -21,6 +21,46 @@ function copyLibera7zWorker(): Plugin {
   }
 }
 
+// Fontsource lists a WOFF copy beside every WOFF2 file for browsers without
+// WOFF2. Chromium always has it, so the copies are dropped before Vite bundles
+// them - they would more than double the fonts' size and never be read.
+function woff2FontsOnly(): Plugin {
+  return {
+    name: 'woff2-fonts-only',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]@fontsource[\\/].+\.css$/.test(id)) return
+      return code.replace(/,\s*url\([^)]+\.woff\)\s*format\('woff'\)/g, '')
+    }
+  }
+}
+
+// The page loads only its own bundle - fonts included - and the blob: URLs
+// image previews are drawn from. Anything else - an injected script, a stray
+// request - is refused. Only the build carries it: the dev server's hot
+// reload runs inline scripts.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "font-src 'self'",
+  "img-src 'self' blob:",
+  "base-uri 'none'",
+  "form-action 'none'"
+].join('; ')
+
+function contentSecurityPolicy(): Plugin {
+  return {
+    name: 'content-security-policy',
+    apply: 'build',
+    transformIndexHtml: () => [{
+      tag: 'meta',
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: CONTENT_SECURITY_POLICY },
+      injectTo: 'head-prepend'
+    }]
+  }
+}
+
 // Keep the replaceable WASM runtime alongside its worker, outside the JS bundle.
 function copyDmgWorker(): Plugin {
   return {
@@ -43,12 +83,14 @@ type ElectronStartup = Parameters<NonNullable<ElectronOptions['onstart']>>[0]['s
 // which here is src/renderer - a directory with no package.json, so Electron
 // comes up with nothing loaded. The app is started from the project root.
 function launchElectron(startup: ElectronStartup): Promise<boolean> {
-  return startup(['.', '--no-sandbox'], { cwd: __dirname })
+  return startup(['.'], { cwd: __dirname })
 }
 
 export default defineConfig({
   plugins: [
     react(),
+    woff2FontsOnly(),
+    contentSecurityPolicy(),
     electron([
       // The preload script is built first because vite-plugin-electron only
       // starts Electron once every entry's first build has finished, and it
@@ -97,6 +139,9 @@ export default defineConfig({
   root: 'src/renderer',
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    // The smallest font slices would otherwise be inlined as data: URLs, which
+    // the content security policy refuses; they stay files like the rest.
+    assetsInlineLimit: filePath => (filePath.endsWith('.woff2') ? false : undefined)
   }
 })
