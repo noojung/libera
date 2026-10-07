@@ -21,6 +21,22 @@ function copyLibera7zWorker(): Plugin {
   }
 }
 
+// Keep the replaceable WASM runtime alongside its worker, outside the JS bundle.
+function copyDmgWorker(): Plugin {
+  return {
+    name: 'copy-dmg-worker',
+    closeBundle() {
+      const engineRoot = path.dirname(createRequire(import.meta.url).resolve('7z-wasm'))
+      const target = path.resolve(__dirname, 'dist/worker/dmg')
+      fs.mkdirSync(target, { recursive: true })
+      fs.copyFileSync(path.resolve(__dirname, 'src/services/dmg/worker.cjs'), path.join(target, 'worker.cjs'))
+      for (const [source, destination] of [['7zz.umd.js', '7zz.cjs'], ['7zz.wasm', '7zz.wasm'], ['License.txt', 'License.txt'], ['unRarLicense.txt', 'unRarLicense.txt'], ['README.md', 'README.md']]) {
+        fs.copyFileSync(path.join(engineRoot, source), path.join(target, destination))
+      }
+    }
+  }
+}
+
 type ElectronStartup = Parameters<NonNullable<ElectronOptions['onstart']>>[0]['startup']
 
 // vite-plugin-electron spawns Electron with the cwd set to Vite's `root`,
@@ -61,7 +77,7 @@ export default defineConfig({
           launchElectron(startup)
         },
         vite: {
-          plugins: [copyLibera7zWorker()],
+          plugins: [copyLibera7zWorker(), copyDmgWorker()],
           build: {
             outDir: path.resolve(__dirname, 'dist/main'),
             rollupOptions: {

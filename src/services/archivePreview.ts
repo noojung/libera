@@ -1,3 +1,4 @@
+import { DmgReader } from './dmg/reader'
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import { Readable, Writable } from 'stream'
@@ -592,6 +593,34 @@ async function readSevenZipEntry(
   }
 }
 
+async function readDmgEntry(archivePath: string, entryIndex: number, signal?: AbortSignal): Promise<CollectedArchiveEntry> {
+  const reader = await DmgReader.open(archivePath, MAX_ARCHIVE_ENTRIES, signal).catch(error => {
+    throwIfAborted(signal)
+    throw error
+  })
+  try {
+    const entry = reader.entries[entryIndex]
+    if (!entry) throw previewError('ENTRY_NOT_FOUND', 'Archive entry was not found')
+    if (entry.isDirectory || entry.isLink) throw previewError('ENTRY_NOT_PREVIEWABLE', 'Directories and symbolic links cannot be previewed')
+    const collector = new PreviewCollector()
+    // Writable reports an asynchronous error as well as invoking its callback.
+    collector.on('error', () => {})
+    try {
+      await reader.read(entry, entry.size, bytes => new Promise<void>((resolve, reject) => {
+        collector.write(bytes, error => error ? reject(error) : resolve())
+      }), signal)
+      await new Promise<void>((resolve, reject) => {
+        collector.once('error', reject)
+        collector.end(resolve)
+      })
+    } catch (error) {
+      throwIfAborted(signal)
+      if (!collector.truncated) throw error
+    }
+    return collectedEntry(collector, entry.size)
+  } finally { await reader.close() }
+}
+
 export async function previewArchiveEntry(
   inputPath: string,
   entryId: string,
@@ -613,7 +642,9 @@ export async function previewArchiveEntry(
   // offer it to the tar reader first, exactly as the extractor does.
   const streamCodec = streamCodecFor(archivePath)
   let preview: CollectedArchiveEntry
-  if (isZipFormatExtension(ext)) {
+  if (ext === '.dmg') {
+    preview = await readDmgEntry(archivePath, entryIndex, context.signal)
+  } else if (isZipFormatExtension(ext)) {
     preview = await readZipEntry(archivePath, entryIndex, context.password, context.signal)
   } else if (isTarArchivePath(archivePath)) {
     preview = await readTarEntry(archivePath, entryIndex, context.signal)

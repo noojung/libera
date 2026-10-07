@@ -1,3 +1,5 @@
+import { isDmgArchivePath } from './dmg/reader'
+import { extractDmgArchive } from './dmg/extractor'
 import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import { Transform } from 'stream'
@@ -119,7 +121,7 @@ export const SUPPORTED_ARCHIVE_EXTENSIONS = [
   '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
   '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
   '.tar.zst', '.tzst',
-  '.gz', '.xz', '.bz2', '.zst', '.7z'
+  '.gz', '.xz', '.bz2', '.zst', '.7z', '.dmg'
 ] as const
 
 export function isSupportedArchivePath(archivePath: string): boolean {
@@ -572,6 +574,7 @@ function isCodecStreamPath(archivePath: string): boolean {
 // Order matters: a `.tar.gz` is a tar before it is a gz, so the tar handler has
 // to be offered the archive first.
 const FORMAT_EXTRACTORS: readonly { claims: (archivePath: string) => boolean; extract: FormatExtractor }[] = [
+  { claims: isDmgArchivePath, extract: extractDmgArchive },
   { claims: archivePath => isZipFormatExtension(path.extname(archivePath).toLowerCase()), extract: extractZipArchive },
   { claims: isTarArchivePath, extract: extractTarArchive },
   { claims: isSevenZipArchivePath, extract: extractSevenZipArchive },

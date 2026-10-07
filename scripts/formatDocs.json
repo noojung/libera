@@ -40,6 +40,9 @@
     "JAR": {
       "notes": "Read-only ZIP container"
     },
+    "DMG": {
+      "notes": "Read-only on macOS and Windows through bundled 7-Zip WebAssembly. Unencrypted UDIF images; supported inner filesystems include HFS+, APFS and FAT. Unsupported image codecs or filesystems report an error. External installer shortcuts are excluded. No disk mounting or system utilities."
+    },
     "WAR": {
       "notes": "Read-only ZIP container"
     }

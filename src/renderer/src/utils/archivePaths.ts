@@ -7,7 +7,7 @@ export const SUPPORTED_ARCHIVE_EXTENSIONS = [
   '.zip', '.jar', '.war', '.tar', '.tgz', '.tar.gz',
   '.tar.xz', '.txz', '.tar.bz2', '.tbz2', '.tbz',
   '.tar.zst', '.tzst',
-  '.gz', '.xz', '.bz2', '.zst', '.7z'
+  '.gz', '.xz', '.bz2', '.zst', '.7z', '.dmg'
 ] as const
 
 export const NUMBERED_VOLUME_SUFFIX = /\.z\d{2,}$/i
@@ -70,7 +70,7 @@ export function canonicalArchivePath(archivePath: string): string {
 /** Extensions offered in the extract file dialog, first volume included. */
 export const EXTRACT_DIALOG_EXTENSIONS = [
   'zip', 'jar', 'war', 'z01', 'tar', 'tgz', 'txz', 'tbz2', 'tbz', 'tzst',
-  'xz', 'bz2', 'zst', 'gz', '7z', '001'
+  'xz', 'bz2', 'zst', 'gz', '7z', '001', 'dmg'
 ]
 
 // The compression formats the panel offers, mirroring compressor.ts's own
@@ -242,7 +242,8 @@ const FORMAT_CODECS: Record<string, FormatCodecs> = {
   BZ2: { write: [], read: ['BZip2'] },
   ZST: { write: ['Zstandard'], read: ['Zstandard'] },
   JAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] },
-  WAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] }
+  WAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] },
+  DMG: { write: [], read: ['Store', 'ADC', 'Deflate', 'BZip2', 'LZFSE', 'LZMA2'] }
 }
 
 /** The compression format each readable one corresponds to, where there is one. */
@@ -253,6 +254,7 @@ const WRITABLE_AS: Partial<Record<string, ArchiveFormat>> = {
 const READABLE_FORMATS: readonly (readonly [string, readonly string[]])[] = [
   ['ZIP', ['.zip']],
   ['7Z', ['.7z']],
+  ['DMG', ['.dmg']],
   ['TAR', ['.tar']],
   ['TAR.GZ', ['.tar.gz', '.tgz']],
   ['TAR.XZ', ['.tar.xz', '.txz']],

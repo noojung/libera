@@ -58,6 +58,8 @@ describe('renderer archive path helper', () => {
       '/tmp/archive.tzst',
       '/tmp/ARCHIVE.ZST',
       '/tmp/archive.7z',
+      '/tmp/archive.dmg',
+      'C:\\archives\\INSTALLER.DMG',
       '/tmp/archive.rar',
       '/tmp/archive.lz4',
       '/tmp/archive.z1',

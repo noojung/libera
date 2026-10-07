@@ -1,3 +1,4 @@
+import { DmgReader } from './dmg/reader'
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { pipeline } from 'stream/promises'
@@ -286,6 +287,21 @@ export async function inspectArchive(
   if (!stat) throw new Error(`File does not exist: ${archivePath}`)
   if (!stat.isFile()) throw new Error('Archive inspection requires a file')
   let totalCompressedSize = stat.size
+
+  if (ext === '.dmg') {
+    const reader = await DmgReader.open(archivePath)
+    try {
+      const entries: ArchiveEntry[] = reader.entries.map((entry, index) => ({
+        id: `entry-${index}`, name: path.posix.basename(entry.path), path: entry.path,
+        isDirectory: entry.isDirectory, size: entry.size, date: entry.date,
+        mode: entry.mode, modeString: formatUnixMode(entry.mode, entry.isDirectory)
+      }))
+      const totalUncompressedSize = entries.reduce((sum, entry) => sum + (entry.size ?? 0), 0)
+      return { archivePath, format: 'DMG', passwordProtected: false,
+        totalFiles: entries.filter(entry => !entry.isDirectory).length,
+        totalUncompressedSize, totalCompressedSize, overallRatio: null, entries }
+    } finally { await reader.close() }
+  }
 
   if (isZipFormatExtension(ext)) {
     const zip = await openZipArchive(archivePath, MAX_ARCHIVE_ENTRIES)

@@ -54,6 +54,28 @@
       }
     },
     {
+      "name": "DMG",
+      "extensions": [
+        ".dmg"
+      ],
+      "compress": false,
+      "extract": true,
+      "read": true,
+      "password": false,
+      "split": false,
+      "codecs": {
+        "write": [],
+        "read": [
+          "Store",
+          "ADC",
+          "Deflate",
+          "BZip2",
+          "LZFSE",
+          "LZMA2"
+        ]
+      }
+    },
+    {
       "name": "TAR",
       "extensions": [
         ".tar"
