@@ -114,7 +114,7 @@ Pages automatically when changes under `site/` are pushed to `main`.
 | --- | --- | --- | --- | --- |
 | ZIP | .zip | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Store, Deflate, LZMA, Zstandard<br>Read: Store, Deflate, Deflate64, LZMA, Zstandard<br>Encryption: ZipCrypto, AES-128, AES-256 | Expert mode picks the method: Deflate (8) by default, or Store (0), LZMA (14), Zstandard (93). Choosing Deflate or Zstandard brings that codec's own options with it. Password creation uses ZipCrypto by default; expert mode switches it to WinZip AES-256 or AES-128. Split sets use `.z01 … .zip`, with `.zip` as the representative file |
 | 7Z | .7z | Compress · Extract · Preview · Password create/extract · Split volumes | Write: Copy, LZMA2<br>Read: Copy, LZMA, LZMA2, PPMd7, Deflate, Deflate64, BZip2<br>Encryption: AES-256<br>(Read) Filters: Delta, BCJ, BCJ2, ARM64, RISC-V, Swap2/4, PPC, IA64, ARM/Thumb, SPARC | Reads solid archives and AES-encrypted data or headers. Password creation uses AES-256 and can optionally encrypt the header, which hides the file names. Split sets use `.7z.001 …`, with `.7z.001` as the representative file |
-| DMG | .dmg | Extract · Preview | Read: Store, ADC, Deflate, BZip2, LZFSE, LZMA2 | Read-only on macOS and Windows through bundled 7-Zip WebAssembly. Unencrypted UDIF images; supported inner filesystems include HFS+, APFS and FAT. Unsupported image codecs or filesystems report an error. External installer shortcuts are excluded. No disk mounting or system utilities. |
+| DMG | .dmg | Extract · Preview | Read: Store, ADC, Deflate, BZip2, LZFSE, LZVN, LZMA2 | Read-only on macOS and Windows, decoded in TypeScript with no disk mounting or system utilities. Unencrypted UDIF images holding HFS+, APFS or FAT volumes, including files stored with filesystem compression. Encrypted images and other filesystems, such as exFAT, report an error. External installer shortcuts are excluded. |
 | TAR | .tar | Compress · Extract · Preview | None | Stores multiple files without a compression codec |
 | TAR.GZ | .tar.gz .tgz | Compress · Extract · Preview | Deflate | Stores multiple files through TAR |
 | TAR.XZ | .tar.xz .txz | Extract · Preview | Read: LZMA2 | Read-only. Reads every integrity check the container defines, streams cut into several blocks, and concatenated streams. A filter ahead of LZMA2 — BCJ or delta — is refused rather than misread |
@@ -202,6 +202,16 @@ The following checks are applied before and during extraction:
 inside the same validation and transaction layer, and content that disagrees
 with the sizes or CRCs declared by the archive is rejected.
 
+DMG images are read in TypeScript as well, on macOS and Windows alike, with no
+disk mounting utility involved: the UDIF container and its chunk codecs, then
+the HFS+, APFS or FAT volume inside. Each volume's files sit under a folder named
+after the volume, as they would once the image is mounted, and hard links read
+the file they share. Every chunk must expand to exactly the size the image
+declares, and APFS objects must match their checksums. Encrypted images and
+other filesystems report an error, external installer shortcuts (for example
+`/Applications`) are excluded, and resource forks and extended attributes are
+not restored. DMG creation is not offered.
+
 XZ and BZ2 are decoded through the same reader as they are read, so the
 limits above count the expansion as it lands rather than after it. Both verify
 the integrity check their container carries and stop on a mismatch instead of
@@ -231,17 +241,3 @@ Treat untrusted archives with care even when they pass these checks. See [SECURI
 ## License
 
 [MIT](LICENSE)
-
-### DMG extraction engine
-
-DMG listing, previews and extraction use [7z-wasm 1.2.0](https://github.com/use-strict/7z-wasm),
-a WebAssembly build of 7-Zip 24.09. The same worker runs on macOS and Windows;
-no operating-system disk mounting utility is used. DMG creation is not offered.
-Encrypted DMGs and unsupported inner filesystems or codecs report an error.
-External installer shortcuts (for example `/Applications`) are excluded from extraction.
-Resource forks and extended attributes are not restored.
-
-The replaceable runtime and its license files ship in `dist/worker/dmg`.
-Its source, build instructions and patches are available in the
-[7z-wasm source repository](https://github.com/use-strict/7z-wasm), with the
-[7-Zip 24.09 sources](https://github.com/ip7z/7zip/releases/tag/24.09).

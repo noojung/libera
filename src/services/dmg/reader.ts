@@ -1,7 +1,12 @@
-import fs from 'fs'
-import path from 'path'
-import { Worker } from 'worker_threads'
+import { promises as fs } from 'fs'
+import type { FileHandle } from 'fs/promises'
 import { MAX_ARCHIVE_ENTRIES, securityError, throwIfAborted } from '../extractionSafety'
+import { probeApfs, readApfs } from './apfs'
+import { type ByteSource, EntryBudget, SliceSource, type Volume } from './bytes'
+import { probeFat, readFat } from './fat'
+import { probeHfsPlus, readHfsPlus } from './hfsplus'
+import { readPartitionMap } from './partitions'
+import { FileSource, UdifImage } from './udif'
 
 export interface DmgEntry {
   path: string
@@ -17,85 +22,50 @@ export function isDmgArchivePath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.dmg')
 }
 
-function unixMode(value: string | undefined): number | undefined {
-  if (!value) return undefined
-  if (/^[0-7]{5,7}$/.test(value)) return Number.parseInt(value, 8)
-  const match = /([dl-])([rwxstST-]{9})$/.exec(value)
-  if (!match) return undefined
-  let mode = match[1] === 'd' ? 0o040000 : match[1] === 'l' ? 0o120000 : 0o100000
-  for (let i = 0; i < 9; i++) {
-    if (match[2][i] !== '-' && match[2][i] !== 'S' && match[2][i] !== 'T') mode |= 1 << (8 - i)
+const FILE_TYPES = [0o040000, 0o100000, 0o120000]
+
+/** Finds every filesystem on the disk: in each partition, or across the whole of it. */
+async function readVolumes(disk: UdifImage, budget: EntryBudget, signal?: AbortSignal): Promise<Volume[]> {
+  const ranges = new Map<number, number>()
+  for (const range of [...await readPartitionMap(disk), ...disk.partitions, { offset: 0, length: disk.size }]) {
+    if (range.length > 0 && range.offset + range.length <= disk.size && !ranges.has(range.offset)) ranges.set(range.offset, range.length)
   }
-  return mode
+  const volumes: Volume[] = []
+  for (const [offset, length] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    throwIfAborted(signal)
+    const source: ByteSource = new SliceSource(disk, offset, length)
+    const hfs = await probeHfsPlus(source)
+    if (hfs) volumes.push(await readHfsPlus(hfs, budget))
+    else if (await probeApfs(source)) volumes.push(...await readApfs(source, budget))
+    else if (await probeFat(source)) volumes.push(await readFat(source, budget))
+  }
+  if (volumes.length === 0) throw new Error('Unsupported DMG filesystem: cannot list the files inside this disk image')
+  return volumes
 }
 
-export function parseDmgListing(listing: string, maxEntries: number): DmgEntry[] {
-  const entries: DmgEntry[] = []
-  const names = new Set<string>()
-  for (const block of listing.replace(/^[\r\n]+|[\r\n]+$/g, '').split(/\r?\n\r?\n/)) {
-    if (!block) continue
-    const properties = new Map<string, string>()
-    for (const line of block.split(/\r?\n/)) {
-      const match = /^([^=]+?) = (.*)$/.exec(line)
-      if (!match || properties.has(match[1])) throw securityError('Ambiguous DMG entry metadata')
-      properties.set(match[1], match[2])
-    }
-    const name = properties.get('Path')
-    if (!name || /[\0\r\n]/.test(name) || names.has(name)) throw securityError('Invalid or duplicate DMG entry path')
-    names.add(name)
-    if (names.size > maxEntries) throw securityError('DMG contains too many entries', 'TOO_MANY_ENTRIES')
-    // Resource forks and extended attributes are not regular payload files.
-    if (properties.get('Alternate Stream') === '+') continue
-    const mode = unixMode(properties.get('Mode'))
-    if ((properties.get('Mode') && mode === undefined) ||
-        (mode !== undefined && ![0o040000, 0o100000, 0o120000].includes(mode & 0o170000))) {
-      throw securityError('Unsupported DMG file type')
-    }
-    // APFS reports Mode rather than a Folder property. Raw DMG partitions
-    // expose neither, and must not be mistaken for extracted payload files.
-    if (mode === undefined && !['+', '-'].includes(properties.get('Folder') ?? '')) {
-      throw new Error('Unsupported DMG filesystem: cannot list the files inside this disk image')
-    }
-    const isDirectory = properties.get('Folder') === '+' || (mode !== undefined && (mode & 0o170000) === 0o040000)
-    const sizeText = properties.get('Size')
-    const size = isDirectory ? 0 : Number(sizeText)
-    if (!isDirectory && (!sizeText || !/^\d+$/.test(sizeText) || !Number.isSafeInteger(size))) {
-      throw securityError('Invalid DMG entry size')
-    }
-    entries.push({ path: name, size, isDirectory, mode, isLink: Boolean(properties.get('Symbolic Link')) || (mode !== undefined && (mode & 0o170000) === 0o120000),
-      linkTarget: properties.get('Symbolic Link') || undefined,
-      date: properties.get('Modified') || undefined })
-  }
-  return entries
-}
-
-/** Isolated, cancellable WASM reader, shared by listing, preview and extraction. */
+/**
+ * Lists and reads a disk image in TypeScript: the UDIF container, then the
+ * HFS+, APFS or FAT volumes inside it. Each volume's files sit under a folder
+ * named after the volume, as they would appear once the image is mounted.
+ */
 export class DmgReader {
   entries: DmgEntry[] = []
-  private readonly acknowledgement = new Int32Array(new SharedArrayBuffer(4))
-  private readonly worker: Worker
-  private closed = false
+  private readonly contents = new WeakMap<DmgEntry, () => AsyncIterable<Uint8Array>>()
   private closing?: Promise<void>
 
-  private constructor(archivePath: string) {
-    const packagedRoot = path.resolve(__dirname, '../worker/dmg')
-    const packaged = fs.existsSync(path.join(packagedRoot, 'worker.cjs'))
-    this.worker = new Worker(packaged ? path.join(packagedRoot, 'worker.cjs') : path.resolve('src/services/dmg/worker.cjs'), {
-      trackUnmanagedFds: true,
-      workerData: {
-        archivePath: path.resolve(archivePath),
-        enginePath: packaged ? path.join(packagedRoot, '7zz.cjs') : require.resolve('7z-wasm'),
-        acknowledgement: this.acknowledgement.buffer
-      }
-    })
-  }
+  private constructor(private readonly handle: FileHandle) {}
 
   static async open(archivePath: string, maxEntries = MAX_ARCHIVE_ENTRIES, signal?: AbortSignal): Promise<DmgReader> {
     throwIfAborted(signal)
-    const reader = new DmgReader(archivePath)
+    const reader = new DmgReader(await fs.open(archivePath, 'r'))
     try {
-      const listing = await reader.run({ kind: 'list', maxBytes: 64 * 1024 * 1024 }, undefined, signal)
-      reader.entries = parseDmgListing(listing ?? '', maxEntries)
+      const stat = await reader.handle.stat()
+      if (!stat.isFile()) throw new Error('DMG input must be a file')
+      const disk = await UdifImage.open(new FileSource(reader.handle, stat.size))
+      const budget = new EntryBudget(maxEntries, () => { throw securityError('DMG contains too many entries', 'TOO_MANY_ENTRIES') })
+      const volumes = await readVolumes(disk, budget, signal)
+      throwIfAborted(signal)
+      reader.addVolumes(volumes, maxEntries)
       return reader
     } catch (error) {
       await reader.close()
@@ -103,48 +73,52 @@ export class DmgReader {
     }
   }
 
-  private run(request: { kind: string; maxBytes: number; entryPath?: string }, onData?: (bytes: Buffer) => Promise<void>, signal?: AbortSignal): Promise<string | undefined> {
-    throwIfAborted(signal)
-    if (this.closed) return Promise.reject(new Error('DMG reader is closed'))
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        signal?.removeEventListener('abort', abort)
-        this.worker.off('message', message)
-        this.worker.off('error', fail)
-        this.worker.off('exit', exit)
+  private addVolumes(volumes: Volume[], maxEntries: number): void {
+    const paths = new Set<string>()
+    for (const volume of volumes) {
+      // A volume name is free text; it becomes one folder, and two volumes
+      // with the same name get distinct ones.
+      const base = volume.name.replace(/\//g, ':').replace(/^\.{1,2}$/, '') || 'Untitled'
+      let root = base
+      for (let n = 2; paths.has(root); n++) root = `${base} (${n})`
+      const all = [{ path: '', isDirectory: true, isLink: false, size: 0 }, ...volume.entries]
+      for (const item of all) {
+        const entryPath = item.path ? `${root}/${item.path}` : root
+        if (entryPath.includes('\0') || entryPath.split('/').some(part => part === '') || paths.has(entryPath)) {
+          throw securityError('Invalid or duplicate DMG entry path')
+        }
+        if (item.mode !== undefined && !FILE_TYPES.includes(item.mode & 0o170000)) throw securityError('Unsupported DMG file type')
+        paths.add(entryPath)
+        if (paths.size > maxEntries) throw securityError('DMG contains too many entries', 'TOO_MANY_ENTRIES')
+        const entry: DmgEntry = { path: entryPath, isDirectory: item.isDirectory, isLink: item.isLink, size: item.size }
+        if (item.linkTarget !== undefined) entry.linkTarget = item.linkTarget
+        if (item.mode !== undefined) entry.mode = item.mode
+        if (item.date !== undefined) entry.date = item.date
+        if ('content' in item && item.content) this.contents.set(entry, item.content)
+        this.entries.push(entry)
       }
-      const fail = (error: Error) => { cleanup(); void this.close(); reject(error) }
-      const abort = () => {
-        try { throwIfAborted(signal) } catch (error) { fail(error as Error) }
-      }
-      const exit = (code: number) => fail(new Error(`DMG worker exited unexpectedly (${code})`))
-      const message = async (event: { kind: string; bytes?: Uint8Array; listing?: string; message?: string }) => {
-        if (event.kind === 'data') {
-          try {
-            await onData!(Buffer.from(event.bytes!))
-            Atomics.store(this.acknowledgement, 0, 1)
-            Atomics.notify(this.acknowledgement, 0)
-          } catch (error) { fail(error as Error) }
-        } else if (event.kind === 'error') fail(new Error(event.message))
-        else if (event.kind === 'done') { cleanup(); resolve(event.listing) }
-      }
-      signal?.addEventListener('abort', abort, { once: true })
-      this.worker.on('message', message)
-      this.worker.once('error', fail)
-      this.worker.once('exit', exit)
-      this.worker.postMessage(request)
-    })
+    }
   }
 
+  /** Streams an entry's bytes to `onData`, one piece at a time. */
   async read(entry: DmgEntry, maxBytes: number, onData: (bytes: Buffer) => Promise<void>, signal?: AbortSignal): Promise<void> {
     if (entry.isDirectory) throw new Error('Cannot read a DMG directory')
-    await this.run({ kind: 'read', entryPath: entry.path, maxBytes }, onData, signal)
+    const content = this.contents.get(entry)
+    if (!content) throw new Error('DMG entry was not found')
+    if (this.closing) throw new Error('DMG reader is closed')
+    throwIfAborted(signal)
+    let count = 0
+    for await (const bytes of content()) {
+      throwIfAborted(signal)
+      count += bytes.length
+      if (count > maxBytes) throw new Error('DMG output exceeds the configured size limit')
+      await onData(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length))
+      throwIfAborted(signal)
+    }
   }
 
   close(): Promise<void> {
-    if (this.closing) return this.closing
-    this.closed = true
-    this.closing = this.worker.terminate().then(() => undefined)
+    this.closing ??= this.handle.close()
     return this.closing
   }
 }

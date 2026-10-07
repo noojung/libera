@@ -41,7 +41,7 @@
       "notes": "Read-only ZIP container"
     },
     "DMG": {
-      "notes": "Read-only on macOS and Windows through bundled 7-Zip WebAssembly. Unencrypted UDIF images; supported inner filesystems include HFS+, APFS and FAT. Unsupported image codecs or filesystems report an error. External installer shortcuts are excluded. No disk mounting or system utilities."
+      "notes": "Read-only on macOS and Windows, decoded in TypeScript with no disk mounting or system utilities. Unencrypted UDIF images holding HFS+, APFS or FAT volumes, including files stored with filesystem compression. Encrypted images and other filesystems, such as exFAT, report an error. External installer shortcuts are excluded."
     },
     "WAR": {
       "notes": "Read-only ZIP container"

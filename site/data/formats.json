@@ -71,6 +71,7 @@
           "Deflate",
           "BZip2",
           "LZFSE",
+          "LZVN",
           "LZMA2"
         ]
       }

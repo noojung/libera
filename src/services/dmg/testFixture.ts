@@ -3,7 +3,14 @@ import { crc32 } from 'libera7z'
 
 // Tiny synthetic UDIF + HFS+ images, built entirely in JS on every test OS.
 // Layout follows Apple's HFS Plus volume/catalog and UDIF blkx structures.
-export function dmgFixture(files: { name: string; data: Buffer; mode?: number }[]): Buffer {
+type FixtureFile = { name: string; data: Buffer; mode?: number }
+
+export function dmgFixture(files: FixtureFile[]): Buffer {
+  return udifImage(hfsDisk(files))
+}
+
+/** An HFS+ volume named `Fixture` holding `files`, as a raw disk. */
+export function hfsDisk(files: FixtureFile[]): Buffer {
   const catalog = Buffer.alloc(8192)
   catalog[8] = 1
   catalog.writeUInt16BE(1, 14)
@@ -63,21 +70,30 @@ export function dmgFixture(files: { name: string; data: Buffer; mode?: number }[
   fork(image, 1024 + 272, catalog.length, 8, 16)
   catalog.copy(image, 4096)
   for (const item of data) item.bytes.copy(image, item.position)
-  const compressed = deflateSync(image)
+  return image
+}
+
+/**
+ * Wraps a raw disk as a one-partition UDIF image, its sectors in one chunk:
+ * deflated as hdiutil's UDZO would, or stored raw.
+ */
+export function udifImage(disk: Buffer, method: 'zlib' | 'raw' = 'zlib'): Buffer {
+  const sectors = disk.length / 512
+  const compressed = method === 'zlib' ? deflateSync(disk) : disk
   const table = Buffer.alloc(284)
   table.write('mish')
   table.writeUInt32BE(1, 4)
-  table.writeBigUInt64BE(BigInt(image.length / 512), 16)
-  table.writeUInt32BE(image.length / 512, 32)
+  table.writeBigUInt64BE(BigInt(sectors), 16)
+  table.writeUInt32BE(sectors, 32)
   table.writeUInt32BE(2, 64)
   table.writeUInt32BE(32, 68)
-  table.writeUInt32BE(crc32(image), 72)
+  table.writeUInt32BE(crc32(disk), 72)
   table.writeUInt32BE(2, 200)
-  table.writeUInt32BE(0x80000005, 204)
-  table.writeBigUInt64BE(BigInt(image.length / 512), 220)
+  table.writeUInt32BE(method === 'zlib' ? 0x80000005 : 1, 204)
+  table.writeBigUInt64BE(BigInt(sectors), 220)
   table.writeBigUInt64BE(BigInt(compressed.length), 236)
   table.writeUInt32BE(0xffffffff, 244)
-  table.writeBigUInt64BE(BigInt(image.length / 512), 252)
+  table.writeBigUInt64BE(BigInt(sectors), 252)
   table.writeBigUInt64BE(BigInt(compressed.length), 268)
   const xml = Buffer.from(`<?xml version="1.0"?><plist version="1.0"><dict><key>resource-fork</key><dict><key>blkx</key><array><dict><key>Name</key><string>disk image (Apple_HFS : 0)</string><key>ID</key><string>0</string><key>Attributes</key><string>0x0050</string><key>Data</key><data>${table.toString('base64')}</data></dict></array></dict></dict></plist>`)
   const trailer = Buffer.alloc(512)
@@ -91,6 +107,6 @@ export function dmgFixture(files: { name: string; data: Buffer; mode?: number }[
   trailer.writeBigUInt64BE(BigInt(compressed.length), 216)
   trailer.writeBigUInt64BE(BigInt(xml.length), 224)
   trailer.writeUInt32BE(1, 488)
-  trailer.writeBigUInt64BE(BigInt(image.length / 512), 492)
+  trailer.writeBigUInt64BE(BigInt(sectors), 492)
   return Buffer.concat([compressed, xml, trailer])
 }

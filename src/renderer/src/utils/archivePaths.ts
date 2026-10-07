@@ -243,7 +243,7 @@ const FORMAT_CODECS: Record<string, FormatCodecs> = {
   ZST: { write: ['Zstandard'], read: ['Zstandard'] },
   JAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] },
   WAR: { write: [], read: ['Store', 'Deflate', 'Deflate64'] },
-  DMG: { write: [], read: ['Store', 'ADC', 'Deflate', 'BZip2', 'LZFSE', 'LZMA2'] }
+  DMG: { write: [], read: ['Store', 'ADC', 'Deflate', 'BZip2', 'LZFSE', 'LZVN', 'LZMA2'] }
 }
 
 /** The compression format each readable one corresponds to, where there is one. */
